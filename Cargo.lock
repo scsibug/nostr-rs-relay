@@ -309,6 +309,7 @@ dependencies = [
  "log",
  "tokio",
  "tokio-tungstenite",
+ "tungstenite",
 ]
 
 [[package]]
