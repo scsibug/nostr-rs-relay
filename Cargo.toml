@@ -12,3 +12,4 @@ tokio = { version = "1.14.0", features = ["full"] }
 futures-util = "0.3.17"
 tokio-tungstenite = "0.16.0"
 tungstenite = "0.16.0"
+thiserror = "1.0.30"

@@ -307,6 +307,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "log",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "tungstenite",
