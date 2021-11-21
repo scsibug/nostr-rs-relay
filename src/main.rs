@@ -1,17 +1,7 @@
-//! A simple echo server.
-//!
-//! You can test this out by running:
-//!
-//!     cargo run --example server 127.0.0.1:12345
-//!
-//! And then in another window run:
-//!
-//!     cargo run --example client ws://127.0.0.1:12345/
-
 use std::{env, io::Error};
 
 use futures_util::{future, StreamExt, TryStreamExt};
-use log::info;
+use log::{info, warn};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
@@ -39,16 +29,22 @@ async fn accept_connection(stream: TcpStream) {
         .expect("connected streams should have a peer address");
     info!("Peer address: {}", addr);
 
-    let ws_stream = tokio_tungstenite::accept_async(stream)
-        .await
-        .expect("Error during the websocket handshake occurred");
+    let ws_stream_res = tokio_tungstenite::accept_async(stream).await;
 
-    info!("New WebSocket connection: {}", addr);
+    match ws_stream_res {
+        Ok(ws_stream) => {
+            info!("New WebSocket connection: {}", addr);
 
-    let (write, read) = ws_stream.split();
-    // We should not forward messages other than text or binary.
-    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
-        .forward(write)
-        .await
-        .expect("Failed to forward messages")
+            let (write, read) = ws_stream.split();
+            // We should not forward messages other than text or binary.
+            read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+                .forward(write)
+                .await
+                .unwrap_or_else(|_| warn!("Failed to forward message"));
+        }
+        Err(_) => {
+            println!("Error");
+            info!("Error during websocket handshake");
+        }
+    };
 }
