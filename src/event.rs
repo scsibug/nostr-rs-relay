@@ -19,12 +19,13 @@ pub struct Event {
 
 type Tag = Vec<Vec<String>>;
 
+// handle a default value (empty vec) for null tags
 fn tag_from_string<'de, D>(deserializer: D) -> Result<Tag, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = Deserialize::deserialize(deserializer)?;
-    Ok(vec![])
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_else(|| vec![]))
 }
 
 fn u32_from_string<'de, D>(deserializer: D) -> Result<u32, D::Error>
