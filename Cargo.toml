@@ -13,6 +13,7 @@ futures-util = "0.3.17"
 tokio-tungstenite = "0.16.0"
 tungstenite = "0.16.0"
 thiserror = "1.0.30"
+uuid = { version = "0.8", features = ["v4"] }
 
 
 bitcoin_hashes = { version = "0.10.0", features = ["serde"] }

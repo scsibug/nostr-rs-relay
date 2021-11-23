@@ -2,6 +2,7 @@ use std::{env, io::Error};
 
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, info, warn};
+use nostr_rs_relay::proto::Proto;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio_tungstenite::WebSocketStream;
@@ -67,9 +68,9 @@ async fn nostr_server(stream: TcpStream) {
 
 // Handles valid clients who have upgraded to WebSockets
 async fn process_client(stream: WebSocketStream<TcpStream>) {
+    // get a protocol helper;
+    let proto = Proto::new();
     let (mut write, mut read) = stream.split();
-    // TODO: error on binary messages
-    // TODO: error on text messages > MAX_EVENT_SIZE
     // TODO: select on a timeout to kill non-responsive clients
 
     while let Some(mes_res) = read.next().await {
@@ -86,6 +87,7 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     )))
                     .await
                     .expect("send failed");
+                proto.process_message(cmd);
                 // Handle this request. Everything else below is basically error handling.
             }
             Ok(Message::Binary(_)) => {
