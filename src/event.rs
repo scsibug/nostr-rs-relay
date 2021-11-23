@@ -1,5 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::json;
+//use serde_json::json;
 //use serde_json::Result;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -32,7 +32,7 @@ fn u32_from_string<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let _s: String = Deserialize::deserialize(deserializer)?;
     Ok(0)
 }
 
@@ -40,7 +40,7 @@ fn u64_from_string<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let _s: String = Deserialize::deserialize(deserializer)?;
     Ok(0)
 }
 
