@@ -15,4 +15,12 @@ pub enum Error {
     ReqParseFailed,
     #[error("parsing JSON->Close failed")]
     CloseParseFailed,
+    #[error("JSON parsing failed")]
+    JsonParseFailed(serde_json::Error),
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(r: serde_json::Error) -> Self {
+        Error::JsonParseFailed(r)
+    }
 }

@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 //use serde_json::json;
 //use serde_json::Result;
@@ -47,6 +48,13 @@ where
 // Goals:
 // Roundtrip from JSON-string to Event, and back to string.
 // Perform validation on an Event to ensure the id and signature are correct.
+
+impl Event {
+    pub fn parse(json: &str) -> Result<Event> {
+        let e: Event = serde_json::from_str(json)?;
+        Err(Error::EventParseFailed)
+    }
+}
 
 #[cfg(test)]
 mod tests {
