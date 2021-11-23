@@ -1,10 +1,11 @@
 use std::{env, io::Error};
 
 use futures_util::{SinkExt, StreamExt};
-use log::{debug, info};
+use log::{debug, info, warn};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio_tungstenite::WebSocketStream;
+use tungstenite::error::Error::*;
 use tungstenite::protocol::frame::coding::CloseCode;
 use tungstenite::protocol::frame::CloseFrame;
 use tungstenite::protocol::{Message, WebSocketConfig};
@@ -13,7 +14,7 @@ fn main() -> Result<(), Error> {
     let _ = env_logger::try_init();
     let addr = env::args()
         .nth(1)
-        .unwrap_or_else(|| "127.0.0.1:8080".to_string());
+        .unwrap_or_else(|| "0.0.0.0:8888".to_string());
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .worker_threads(2)
@@ -75,7 +76,9 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
         // as long as connection is not closed...
         match mes_res {
             Ok(Message::Text(cmd)) => {
+                info!("Message received");
                 let length = cmd.len();
+                debug!("Message: {}", cmd);
                 write
                     .send(Message::Text(format!(
                         "got your message of length {}",
@@ -99,13 +102,14 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                 info!("Got request to close connection");
                 return;
             }
-            Err(e) => {
-                // TODO: check for specific error: (Capacity(MessageTooLong { size: xxxxx, max_size: 131072 }))
+            Err(tungstenite::error::Error::Capacity(
+                tungstenite::error::CapacityError::MessageTooLong { size, max_size },
+            )) => {
                 info!(
-                    "Message size too large, disconnecting this client: ({:?})",
-                    e
+                    "Message size too large, disconnecting this client. ({} > {})",
+                    size, max_size
                 );
-                write.send(Message::Text("[\"NOTICE\", \"MAX_EVENT_SIZE_EXCEEDED: Exceeded maximum event size for this relay.  Closing Connection.\"]".to_owned())).await.expect("send failed");
+                write.send(Message::Text("[\"NOTICE\", \"MAX_EVENT_SIZE_EXCEEDED: Exceeded maximum event size for this relay.  Closing Connection.\"]".to_owned())).await.expect("send notice failed");
                 write
                     .reunite(read)
                     .expect("reunite failed")
@@ -115,6 +119,22 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     }))
                     .await
                     .expect("failed to send close frame");
+                return;
+            }
+            Err(AlreadyClosed) => {
+                warn!("this connection was already closed, and we tried to operate on it");
+                return;
+            }
+            Err(ConnectionClosed) | Err(Io(_)) => {
+                debug!("Closing this connection normally");
+                return;
+            }
+            Err(Tls(_)) | Err(Protocol(_)) | Err(Utf8) | Err(Url(_)) => {
+                info!("websocket/tls/enc protocol error, dropping connection");
+                return;
+            }
+            Err(e) => {
+                warn!("Some new kind of error, bailing: {:?}", e);
                 return;
             }
         }
