@@ -86,6 +86,7 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     )))
                     .await
                     .expect("send failed");
+                // Handle this request. Everything else below is basically error handling.
             }
             Ok(Message::Binary(_)) => {
                 info!("Ignoring Binary message");
@@ -129,7 +130,8 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                 debug!("Closing this connection normally");
                 return;
             }
-            Err(Tls(_)) | Err(Protocol(_)) | Err(Utf8) | Err(Url(_)) => {
+            Err(Tls(_)) | Err(Protocol(_)) | Err(Utf8) | Err(Url(_)) | Err(HttpFormat(_))
+            | Err(Http(_)) => {
                 info!("websocket/tls/enc protocol error, dropping connection");
                 return;
             }
