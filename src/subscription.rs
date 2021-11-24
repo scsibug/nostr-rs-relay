@@ -86,6 +86,9 @@ impl Subscription {
     pub fn get_id(&self) -> String {
         self.id.clone()
     }
+    pub fn get_filter_count(&self) -> usize {
+        self.filters.len()
+    }
 }
 
 #[cfg(test)]

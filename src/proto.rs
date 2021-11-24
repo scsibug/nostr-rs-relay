@@ -27,13 +27,20 @@ impl Proto {
         p
     }
 
-    pub fn process_message(self: &Self, cmd: String) {
+    // TODO: figure out NOTICE handling for errors here
+    pub fn process_message(&mut self, cmd: String) -> Result<()> {
         info!(
             "Processing message in proto for client: {:?}",
             self.client_id
         );
-        // check what kind of message
-        info!("Parse result: {:?}", parse_type(cmd));
+        let message = parse_cmd(cmd)?;
+        info!("Parsed message: {:?}", message);
+        match message {
+            NostrRequest::EvReq(_) => {}
+            NostrRequest::SubReq(sub) => self.subscribe(sub),
+            NostrRequest::CloseReq(close) => self.unsubscribe(close),
+        };
+        Ok(())
     }
 
     pub fn subscribe(&mut self, s: Subscription) {
@@ -61,11 +68,18 @@ impl Proto {
         }
         // add subscription
         self.subscriptions.insert(k, s);
+        info!(
+            "Registered new subscription, currently have {} active subs",
+            self.subscriptions.len()
+        );
     }
 
     pub fn unsubscribe(&mut self, c: Close) {
         self.subscriptions.remove(&c.get_id());
-        unimplemented!();
+        info!(
+            "Removed subscription, currently have {} active subs",
+            self.subscriptions.len()
+        );
     }
 }
 
@@ -99,7 +113,7 @@ fn msg_type_wrapper(msg: String) -> Result<NostrRawMessage> {
     }
 }
 
-pub fn parse_type(msg: String) -> Result<NostrRequest> {
+pub fn parse_cmd(msg: String) -> Result<NostrRequest> {
     // turn this raw string into a parsed request
     let typ = msg_type_wrapper(msg)?;
     match typ {

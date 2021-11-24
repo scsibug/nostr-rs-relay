@@ -72,7 +72,7 @@ async fn nostr_server(stream: TcpStream) {
 // Handles valid clients who have upgraded to WebSockets
 async fn process_client(stream: WebSocketStream<TcpStream>) {
     // get a protocol helper;
-    let proto = Proto::new();
+    let mut proto = Proto::new();
     let (mut write, mut read) = stream.split();
     // TODO: select on a timeout to kill non-responsive clients
 
@@ -91,7 +91,7 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     .await
                     .expect("send failed");
                 // Handle this request. Everything else below is basically websocket error handling.
-                proto.process_message(cmd);
+                proto.process_message(cmd).ok();
             }
             Ok(Message::Binary(_)) => {
                 info!("Ignoring Binary message");
