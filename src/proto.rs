@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::{event, subscription};
+use crate::{close, event, subscription};
 use log::{debug, info};
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ impl Proto {
 // A raw message with the expected type
 #[derive(PartialEq, Debug)]
 pub enum NostrRawMessage {
-    Event(String),
+    Ev(String),
     Sub(String),
     Close(String),
 }
@@ -40,13 +40,14 @@ pub enum NostrRawMessage {
 pub enum NostrRequest {
     Ev(event::Event),
     Sub(subscription::Subscription),
+    Close(close::Close),
 }
 
 // Wrap the message in the expected request type
 fn msg_type_wrapper(msg: String) -> Result<NostrRawMessage> {
     // check prefix.
     if msg.starts_with(r#"["EVENT","#) {
-        Ok(NostrRawMessage::Event(msg))
+        Ok(NostrRawMessage::Ev(msg))
     } else if msg.starts_with(r#"["REQ","#) {
         Ok(NostrRawMessage::Sub(msg))
     } else if msg.starts_with(r#"["CLOSE","#) {
@@ -60,9 +61,9 @@ pub fn parse_type(msg: String) -> Result<NostrRequest> {
     // turn this raw string into a parsed request
     let typ = msg_type_wrapper(msg)?;
     match typ {
-        NostrRawMessage::Event(_) => Err(Error::EventParseFailed),
+        NostrRawMessage::Ev(_) => Err(Error::EventParseFailed),
         NostrRawMessage::Sub(m) => Ok(NostrRequest::Sub(subscription::Subscription::parse(&m)?)),
-        NostrRawMessage::Close(_) => Err(Error::CloseParseFailed),
+        NostrRawMessage::Close(m) => Ok(NostrRequest::Close(close::Close::parse(&m)?)),
     }
 }
 
