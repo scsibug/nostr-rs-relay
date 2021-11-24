@@ -41,6 +41,9 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+// Todo: Implement sending messages to all other clients; example:
+// https://github.com/snapview/tokio-tungstenite/blob/master/examples/server.rs
+
 // Handles new TCP connections
 async fn nostr_server(stream: TcpStream) {
     let addr = stream
