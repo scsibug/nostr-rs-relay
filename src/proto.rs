@@ -55,9 +55,11 @@ impl Proto {
             info!("Dropping subscription with huge ({}) length", sub_id_len);
             return;
         }
-        // check if an existing subscription exists.
+        // check if an existing subscription exists, and replace if so
         if self.subscriptions.contains_key(&k) {
-            info!("Client requested a subscription with an already-existing key");
+            self.subscriptions.remove(&k);
+            self.subscriptions.insert(k, s);
+            info!("Replaced existing subscription");
             return;
         }
 
