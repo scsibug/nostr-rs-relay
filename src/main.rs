@@ -87,8 +87,8 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     )))
                     .await
                     .expect("send failed");
+                // Handle this request. Everything else below is basically websocket error handling.
                 proto.process_message(cmd);
-                // Handle this request. Everything else below is basically error handling.
             }
             Ok(Message::Binary(_)) => {
                 info!("Ignoring Binary message");

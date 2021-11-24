@@ -29,7 +29,7 @@ impl<'de> Deserialize<'de> for Close {
             .ok_or(serde::de::Error::custom("not array"))?;
 
         // check length
-        if va.len() == 2 {
+        if va.len() != 2 {
             return Err(serde::de::Error::custom("not exactly 2 fields"));
         }
         let mut i = va.into_iter();
