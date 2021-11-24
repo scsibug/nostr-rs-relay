@@ -54,6 +54,11 @@ impl Event {
         let _e: Event = serde_json::from_str(json)?;
         Err(Error::EventParseFailed)
     }
+
+    // check if this event is valid (should be propagated, stored) based on signature.
+    pub fn is_valid(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

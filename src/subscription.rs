@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::event::Event;
 use serde::{Deserialize, Deserializer, Serialize};
 //use serde_json::json;
 //use serde_json::Result;
@@ -88,6 +89,23 @@ impl Subscription {
     }
     pub fn get_filter_count(&self) -> usize {
         self.filters.len()
+    }
+    pub fn interested_in_event(&self, event: &Event) -> bool {
+        // loop through every filter, and return true if any match this event.
+        for f in self.filters.iter() {
+            if f.interested_in_event(event) {
+                return true;
+            }
+        }
+    }
+}
+
+impl ReqFilter {
+    pub fn interested_in_event(&self, event: &Event) -> bool {
+        // determine if all populated fields in this filter match the provided event.
+
+        todo!();
+        true
     }
 }
 
