@@ -3,20 +3,23 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::subscription::Subscription;
 use log::{debug, info};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 // A protocol handler/helper.  Use one per client.
 pub struct Proto {
     client_id: Uuid,
     // current set of subscriptions
-    subscriptions: Vec<Subscription>,
+    subscriptions: HashMap<String, Subscription>,
+    max_subs: usize,
 }
 
 impl Proto {
     pub fn new() -> Self {
         let p = Proto {
             client_id: Uuid::new_v4(),
-            subscriptions: Vec::new(),
+            subscriptions: HashMap::new(),
+            max_subs: 128,
         };
         debug!("New client: {:?}", p.client_id);
         p
@@ -31,11 +34,11 @@ impl Proto {
         info!("Parse result: {:?}", parse_type(cmd));
     }
 
-    pub fn subscribe(s: Subscription) {
+    pub fn subscribe(&mut self, s: Subscription) {
         unimplemented!();
     }
 
-    pub fn unsubscribe(c: Close) {
+    pub fn unsubscribe(&mut self, c: Close) {
         unimplemented!();
     }
 }
