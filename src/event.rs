@@ -5,17 +5,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Event {
-    #[serde(deserialize_with = "u32_from_string")]
-    id: u32,
-    #[serde(deserialize_with = "u32_from_string")]
-    pubkey: u32,
-    created_at: u64,
-    kind: u8,
+    pub(crate) id: String,
+    pub(crate) pubkey: String,
+    pub(crate) created_at: u64,
+    pub(crate) kind: u8,
     #[serde(deserialize_with = "tag_from_string")]
-    tags: Vec<Vec<String>>,
-    content: String,
-    #[serde(deserialize_with = "u64_from_string")]
-    sig: u64,
+    pub(crate) tags: Vec<Vec<String>>,
+    pub(crate) content: String,
+    pub(crate) sig: String,
 }
 
 type Tag = Vec<Vec<String>>;
@@ -66,13 +63,13 @@ mod tests {
     use super::*;
     fn simple_event() -> Event {
         super::Event {
-            id: 0,
-            pubkey: 0,
+            id: "0".to_owned(),
+            pubkey: "0".to_owned(),
             created_at: 0,
             kind: 0,
             tags: vec![],
             content: "".to_owned(),
-            sig: 0,
+            sig: "0".to_owned(),
         }
     }
 
@@ -80,7 +77,7 @@ mod tests {
     fn event_creation() {
         // create an event
         let event = simple_event();
-        assert_eq!(event.id, 0);
+        assert_eq!(event.id, "0");
     }
 
     #[test]
@@ -88,7 +85,7 @@ mod tests {
         // serialize an event to JSON string
         let event = simple_event();
         let j = serde_json::to_string(&event)?;
-        assert_eq!(j, "{\"id\":0,\"pubkey\":0,\"created_at\":0,\"kind\":0,\"tags\":[],\"content\":\"\",\"sig\":0}");
+        assert_eq!(j, "{\"id\":\"0\",\"pubkey\":\"0\",\"created_at\":0,\"kind\":0,\"tags\":[],\"content\":\"\",\"sig\":\"0\"}");
         Ok(())
     }
 
@@ -109,7 +106,7 @@ mod tests {
             ],
         ];
         let j = serde_json::to_string(&event)?;
-        assert_eq!(j, "{\"id\":0,\"pubkey\":0,\"created_at\":0,\"kind\":0,\"tags\":[[\"e\",\"xxxx\",\"wss://example.com\"],[\"p\",\"yyyyy\",\"wss://example.com:3033\"]],\"content\":\"\",\"sig\":0}");
+        assert_eq!(j, "{\"id\":\"0\",\"pubkey\":\"0\",\"created_at\":0,\"kind\":0,\"tags\":[[\"e\",\"xxxx\",\"wss://example.com\"],[\"p\",\"yyyyy\",\"wss://example.com:3033\"]],\"content\":\"\",\"sig\":\"0\"}");
         Ok(())
     }
 

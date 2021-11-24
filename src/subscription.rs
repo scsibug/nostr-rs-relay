@@ -97,15 +97,27 @@ impl Subscription {
                 return true;
             }
         }
+        return false;
     }
 }
 
 impl ReqFilter {
     pub fn interested_in_event(&self, event: &Event) -> bool {
         // determine if all populated fields in this filter match the provided event.
-
-        todo!();
-        true
+        // a filter matches an event if all the populated fields match.
+        // Iterate through each filter field, return false if the field exists and doesn't match the event.
+        if !self.id.as_ref().map(|v| v == &event.id).unwrap_or(true) {
+            false
+        } else if !self
+            .author
+            .as_ref()
+            .map(|v| v == &event.pubkey)
+            .unwrap_or(true)
+        {
+            false
+        } else {
+            true
+        }
     }
 }
 
