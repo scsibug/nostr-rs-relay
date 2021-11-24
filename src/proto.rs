@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::event;
+use crate::{event, request};
 use log::{debug, info};
 use uuid::Uuid;
 
@@ -39,6 +39,7 @@ pub enum NostrRawMessage {
 #[derive(PartialEq, Debug)]
 pub enum NostrRequest {
     Event(event::Event),
+    Subscription(request::Subscription),
 }
 
 // Wrap the message in the expected request type
@@ -60,7 +61,10 @@ pub fn parse_type(msg: String) -> Result<NostrRequest> {
     let typ = msg_type_wrapper(msg)?;
     match typ {
         NostrRawMessage::Event(_) => Err(Error::EventParseFailed),
-        NostrRawMessage::Req(_) => Err(Error::ReqParseFailed),
+        NostrRawMessage::Req(m) => {
+            let s = request::Subscription::parse(&m)?;
+            Ok(NostrRequest::Subscription(s))
+        }
         NostrRawMessage::Close(_) => Err(Error::CloseParseFailed),
     }
 }

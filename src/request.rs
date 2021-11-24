@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 //use serde_json::json;
 //use serde_json::Result;
@@ -78,11 +78,12 @@ impl<'de> Deserialize<'de> for Subscription {
         })
     }
 }
-// impl Subscription {
-//     pub fn parse(json: &str) -> Result<Subscription> {
-//         use serde to parse the ReqCmd, and then extract elements
-//     }
-// }
+
+impl Subscription {
+    pub fn parse(json: &str) -> Result<Subscription> {
+        serde_json::from_str(json).map_err(|e| Error::JsonParseFailed(e))
+    }
+}
 
 #[cfg(test)]
 mod tests {
