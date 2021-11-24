@@ -61,10 +61,9 @@ pub fn parse_type(msg: String) -> Result<NostrRequest> {
     let typ = msg_type_wrapper(msg)?;
     match typ {
         NostrRawMessage::Event(_) => Err(Error::EventParseFailed),
-        NostrRawMessage::Req(m) => {
-            let s = request::Subscription::parse(&m)?;
-            Ok(NostrRequest::Subscription(s))
-        }
+        NostrRawMessage::Req(m) => Ok(NostrRequest::Subscription(request::Subscription::parse(
+            &m,
+        )?)),
         NostrRawMessage::Close(_) => Err(Error::CloseParseFailed),
     }
 }
