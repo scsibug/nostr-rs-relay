@@ -133,6 +133,8 @@ mod tests {
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
+        let first_filter = s.filters.get(0).unwrap();
+        assert_eq!(first_filter.author, Some("test-author-id".to_owned()));
         Ok(())
     }
 }
