@@ -1,17 +1,22 @@
+use crate::close::Close;
 use crate::error::{Error, Result};
-use crate::{close, event, subscription};
+use crate::event::Event;
+use crate::subscription::Subscription;
 use log::{debug, info};
 use uuid::Uuid;
 
 // A protocol handler/helper.  Use one per client.
 pub struct Proto {
     client_id: Uuid,
+    // current set of subscriptions
+    subscriptions: Vec<Subscription>,
 }
 
 impl Proto {
     pub fn new() -> Self {
         let p = Proto {
             client_id: Uuid::new_v4(),
+            subscriptions: Vec::new(),
         };
         debug!("New client: {:?}", p.client_id);
         p
@@ -25,33 +30,41 @@ impl Proto {
         // check what kind of message
         info!("Parse result: {:?}", parse_type(cmd));
     }
+
+    pub fn subscribe(s: Subscription) {
+        unimplemented!();
+    }
+
+    pub fn unsubscribe(c: Close) {
+        unimplemented!();
+    }
 }
 
 // A raw message with the expected type
 #[derive(PartialEq, Debug)]
 pub enum NostrRawMessage {
-    Ev(String),
-    Sub(String),
-    Close(String),
+    EvRaw(String),
+    SubRaw(String),
+    CloseRaw(String),
 }
 
 // A fully parsed request
 #[derive(PartialEq, Debug)]
 pub enum NostrRequest {
-    Ev(event::Event),
-    Sub(subscription::Subscription),
-    Close(close::Close),
+    EvReq(Event),
+    SubReq(Subscription),
+    CloseReq(Close),
 }
 
 // Wrap the message in the expected request type
 fn msg_type_wrapper(msg: String) -> Result<NostrRawMessage> {
     // check prefix.
     if msg.starts_with(r#"["EVENT","#) {
-        Ok(NostrRawMessage::Ev(msg))
+        Ok(NostrRawMessage::EvRaw(msg))
     } else if msg.starts_with(r#"["REQ","#) {
-        Ok(NostrRawMessage::Sub(msg))
+        Ok(NostrRawMessage::SubRaw(msg))
     } else if msg.starts_with(r#"["CLOSE","#) {
-        Ok(NostrRawMessage::Close(msg))
+        Ok(NostrRawMessage::CloseRaw(msg))
     } else {
         Err(Error::CommandNotFound)
     }
@@ -61,9 +74,9 @@ pub fn parse_type(msg: String) -> Result<NostrRequest> {
     // turn this raw string into a parsed request
     let typ = msg_type_wrapper(msg)?;
     match typ {
-        NostrRawMessage::Ev(_) => Err(Error::EventParseFailed),
-        NostrRawMessage::Sub(m) => Ok(NostrRequest::Sub(subscription::Subscription::parse(&m)?)),
-        NostrRawMessage::Close(m) => Ok(NostrRequest::Close(close::Close::parse(&m)?)),
+        NostrRawMessage::EvRaw(_) => Err(Error::EventParseFailed),
+        NostrRawMessage::SubRaw(m) => Ok(NostrRequest::SubReq(Subscription::parse(&m)?)),
+        NostrRawMessage::CloseRaw(m) => Ok(NostrRequest::CloseReq(Close::parse(&m)?)),
     }
 }
 
