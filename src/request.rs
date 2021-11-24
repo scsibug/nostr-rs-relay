@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use serde::{Deserialize, Deserializer, Serialize};
 //use serde_json::json;
 //use serde_json::Result;
@@ -17,6 +17,7 @@ pub struct Subscription {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ReqFilter {
     id: Option<String>,
     author: Option<String>,
@@ -34,35 +35,49 @@ impl<'de> Deserialize<'de> for Subscription {
     where
         D: Deserializer<'de>,
     {
-        let r: ReqCmd = Deserialize::deserialize(deserializer)?;
-        let elems = r.cmds;
-        // ensure we have at least 3 fields
-        if elems.len() < 3 {
-            Err(serde::de::Error::custom("not enough fields"))
-        } else {
-            // divide into req/sub-id vector, and filter vector
-            let (header, filter_strs) = elems.split_at(2);
-            let req_cmd = header.get(0).unwrap();
-            let sub_id = header.get(1).unwrap();
-            if req_cmd != "REQ" {
-                return Err(serde::de::Error::custom("missing REQ command"));
-            }
-            let mut filters = vec![];
-            for e in filter_strs.iter() {
-                let des_res = serde_json::from_str::<ReqFilter>(e);
-                match des_res {
-                    Ok(f) => filters.push(f),
-                    Err(_) => return Err(serde::de::Error::custom("could not parse filter")),
-                }
-            }
-            Ok(Subscription {
-                id: sub_id.to_owned(),
-                filters,
-            })
+        let mut v: serde_json::Value = Deserialize::deserialize(deserializer)?;
+        // this shoud be a 3-or-more element array.
+        // verify the first element is a String, REQ
+        // get the subscription from the second element.
+        // convert each of the remaining objects into filters
+
+        // check for array
+        let va = v
+            .as_array_mut()
+            .ok_or(serde::de::Error::custom("not array"))?;
+
+        // check length
+        if va.len() < 3 {
+            return Err(serde::de::Error::custom("not enough fields"));
         }
+        let mut i = va.into_iter();
+        // get command ("REQ") and ensure it is a string
+        let req_cmd_str: serde_json::Value = i.next().unwrap().take();
+        let req = req_cmd_str.as_str().ok_or(serde::de::Error::custom(
+            "first element of request was not a string",
+        ))?;
+        if req != "REQ" {
+            return Err(serde::de::Error::custom("missing REQ command"));
+        }
+
+        // ensure sub id is a string
+        let sub_id_str: serde_json::Value = i.next().unwrap().take();
+        let sub_id = sub_id_str
+            .as_str()
+            .ok_or(serde::de::Error::custom("missing subscription id"))?;
+
+        let mut filters = vec![];
+        for fv in i {
+            let f: ReqFilter = serde_json::from_value(fv.take())
+                .map_err(|_| serde::de::Error::custom("could not parse filter"))?;
+            filters.push(f);
+        }
+        Ok(Subscription {
+            id: sub_id.to_owned(),
+            filters,
+        })
     }
 }
-
 // impl Subscription {
 //     pub fn parse(json: &str) -> Result<Subscription> {
 //         use serde to parse the ReqCmd, and then extract elements
@@ -72,21 +87,20 @@ impl<'de> Deserialize<'de> for Subscription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // fn simple_req() -> Event {
-    //     super::Event {
-    //         id: 0,
-    //         pubkey: 0,
-    //         created_at: 0,
-    //         kind: 0,
-    //         tags: vec![],
-    //         content: "".to_owned(),
-    //         sig: 0,
-    //     }
-    // }
 
     #[test]
     fn empty_request_parse() -> Result<()> {
-        let raw_json = "[\"REQ\",\"some-id\",\"{}\"]";
+        let raw_json = "[\"REQ\",\"some-id\",{}]";
+        let s: Subscription = serde_json::from_str(raw_json)?;
+        assert_eq!(s.id, "some-id");
+        assert_eq!(s.filters.len(), 1);
+        assert_eq!(s.filters.get(0).unwrap().author, None);
+        Ok(())
+    }
+
+    #[test]
+    fn multi_empty_request_parse() -> Result<()> {
+        let raw_json = r#"["REQ","some-id",{}]"#;
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
@@ -109,16 +123,16 @@ mod tests {
     #[test]
     fn invalid_filter() {
         // unrecognized field in filter
-        let raw_json = "[\"REQ\",\"some-id\",\"{\"foo\": 3}\"]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"foo\": 3}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 
-    // #[test]
-    // fn author_filter() -> Result<()> {
-    //     let raw_json = "[\"REQ\",\"some-id\",\"{\"author\": \"test-author-id\"}\"]";
-    //     let s: Subscription = serde_json::from_str(raw_json)?;
-    //     assert_eq!(s.id, "some-id");
-    //     assert_eq!(s.filters.len(), 1);
-    //     Ok(())
-    // }
+    #[test]
+    fn author_filter() -> Result<()> {
+        let raw_json = "[\"REQ\",\"some-id\",{\"author\": \"test-author-id\"}]";
+        let s: Subscription = serde_json::from_str(raw_json)?;
+        assert_eq!(s.id, "some-id");
+        assert_eq!(s.filters.len(), 1);
+        Ok(())
+    }
 }
