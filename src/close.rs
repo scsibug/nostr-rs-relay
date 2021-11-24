@@ -58,4 +58,7 @@ impl Close {
     pub fn parse(json: &str) -> Result<Close> {
         serde_json::from_str(json).map_err(|e| Error::JsonParseFailed(e))
     }
+    pub fn get_id(&self) -> String {
+        self.id.clone()
+    }
 }
