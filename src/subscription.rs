@@ -204,4 +204,72 @@ mod tests {
         assert_eq!(first_filter.author, Some("test-author-id".to_owned()));
         Ok(())
     }
+
+    #[test]
+    fn interest_id_nomatch() -> Result<()> {
+        // subscription with a filter for ID
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc"}]"#)?;
+        let e = Event {
+            id: "abcde".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+        };
+        assert_eq!(s.interested_in_event(&e), false);
+        Ok(())
+    }
+
+    #[test]
+    fn interest_time_and_id() -> Result<()> {
+        // subscription with a filter for ID and time
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc", "since": 1000}]"#)?;
+        let e = Event {
+            id: "abc".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 50,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+        };
+        assert_eq!(s.interested_in_event(&e), false);
+        Ok(())
+    }
+
+    #[test]
+    fn interest_time_and_id2() -> Result<()> {
+        // subscription with a filter for ID and time
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc", "since": 1000}]"#)?;
+        let e = Event {
+            id: "abc".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 1001,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+        };
+        assert_eq!(s.interested_in_event(&e), true);
+        Ok(())
+    }
+
+    #[test]
+    fn interest_id() -> Result<()> {
+        // subscription with a filter for ID
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc"}]"#)?;
+        let e = Event {
+            id: "abc".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+        };
+        assert_eq!(s.interested_in_event(&e), true);
+        Ok(())
+    }
 }
