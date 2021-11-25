@@ -102,6 +102,22 @@ impl Subscription {
 }
 
 impl ReqFilter {
+    // check if the given author matches the query (against author and authors)
+    fn author_match(&self, author: &str) -> bool {
+        if self.author.as_ref().map(|v| v == author).unwrap_or(true) {
+            return true;
+        } else if self
+            .authors
+            .as_ref()
+            .map(|vs| vs.contains(&author.to_owned()))
+            .unwrap_or(true)
+        {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     pub fn interested_in_event(&self, event: &Event) -> bool {
         // determine if all populated fields in this filter match the provided event.
         // a filter matches an event if all the populated fields match.
@@ -115,6 +131,14 @@ impl ReqFilter {
             .unwrap_or(true)
         {
             false
+        } else if !self.kind.map(|v| v == event.kind).unwrap_or(true) {
+            false
+        } else if !self.author_match(&event.pubkey) {
+            false
+        // event: Option<String>,
+        // pubkey: Option<String>,
+        // since: Option<u64>,
+        // authors: Option<Vec<String>>,
         } else {
             true
         }
