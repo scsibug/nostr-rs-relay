@@ -122,7 +122,12 @@ impl ReqFilter {
         // determine if all populated fields in this filter match the provided event.
         // a filter matches an event if all the populated fields match.
         // Iterate through each filter field, return false if the field exists and doesn't match the event.
+        // order based on cost; id, time, kind, author, event
         if !self.id.as_ref().map(|v| v == &event.id).unwrap_or(true) {
+            false
+        } else if !self.since.map(|t| event.created_at > t).unwrap_or(true) {
+            false
+        } else if !self.kind.map(|v| v == event.kind).unwrap_or(true) {
             false
         } else if !self
             .author
@@ -130,8 +135,6 @@ impl ReqFilter {
             .map(|v| v == &event.pubkey)
             .unwrap_or(true)
         {
-            false
-        } else if !self.kind.map(|v| v == event.kind).unwrap_or(true) {
             false
         } else if !self.author_match(&event.pubkey) {
             false
@@ -142,10 +145,6 @@ impl ReqFilter {
             .unwrap_or(true)
         {
             false
-        // event: Option<String>,
-        // pubkey: Option<String>,
-        // since: Option<u64>,
-        // authors: Option<Vec<String>>,
         } else {
             true
         }
