@@ -56,6 +56,19 @@ impl Event {
     pub fn is_valid(&self) -> bool {
         false
     }
+    // check if given event is referenced in a tag
+    pub fn event_tag_match(&self, event: &str) -> bool {
+        for t in self.tags.iter() {
+            if t.len() == 2 {
+                if t.get(0).unwrap() == "#e" {
+                    if t.get(1).unwrap() == event {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 }
 
 #[cfg(test)]

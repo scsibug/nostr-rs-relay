@@ -135,6 +135,13 @@ impl ReqFilter {
             false
         } else if !self.author_match(&event.pubkey) {
             false
+        } else if !self
+            .event
+            .as_ref()
+            .map(|e| event.event_tag_match(e))
+            .unwrap_or(true)
+        {
+            false
         // event: Option<String>,
         // pubkey: Option<String>,
         // since: Option<u64>,
