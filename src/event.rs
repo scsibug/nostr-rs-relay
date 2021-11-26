@@ -26,22 +26,6 @@ where
     Ok(opt.unwrap_or_else(|| vec![]))
 }
 
-fn u32_from_string<'de, D>(deserializer: D) -> Result<u32, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let _s: String = Deserialize::deserialize(deserializer)?;
-    Ok(0)
-}
-
-fn u64_from_string<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let _s: String = Deserialize::deserialize(deserializer)?;
-    Ok(0)
-}
-
 // Goals:
 // Roundtrip from JSON-string to Event, and back to string.
 // Perform validation on an Event to ensure the id and signature are correct.

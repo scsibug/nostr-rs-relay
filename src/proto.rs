@@ -41,45 +41,24 @@ impl Proto {
 
     pub async fn process_client(&mut self) {
         while let Some(mes_res) = self.stream.next().await {
-            self.send_notice().await;
-
             match mes_res {
                 Ok(Message::Text(cmd)) => {
                     info!("Message received");
-                    let length = cmd.len();
                     debug!("Message: {}", cmd);
-                    self.stream
-                        .send(Message::Text(format!(
-                            "got your message of length {}",
-                            length
-                        )))
-                        .await
-                        .expect("send failed");
-                    // Handle this request. Everything else below is basically websocket error handling.
                     let proto_error = self.process_message(cmd);
                     match proto_error {
                         Err(_) => {
-                            self.stream
-                                .send(Message::Text(
-                                    "[\"NOTICE\", \"Failed to process message.\"]".to_owned(),
-                                ))
-                                .await
-                                .expect("send failed");
+                            self.send_notice("failed to process message.").await;
                         }
                         Ok(_) => {
                             info!("Message processed successfully");
                         }
                     }
                 }
+                // Everything else below is basically websocket error handling.
                 Ok(Message::Binary(_)) => {
                     info!("Ignoring Binary message");
-                    self.stream
-                        .send(Message::Text(
-                            "[\"NOTICE\", \"BINARY_INVALID: Binary messages are not supported.\"]"
-                                .to_owned(),
-                        ))
-                        .await
-                        .expect("send failed");
+                    self.send_notice("binary messages not supported.").await;
                 }
                 Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => debug!("Ping/Pong"),
                 Ok(Message::Close(_)) => {
@@ -93,7 +72,7 @@ impl Proto {
                         "Message size too large, disconnecting this client. ({} > {})",
                         size, max_size
                     );
-                    self.stream.send(Message::Text("[\"NOTICE\", \"MAX_EVENT_SIZE_EXCEEDED: Exceeded maximum event size for this relay.  Closing Connection.\"]".to_owned())).await.expect("send notice failed");
+                    self.send_notice("binary messages not supported.").await;
                     self.stream
                         .close(Some(CloseFrame {
                             code: CloseCode::Size,
@@ -124,8 +103,14 @@ impl Proto {
         }
     }
 
-    pub async fn send_notice(&mut self) {
-        self.stream.send(Message::Text(format!("foo"))).await;
+    // sending notice to client.  never fails.
+    pub async fn send_notice(&mut self, msg: &str) {
+        // TODO: real escaping
+        let s = msg.replace("\"", "");
+        self.stream
+            .send(Message::Text(format!("[\"NOTICE\",\"{}\"]", s)))
+            .await
+            .err();
     }
 
     // Error results will be transformed into client NOTICEs
@@ -178,6 +163,7 @@ impl Proto {
     }
 
     pub fn unsubscribe(&mut self, c: Close) {
+        // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.get_id());
         info!(
             "Removed subscription, currently have {} active subs",
