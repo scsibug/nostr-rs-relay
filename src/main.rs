@@ -1,8 +1,10 @@
 use std::{env, io::Error};
 
+//use futures::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, info, warn};
 use nostr_rs_relay::proto::Proto;
+//use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio_tungstenite::WebSocketStream;
@@ -73,6 +75,7 @@ async fn nostr_server(stream: TcpStream) {
 async fn process_client(stream: WebSocketStream<TcpStream>) {
     // get a protocol helper;
     let mut proto = Proto::new();
+    // futures::stream::Stream?
     let (mut write, mut read) = stream.split();
     // TODO: select on a timeout to kill non-responsive clients
 
@@ -91,7 +94,20 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     .await
                     .expect("send failed");
                 // Handle this request. Everything else below is basically websocket error handling.
-                proto.process_message(cmd).ok();
+                let proto_error = proto.process_message(cmd);
+                match proto_error {
+                    Err(_) => {
+                        write
+                            .send(Message::Text(
+                                "[\"NOTICE\", \"Failed to process message.\"]".to_owned(),
+                            ))
+                            .await
+                            .expect("send failed");
+                    }
+                    Ok(_) => {
+                        info!("Message processed successfully");
+                    }
+                }
             }
             Ok(Message::Binary(_)) => {
                 info!("Ignoring Binary message");

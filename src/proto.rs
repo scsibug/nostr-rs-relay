@@ -27,7 +27,7 @@ impl Proto {
         p
     }
 
-    // TODO: figure out NOTICE handling for errors here
+    // Error results will be transformed into client NOTICEs
     pub fn process_message(&mut self, cmd: String) -> Result<()> {
         info!(
             "Processing message in proto for client: {:?}",
