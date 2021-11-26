@@ -72,21 +72,19 @@ async fn nostr_server(stream: TcpStream) {
 }
 
 // Handles valid clients who have upgraded to WebSockets
-async fn process_client(stream: WebSocketStream<TcpStream>) {
+async fn process_client(mut stream: WebSocketStream<TcpStream>) {
     // get a protocol helper;
     let mut proto = Proto::new();
-    // futures::stream::Stream?
-    let (mut write, mut read) = stream.split();
     // TODO: select on a timeout to kill non-responsive clients
 
-    while let Some(mes_res) = read.next().await {
+    while let Some(mes_res) = stream.next().await {
         // as long as connection is not closed...
         match mes_res {
             Ok(Message::Text(cmd)) => {
                 info!("Message received");
                 let length = cmd.len();
                 debug!("Message: {}", cmd);
-                write
+                stream
                     .send(Message::Text(format!(
                         "got your message of length {}",
                         length
@@ -97,7 +95,7 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                 let proto_error = proto.process_message(cmd);
                 match proto_error {
                     Err(_) => {
-                        write
+                        stream
                             .send(Message::Text(
                                 "[\"NOTICE\", \"Failed to process message.\"]".to_owned(),
                             ))
@@ -111,7 +109,7 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
             }
             Ok(Message::Binary(_)) => {
                 info!("Ignoring Binary message");
-                write
+                stream
                     .send(Message::Text(
                         "[\"NOTICE\", \"BINARY_INVALID: Binary messages are not supported.\"]"
                             .to_owned(),
@@ -131,10 +129,8 @@ async fn process_client(stream: WebSocketStream<TcpStream>) {
                     "Message size too large, disconnecting this client. ({} > {})",
                     size, max_size
                 );
-                write.send(Message::Text("[\"NOTICE\", \"MAX_EVENT_SIZE_EXCEEDED: Exceeded maximum event size for this relay.  Closing Connection.\"]".to_owned())).await.expect("send notice failed");
-                write
-                    .reunite(read)
-                    .expect("reunite failed")
+                stream.send(Message::Text("[\"NOTICE\", \"MAX_EVENT_SIZE_EXCEEDED: Exceeded maximum event size for this relay.  Closing Connection.\"]".to_owned())).await.expect("send notice failed");
+                stream
                     .close(Some(CloseFrame {
                         code: CloseCode::Size,
                         reason: "Exceeded max message size".into(),
