@@ -14,10 +14,13 @@ pub enum Error {
     ConnError,
     #[error("Client write error")]
     ConnWriteError,
-    #[error("Event parse failed")]
+    #[error("EVENT parse failed")]
     EventParseFailed,
+    #[error("ClOSE message parse failed")]
+    CloseParseFailed,
     #[error("Event validation failed")]
     EventInvalid,
+    // this should be used if the JSON is invalid
     #[error("JSON parsing failed")]
     JsonParseFailed(serde_json::Error),
     #[error("WebSocket proto error")]

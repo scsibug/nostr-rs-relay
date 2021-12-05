@@ -82,9 +82,11 @@ async fn nostr_server(
                         }
                     },
                     Some(Ok(SubMsg(s))) => {
-                        info!("Sub request from client: {:?}", s);
+                        info!("Sub-open request from client: {:?}", s);
                     },
-                    Some(Ok(CloseMsg)) => {},
+                    Some(Ok(CloseMsg(c))) => {
+                        info!("Sub-close request from client: {:?}", c);
+                    },
                     None => {
                         info!("stream ended");
                         //conn_good = true;

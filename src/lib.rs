@@ -1,5 +1,6 @@
 pub mod conn;
-pub mod error;
-pub mod event;
 pub mod protostream;
+pub mod event;
 pub mod subscription;
+pub mod close;
+pub mod error;

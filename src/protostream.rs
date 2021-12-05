@@ -1,3 +1,4 @@
+use crate::close::Close;
 use crate::error::{Error, Result};
 use crate::event::EventCmd;
 use crate::subscription::Subscription;
@@ -19,7 +20,7 @@ use tungstenite::protocol::Message;
 pub enum NostrMessage {
     EventMsg(EventCmd),
     SubMsg(Subscription),
-    CloseMsg,
+    CloseMsg(Close),
 }
 
 // Either an event w/ subscription, or a notice
