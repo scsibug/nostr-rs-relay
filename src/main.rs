@@ -72,11 +72,18 @@ async fn nostr_server(
         tokio::select! {
             proto_next = nostr_stream.next() => {
                 match proto_next {
-                    Some(Ok(EventMsg(e))) => {
+                    Some(Ok(EventMsg(ec))) => {
+                        // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
-                        let _x : Result<Event> = Result::<Event>::from(e);
+                        let parsed : Result<Event> = Result::<Event>::from(ec);
+                        match parsed {
+                            Ok(_) => {info!("Successfully parsed/validated event")},
+                            Err(_) => {info!("Invalid event ignored")}
+                        }
                     },
-                    Some(Ok(SubMsg)) => {},
+                    Some(Ok(SubMsg(s))) => {
+                        info!("Sub request from client: {:?}", s);
+                    },
                     Some(Ok(CloseMsg)) => {},
                     None => {
                         info!("stream ended");

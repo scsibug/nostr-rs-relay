@@ -79,10 +79,7 @@ impl Event {
         let pubkey = schnorrsig::PublicKey::from_str(&self.pubkey).unwrap();
         let verify = secp.schnorrsig_verify(&sig, &message, &pubkey);
         match verify {
-            Ok(()) => {
-                info!("verified event");
-                true
-            }
+            Ok(()) => true,
             _ => false,
         }
     }

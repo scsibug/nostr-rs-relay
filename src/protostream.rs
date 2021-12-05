@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::event::EventCmd;
+use crate::subscription::Subscription;
 use core::pin::Pin;
 use futures::sink::Sink;
 use futures::stream::Stream;
@@ -17,7 +18,7 @@ use tungstenite::protocol::Message;
 #[serde(untagged)]
 pub enum NostrMessage {
     EventMsg(EventCmd),
-    SubMsg,
+    SubMsg(Subscription),
     CloseMsg,
 }
 
