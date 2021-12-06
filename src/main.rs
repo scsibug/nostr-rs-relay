@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use log::*;
+use nostr_rs_relay::close::Close;
 use nostr_rs_relay::conn;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
@@ -66,7 +67,7 @@ async fn nostr_server(
     //let task_queue = mpsc::channel::<NostrMessage>(16);
     // track connection state so we can break when it fails
     // Track internal client state
-    let _conn = conn::ClientConn::new();
+    let mut conn = conn::ClientConn::new();
     let mut conn_good = true;
     loop {
         tokio::select! {
@@ -77,26 +78,35 @@ async fn nostr_server(
                         // handle each type of message
                         let parsed : Result<Event> = Result::<Event>::from(ec);
                         match parsed {
-                            Ok(_) => {info!("Successfully parsed/validated event")},
+                            Ok(e) => {
+                                let id_prefix:String = e.id.chars().take(8).collect();
+                                info!("Successfully parsed/validated event: {}", id_prefix)},
                             Err(_) => {info!("Invalid event ignored")}
                         }
                     },
                     Some(Ok(SubMsg(s))) => {
-                        info!("Sub-open request from client: {:?}", s);
+                        // subscription handling consists of:
+                        // adding new subscriptions to the client conn:
+                        conn.subscribe(s).ok();
+                        // TODO: sending a request for a SQL query
                     },
-                    Some(Ok(CloseMsg(c))) => {
-                        info!("Sub-close request from client: {:?}", c);
+                    Some(Ok(CloseMsg(cc))) => {
+                        // closing a request simply removes the subscription.
+                        let parsed : Result<Close> = Result::<Close>::from(cc);
+                        match parsed {
+                            Ok(c) => {conn.unsubscribe(c);},
+                            Err(_) => {info!("Invalid command ignored");}
+                        }
                     },
                     None => {
                         info!("stream ended");
-                        //conn_good = true;
                     },
                     Some(Err(Error::ConnError)) => {
-                        info!("got connection error, disconnecting");
+                        debug!("got connection error, disconnecting");
                         conn_good = false;
-                        if conn_good {
-                            info!("Lint bug?, https://github.com/rust-lang/rust/pull/57302");
-                        }
+                       if conn_good {
+                           info!("Lint bug?, https://github.com/rust-lang/rust/pull/57302");
+                       }
                         return
                     }
                     Some(Err(e)) => {
@@ -105,7 +115,7 @@ async fn nostr_server(
                 }
             }
         }
-        if conn_good == false {
+        if !conn_good {
             break;
         }
     }

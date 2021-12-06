@@ -2,20 +2,28 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Close {
+pub struct CloseCmd {
     cmd: String,
     id: String,
 }
 
-impl Close {
-    pub fn parse(json: &str) -> Result<Close> {
-        let c: Close = serde_json::from_str(json)?; //.map_err(|e| Error::JsonParseFailed(e));
-        if c.cmd != "CLOSE" {
-            return Err(Error::CloseParseFailed);
-        }
-        return Ok(c);
-    }
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Close {
+    id: String,
+}
 
+impl From<CloseCmd> for Result<Close> {
+    fn from(cc: CloseCmd) -> Result<Close> {
+        // ensure command is correct
+        if cc.cmd != "CLOSE" {
+            return Err(Error::CommandUnknownError);
+        } else {
+            return Ok(Close { id: cc.id });
+        }
+    }
+}
+
+impl Close {
     pub fn get_id(&self) -> String {
         self.id.clone()
     }

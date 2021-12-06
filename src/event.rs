@@ -16,7 +16,7 @@ pub struct EventCmd {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Event {
-    pub(crate) id: String,
+    pub id: String,
     pub(crate) pubkey: String,
     pub(crate) created_at: u64,
     pub(crate) kind: u64,
