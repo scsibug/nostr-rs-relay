@@ -25,8 +25,10 @@ pub enum NostrMessage {
 
 // Either an event w/ subscription, or a notice
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
-enum NostrResponse {
-    Notice(String),
+pub enum NostrResponse {
+    NoticeRes(String),
+    // A subscription identifier and serialized response
+    EventRes(String, String),
 }
 
 // A Nostr protocol stream is layered on top of a Websocket stream.
@@ -84,8 +86,20 @@ impl Sink<NostrResponse> for NostrStream {
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: NostrResponse) -> Result<(), Self::Error> {
-        let res_message = serde_json::to_string(&item).expect("Could convert message to string");
-        match Pin::new(&mut self.ws_stream).start_send(Message::Text(res_message)) {
+        //let res_message = serde_json::to_string(&item).expect("Could convert message to string");
+        // create the string to send.
+        // TODO: do real escaping for both of these.  Currently output isn't correctly escaped.
+        let send_str = match item {
+            NostrResponse::NoticeRes(msg) => {
+                let s = msg.replace("\"", "");
+                format!("[\"NOTICE\",\"{}\"]", s)
+            }
+            NostrResponse::EventRes(sub, eventstr) => {
+                let subesc = sub.replace("\"", "");
+                format!("[\"EVENT\",\"{}\",{}]", subesc, eventstr)
+            }
+        };
+        match Pin::new(&mut self.ws_stream).start_send(Message::Text(send_str)) {
             Ok(()) => Ok(()),
             Err(_) => Err(Error::ConnWriteError),
         }

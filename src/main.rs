@@ -1,3 +1,4 @@
+use futures::SinkExt;
 use futures::StreamExt;
 use log::*;
 use nostr_rs_relay::close::Close;
@@ -6,6 +7,7 @@ use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
 use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
+use nostr_rs_relay::protostream::NostrResponse::*;
 use rusqlite::Result as SQLResult;
 use std::env;
 use tokio::net::{TcpListener, TcpStream};
@@ -59,7 +61,7 @@ async fn nostr_server(
 ) {
     // get a broadcast channel for clients to communicate on
     // wrap the TCP stream in a websocket.
-    let mut _bcast_rx = broadcast.subscribe();
+    let mut bcast_rx = broadcast.subscribe();
     let conn = tokio_tungstenite::accept_async(stream).await;
     let ws_stream = conn.expect("websocket handshake error");
     // a stream & sink of Nostr protocol messages
@@ -71,6 +73,26 @@ async fn nostr_server(
     let mut conn_good = true;
     loop {
         tokio::select! {
+            Ok(global_event) = bcast_rx.recv() => {
+                // ignoring closed broadcast errors, there will always be one sender available.
+                // Is there a subscription for this event?
+                let sub_name_opt = conn.get_matching_subscription(&global_event);
+                if sub_name_opt.is_none() {
+                    return;
+                } else {
+                    let sub_name = sub_name_opt.unwrap();
+                    let event_str = serde_json::to_string(&global_event);
+                    if event_str.is_ok() {
+                        info!("sub match: client: {}, sub: {}, event: {}",
+                              conn.get_client_prefix(), sub_name,
+                              global_event.get_event_id_prefix());
+                        // create an event response and send it
+                        let res = EventRes(sub_name.to_owned(),event_str.unwrap());
+                        nostr_stream.send(res).await.ok();
+                    }
+                }
+            },
+            // check if this client has a subscription
             proto_next = nostr_stream.next() => {
                 match proto_next {
                     Some(Ok(EventMsg(ec))) => {
@@ -80,7 +102,13 @@ async fn nostr_server(
                         match parsed {
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
-                                info!("Successfully parsed/validated event: {}", id_prefix)},
+                                info!("Successfully parsed/validated event: {}", id_prefix);
+                                // send this event to everyone listening.
+                                let bcast_res = broadcast.send(e);
+                                if bcast_res.is_err() {
+                                    warn!("Could not send broadcast message: {:?}", bcast_res);
+                                }
+                            },
                             Err(_) => {info!("Invalid event ignored")}
                         }
                     },

@@ -52,6 +52,11 @@ impl From<EventCmd> for Result<Event> {
 }
 
 impl Event {
+    // get short event identifer
+    pub fn get_event_id_prefix(&self) -> String {
+        self.id.chars().take(8).collect()
+    }
+
     // check if this event is valid (should be propagated, stored) based on signature.
     fn is_valid(&self) -> bool {
         // validation is performed by:

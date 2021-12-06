@@ -1,5 +1,6 @@
 use crate::close::Close;
 use crate::error::Result;
+use crate::event::Event;
 use crate::subscription::Subscription;
 use log::*;
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
 
 // state for a client connection
 pub struct ClientConn {
-    _client_id: Uuid,
+    client_id: Uuid,
     // current set of subscriptions
     subscriptions: HashMap<String, Subscription>,
     // websocket
@@ -22,10 +23,24 @@ impl ClientConn {
     pub fn new() -> Self {
         let client_id = Uuid::new_v4();
         ClientConn {
-            _client_id: client_id,
+            client_id: client_id,
             subscriptions: HashMap::new(),
             max_subs: 128,
         }
+    }
+
+    pub fn get_client_prefix(&self) -> String {
+        self.client_id.to_string().chars().take(8).collect()
+    }
+
+    // return the first subscription that matches the event.
+    pub fn get_matching_subscription(&self, e: &Event) -> Option<&str> {
+        for (id, sub) in self.subscriptions.iter() {
+            if sub.interested_in_event(e) {
+                return Some(id);
+            }
+        }
+        None
     }
 
     pub fn subscribe(&mut self, s: Subscription) -> Result<()> {
