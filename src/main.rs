@@ -24,7 +24,7 @@ fn main() -> Result<(), Error> {
     let _ = env_logger::try_init();
     let addr = env::args()
         .nth(1)
-        .unwrap_or_else(|| "0.0.0.0:8888".to_string());
+        .unwrap_or_else(|| "0.0.0.0:8080".to_string());
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
