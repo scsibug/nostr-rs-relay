@@ -9,7 +9,7 @@ pub struct CloseCmd {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Close {
-    id: String,
+    pub id: String,
 }
 
 impl From<CloseCmd> for Result<Close> {

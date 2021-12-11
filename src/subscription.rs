@@ -16,9 +16,9 @@ pub struct ReqFilter {
     pub id: Option<String>,
     pub author: Option<String>,
     pub kind: Option<u64>,
-    #[serde(rename = "e#")]
+    #[serde(rename = "#e")]
     pub event: Option<String>,
-    #[serde(rename = "p#")]
+    #[serde(rename = "#p")]
     pub pubkey: Option<String>,
     pub since: Option<u64>,
     pub authors: Option<Vec<String>>,

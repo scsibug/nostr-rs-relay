@@ -27,6 +27,14 @@ pub enum Error {
     WebsocketError(WsError),
     #[error("Command unknown")]
     CommandUnknownError,
+    #[error("SQL error")]
+    SqlError(rusqlite::Error),
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(r: rusqlite::Error) -> Self {
+        Error::SqlError(r)
+    }
 }
 
 impl From<serde_json::Error> for Error {

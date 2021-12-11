@@ -47,7 +47,6 @@ impl Stream for NostrStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // convert Message to NostrMessage
         fn convert(msg: String) -> Result<NostrMessage> {
-            debug!("Input message: {}", &msg);
             let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
             match parsed_res {
                 Ok(m) => Ok(m),

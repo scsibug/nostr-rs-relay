@@ -124,18 +124,35 @@ impl Event {
         serde_json::Value::Array(tags)
     }
 
-    // check if given event is referenced in a tag
-    pub fn event_tag_match(&self, eventid: &str) -> bool {
+    // get set of event tags
+    pub fn get_event_tags(&self) -> Vec<&str> {
+        let mut etags = vec![];
         for t in self.tags.iter() {
-            if t.len() == 2 {
-                if t.get(0).unwrap() == "#e" {
-                    if t.get(1).unwrap() == eventid {
-                        return true;
-                    }
+            if t.len() >= 2 {
+                if t.get(0).unwrap() == "e" {
+                    etags.push(&t.get(1).unwrap()[..]);
                 }
             }
         }
-        return false;
+        etags
+    }
+
+    // get set of pubkey tags
+    pub fn get_pubkey_tags(&self) -> Vec<&str> {
+        let mut ptags = vec![];
+        for t in self.tags.iter() {
+            if t.len() >= 2 {
+                if t.get(0).unwrap() == "p" {
+                    ptags.push(&t.get(1).unwrap()[..]);
+                }
+            }
+        }
+        ptags
+    }
+
+    // check if given event is referenced in a tag
+    pub fn event_tag_match(&self, eventid: &str) -> bool {
+        self.get_event_tags().contains(&eventid)
     }
 }
 
@@ -167,6 +184,21 @@ mod tests {
         let event = simple_event();
         let j = serde_json::to_string(&event)?;
         assert_eq!(j, "{\"id\":\"0\",\"pubkey\":\"0\",\"created_at\":0,\"kind\":0,\"tags\":[],\"content\":\"\",\"sig\":\"0\"}");
+        Ok(())
+    }
+
+    #[test]
+    fn empty_event_tag_match() -> Result<()> {
+        let event = simple_event();
+        assert!(!event.event_tag_match("foo"));
+        Ok(())
+    }
+
+    #[test]
+    fn single_event_tag_match() -> Result<()> {
+        let mut event = simple_event();
+        event.tags = vec![vec!["e".to_owned(), "foo".to_owned()]];
+        assert!(event.event_tag_match("foo"));
         Ok(())
     }
 
