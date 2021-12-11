@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-log = "0.4.14"
-env_logger = "0.9.0"
-tokio = { version = "1.14.0", features = ["full"] }
-futures = "0.3.18"
-futures-util = "0.3.18"
-tokio-tungstenite = "0.16.0"
-tungstenite = "0.16.0"
-thiserror = "1.0.30"
-uuid = { version = "0.8", features = ["v4"] }
+log = "^0.4"
+env_logger = "^0.9"
+tokio = { version = "^1.14", features = ["full"] }
+futures = "^0.3"
+futures-util = "^0.3"
+tokio-tungstenite = "^0.16"
+tungstenite = "^0.16"
+thiserror = "^1"
+uuid = { version = "^0.8", features = ["v4"] }
 
-bitcoin_hashes = { version = "0.9.7", features = ["serde"] }
-secp256k1 = { version = "0.20.3", features = ["rand", "rand-std", "serde", "bitcoin_hashes"] }
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.72"
-hex = "0.4.3"
-rusqlite = "0.26.1"
+bitcoin_hashes = { version = "^0.9", features = ["serde"] }
+secp256k1 = { version = "^0.20", features = ["rand", "rand-std", "serde", "bitcoin_hashes"] }
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
+hex = "^0.4"
+rusqlite = "^0.26"
