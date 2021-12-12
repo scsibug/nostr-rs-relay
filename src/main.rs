@@ -156,7 +156,10 @@ async fn nostr_server(
                                 event_tx.send(e.clone()).await.ok();
                                 client_published_event_count += 1;
                             },
-                            Err(_) => {info!("client {} sent an invalid event", cid)}
+                            Err(_) => {
+                                info!("client {} sent an invalid event", cid);
+                                nostr_stream.send(NoticeRes("event was invalid".to_owned())).await.ok();
+                            }
                         }
                     },
                     Some(Ok(SubMsg(s))) => {
@@ -166,11 +169,18 @@ async fn nostr_server(
                         // * making a channel to cancel to request later
                         // * sending a request for a SQL query
                         let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
-                        running_queries.insert(s.id.to_owned(), abandon_query_tx);
-                        // register this connection
-                        conn.subscribe(s.clone()).ok();
-                        // start a database query
-                        db::db_query(s, query_tx.clone(), abandon_query_rx).await;
+                        match conn.subscribe(s.clone()) {
+                            Ok(()) => {
+                                running_queries.insert(s.id.to_owned(), abandon_query_tx);
+                                // start a database query
+                                db::db_query(s, query_tx.clone(), abandon_query_rx).await;
+                            },
+                            Err(e) => {
+                                info!("Subscription error: {}", e);
+                                nostr_stream.send(NoticeRes(format!("{}",e))).await.ok();
+
+                            }
+                        }
                     },
                     Some(Ok(CloseMsg(cc))) => {
                         // closing a request simply removes the subscription.
@@ -187,7 +197,10 @@ async fn nostr_server(
                                 // the subscription
                                 conn.unsubscribe(c);
                             },
-                            Err(_) => {info!("invalid command ignored");}
+                            Err(_) => {
+                                info!("invalid command ignored");
+
+                            }
                         }
                     },
                     None => {

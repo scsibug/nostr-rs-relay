@@ -21,6 +21,10 @@ pub enum Error {
     CloseParseFailed,
     #[error("Event validation failed")]
     EventInvalid,
+    #[error("Subscription identifier max length exceeded")]
+    SubIdMaxLengthError,
+    #[error("Maximum concurrent subscription count reached")]
+    SubMaxExceededError,
     // this should be used if the JSON is invalid
     #[error("JSON parsing failed")]
     JsonParseFailed(serde_json::Error),

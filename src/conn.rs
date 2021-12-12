@@ -1,7 +1,9 @@
 //! Client connection state
 use crate::close::Close;
+use crate::error::Error;
 use crate::error::Result;
 use crate::event::Event;
+
 use crate::subscription::Subscription;
 use log::*;
 use std::collections::HashMap;
@@ -33,7 +35,7 @@ impl ClientConn {
         ClientConn {
             client_id,
             subscriptions: HashMap::new(),
-            max_subs: 128,
+            max_subs: 32,
         }
     }
 
@@ -65,7 +67,7 @@ impl ClientConn {
                 "ignoring sub request with excessive length: ({})",
                 sub_id_len
             );
-            return Ok(());
+            return Err(Error::SubIdMaxLengthError);
         }
         // check if an existing subscription exists, and replace if so
         if self.subscriptions.contains_key(&k) {
@@ -77,9 +79,7 @@ impl ClientConn {
 
         // check if there is room for another subscription.
         if self.subscriptions.len() >= self.max_subs {
-            // TODO: return error/notice for this
-            info!("client has reached the maximum number of unique subscriptions");
-            return Ok(());
+            return Err(Error::SubMaxExceededError);
         }
         // add subscription
         self.subscriptions.insert(k, s);
