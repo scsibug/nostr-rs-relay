@@ -67,6 +67,7 @@ CREATE INDEX IF NOT EXISTS pubkey_ref_index ON pubkey_ref(referenced_pubkey);
 /// Spawn a database writer that persists events to the SQLite store.
 pub async fn db_writer(
     mut event_rx: tokio::sync::mpsc::Receiver<Event>,
+    bcast_tx: tokio::sync::broadcast::Sender<Event>,
 ) -> tokio::task::JoinHandle<Result<()>> {
     task::spawn_blocking(move || {
         let mut conn = Connection::open_with_flags(
@@ -94,6 +95,8 @@ pub async fn db_writer(
                         info!("nothing inserted (dupe?)");
                     } else {
                         info!("persisted event: {}", event.get_event_id_prefix());
+                        // send this out to all clients
+                        bcast_tx.send(event.clone()).ok();
                     }
                 }
                 Err(err) => {
