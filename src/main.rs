@@ -1,3 +1,4 @@
+//! Server process
 use futures::SinkExt;
 use futures::StreamExt;
 use log::*;
@@ -20,7 +21,7 @@ use tokio::sync::oneshot;
 
 /// Start running a Nostr relay server.
 fn main() -> Result<(), Error> {
-    // setup logger
+    // setup logger and environment
     let _ = env_logger::try_init();
     let addr = env::args()
         .nth(1)
@@ -35,33 +36,28 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
         info!("Listening on: {}", addr);
-        // Establish global broadcast channel.  This is where all
-        // accepted events will be distributed for other connected clients.
-
-        // this needs to be large enough to accomodate any slow
-        // readers - otherwise messages will be dropped before they
-        // can be processed.  Since this is global to all connections,
-        // we can tolerate this being rather large (for 4096, the
-        // buffer itself is about 1MB).
+        // all client-submitted valid events are broadcast to every
+        // other client on this channel.  This should be large enough
+        // to accomodate slower readers (messages are dropped if
+        // clients can not keep up).
         let (bcast_tx, _) = broadcast::channel::<Event>(4096);
-        // Establish database writer channel. This needs to be
-        // accessible from sync code, which is why the broadcast
-        // cannot be reused.
+        // validated events that need to be persisted are sent to the
+        // database on via this channel.
         let (event_tx, event_rx) = mpsc::channel::<Event>(16);
-        // start the database writer.
+        // start the database writer thread.
         db::db_writer(event_rx).await;
-        // setup a broadcast channel for invoking a process shutdown
+        // establish a channel for letting all threads now about a
+        // requested server shutdown.
         let (invoke_shutdown, _) = broadcast::channel::<()>(1);
-        let shutdown_handler = invoke_shutdown.clone();
+        let ctrl_c_shutdown = invoke_shutdown.clone();
         // listen for ctrl-c interruupts
         tokio::spawn(async move {
             tokio::signal::ctrl_c().await.unwrap();
-            // Your handler here
-            info!("got ctrl-c");
-            shutdown_handler.send(()).ok();
+            info!("Shutting down due to SIGINT");
+            ctrl_c_shutdown.send(()).ok();
         });
         let mut stop_listening = invoke_shutdown.subscribe();
-        // shutdown on Ctrl-C, or accept a new connection
+        // handle new client connection requests, or SIGINT signals.
         loop {
             tokio::select! {
                 _ = stop_listening.recv() => {
@@ -81,6 +77,8 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+/// Handle new client connections.  This runs through an event loop
+/// for all client communication.
 async fn nostr_server(
     stream: TcpStream,
     broadcast: Sender<Event>,

@@ -1,11 +1,12 @@
-//! Error handling.
-
+//! Error handling
 use std::result;
 use thiserror::Error;
 use tungstenite::error::Error as WsError;
 
+/// Simple `Result` type for errors in this module
 pub type Result<T, E = Error> = result::Result<T, E>;
 
+/// Custom error type for Nostr
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Protocol parse error")]
@@ -32,18 +33,21 @@ pub enum Error {
 }
 
 impl From<rusqlite::Error> for Error {
+    /// Wrap SQL error
     fn from(r: rusqlite::Error) -> Self {
         Error::SqlError(r)
     }
 }
 
 impl From<serde_json::Error> for Error {
+    /// Wrap JSON error
     fn from(r: serde_json::Error) -> Self {
         Error::JsonParseFailed(r)
     }
 }
 
 impl From<WsError> for Error {
+    /// Wrap Websocket error
     fn from(r: WsError) -> Self {
         Error::WebsocketError(r)
     }

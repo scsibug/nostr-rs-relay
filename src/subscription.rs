@@ -1,30 +1,44 @@
-use crate::error::{Error, Result};
+//! Subscription and filter parsing
+use crate::error::Result;
 use crate::event::Event;
 use serde::{Deserialize, Deserializer, Serialize};
-//use serde_json::json;
-//use serde_json::Result;
 
+/// Subscription identifier and set of request filters
 #[derive(Serialize, PartialEq, Debug, Clone)]
 pub struct Subscription {
     pub id: String,
     pub filters: Vec<ReqFilter>,
 }
 
+/// Filter for requests
+///
+/// Corresponds to client-provided subscription request elements.  Any
+/// element can be present if it should be used in filtering, or
+/// absent ([`None`]) if it should be ignored.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ReqFilter {
+    /// Event hash
     pub id: Option<String>,
+    /// Author public key
     pub author: Option<String>,
+    /// Event kind
     pub kind: Option<u64>,
+    /// Referenced event hash
     #[serde(rename = "#e")]
     pub event: Option<String>,
+    /// Referenced public key for a petname
     #[serde(rename = "#p")]
     pub pubkey: Option<String>,
+    /// Events published after this time
     pub since: Option<u64>,
+    /// List of author public keys
     pub authors: Option<Vec<String>>,
 }
 
 impl<'de> Deserialize<'de> for Subscription {
+    /// Custom deserializer for subscriptions, which have a more
+    /// complex structure than the other message types.
     fn deserialize<D>(deserializer: D) -> Result<Subscription, D::Error>
     where
         D: Deserializer<'de>,
@@ -74,17 +88,13 @@ impl<'de> Deserialize<'de> for Subscription {
 }
 
 impl Subscription {
-    pub fn parse(json: &str) -> Result<Subscription> {
-        serde_json::from_str(json).map_err(|e| Error::JsonParseFailed(e))
-    }
+    /// Get a copy of the subscription identifier.
     pub fn get_id(&self) -> String {
         self.id.clone()
     }
-    pub fn get_filter_count(&self) -> usize {
-        self.filters.len()
-    }
+    /// Determine if this subscription matches a given [`Event`].  Any
+    /// individual filter match is sufficient.
     pub fn interested_in_event(&self, event: &Event) -> bool {
-        // loop through every filter, and return true if any match this event.
         for f in self.filters.iter() {
             if f.interested_in_event(event) {
                 return true;
@@ -95,7 +105,7 @@ impl Subscription {
 }
 
 impl ReqFilter {
-    // attempt to match against author/authors fields
+    /// Check if this filter either matches, or does not care about an author.
     fn author_match(&self, event: &Event) -> bool {
         self.authors
             .as_ref()
@@ -107,6 +117,7 @@ impl ReqFilter {
                 .map(|v| v == &event.pubkey)
                 .unwrap_or(true)
     }
+    /// Check if this filter either matches, or does not care about the event tags.
     fn event_match(&self, event: &Event) -> bool {
         self.event
             .as_ref()
@@ -114,13 +125,13 @@ impl ReqFilter {
             .unwrap_or(true)
     }
 
+    /// Check if this filter either matches, or does not care about the kind.
     fn kind_match(&self, kind: u64) -> bool {
         self.kind.map(|v| v == kind).unwrap_or(true)
     }
 
+    /// Determine if all populated fields in this filter match the provided event.
     pub fn interested_in_event(&self, event: &Event) -> bool {
-        // determine if all populated fields in this filter match the provided event.
-        // a filter matches an event if all the populated fields match.
         self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)

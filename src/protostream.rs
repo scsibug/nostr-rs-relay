@@ -1,3 +1,4 @@
+//! Nostr protocol layered over WebSocket
 use crate::close::CloseCmd;
 use crate::error::{Error, Result};
 use crate::event::EventCmd;
@@ -14,38 +15,43 @@ use tokio_tungstenite::WebSocketStream;
 use tungstenite::error::Error as WsError;
 use tungstenite::protocol::Message;
 
-// A Nostr message is either event, subscription, or close.
+/// Nostr protocol messages from a client
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum NostrMessage {
+    /// An `EVENT` message
     EventMsg(EventCmd),
+    /// A `REQ` message
     SubMsg(Subscription),
+    /// A `CLOSE` message
     CloseMsg(CloseCmd),
 }
 
-// Either an event w/ subscription, or a notice
+/// Nostr protocol messages from a relay/server
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 pub enum NostrResponse {
+    /// A `NOTICE` response
     NoticeRes(String),
-    // A subscription identifier and serialized response
+    /// An `EVENT` response, composed of the subscription identifier,
+    /// and serialized event JSON
     EventRes(String, String),
 }
 
-// A Nostr protocol stream is layered on top of a Websocket stream.
+/// A Nostr protocol stream is layered on top of a Websocket stream.
 pub struct NostrStream {
     ws_stream: WebSocketStream<TcpStream>,
 }
 
-// given a websocket, return a protocol stream
-//impl Stream<Item = Result<BasicMessage, BasicError>> + Sink<BasicResponse>
+/// Given a websocket, return a protocol stream wrapper.
 pub fn wrap_ws_in_nostr(ws: WebSocketStream<TcpStream>) -> NostrStream {
     return NostrStream { ws_stream: ws };
 }
 
+/// Implement the [`Stream`] interface to produce Nostr messages.
 impl Stream for NostrStream {
     type Item = Result<NostrMessage>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // convert Message to NostrMessage
+        /// Convert Message to NostrMessage
         fn convert(msg: String) -> Result<NostrMessage> {
             let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
             match parsed_res {
@@ -56,22 +62,22 @@ impl Stream for NostrStream {
                 }
             }
         }
-
         match Pin::new(&mut self.ws_stream).poll_next(cx) {
-            Poll::Pending => Poll::Pending,         // not ready
-            Poll::Ready(None) => Poll::Ready(None), // done
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(v)) => match v {
-                Ok(Message::Text(vs)) => Poll::Ready(Some(convert(vs))), // convert message->basicmessage
+                Ok(Message::Text(vs)) => Poll::Ready(Some(convert(vs))),
                 Ok(Message::Binary(_)) => Poll::Ready(Some(Err(Error::ProtoParseError))),
                 Ok(Message::Pong(_)) | Ok(Message::Ping(_)) => Poll::Pending,
                 Ok(Message::Close(_)) => Poll::Ready(None),
-                Err(WsError::AlreadyClosed) | Err(WsError::ConnectionClosed) => Poll::Ready(None), // done
+                Err(WsError::AlreadyClosed) | Err(WsError::ConnectionClosed) => Poll::Ready(None),
                 Err(_) => Poll::Ready(Some(Err(Error::ConnError))),
             },
         }
     }
 }
 
+/// Implement the [`Sink`] interface to produce Nostr responses.
 impl Sink<NostrResponse> for NostrStream {
     type Error = Error;
 
@@ -85,9 +91,8 @@ impl Sink<NostrResponse> for NostrStream {
     }
 
     fn start_send(mut self: Pin<&mut Self>, item: NostrResponse) -> Result<(), Self::Error> {
-        //let res_message = serde_json::to_string(&item).expect("Could convert message to string");
-        // create the string to send.
-        // TODO: do real escaping for both of these.  Currently output isn't correctly escaped.
+        // TODO: do real escaping for these - at least on NOTICE,
+        // which surely has some problems if arbitrary text is sent.
         let send_str = match item {
             NostrResponse::NoticeRes(msg) => {
                 let s = msg.replace("\"", "");

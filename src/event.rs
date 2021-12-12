@@ -1,3 +1,4 @@
+//! Event parsing and validation
 use crate::error::Error::*;
 use crate::error::Result;
 use bitcoin_hashes::{sha256, Hash};
@@ -8,12 +9,14 @@ use serde_json::value::Value;
 use serde_json::Number;
 use std::str::FromStr;
 
+/// Event command in network format
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct EventCmd {
     cmd: String, // expecting static "EVENT"
     event: Event,
 }
 
+/// Event parsed
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Event {
     pub id: String,
@@ -21,15 +24,16 @@ pub struct Event {
     pub(crate) created_at: u64,
     pub(crate) kind: u64,
     #[serde(deserialize_with = "tag_from_string")]
-    // TODO: array-of-arrays may need to be more general than a string container
+    // NOTE: array-of-arrays may need to be more general than a string container
     pub(crate) tags: Vec<Vec<String>>,
     pub(crate) content: String,
     pub(crate) sig: String,
 }
 
+/// Simple tag type for array of array of strings.
 type Tag = Vec<Vec<String>>;
 
-// handle a default value (empty vec) for null tags
+/// Deserializer that ensures we always have a [`Tag`].
 fn tag_from_string<'de, D>(deserializer: D) -> Result<Tag, D::Error>
 where
     D: Deserializer<'de>,
@@ -38,6 +42,7 @@ where
     Ok(opt.unwrap_or_else(|| vec![]))
 }
 
+/// Convert network event to parsed/validated event.
 impl From<EventCmd> for Result<Event> {
     fn from(ec: EventCmd) -> Result<Event> {
         // ensure command is correct
@@ -52,12 +57,12 @@ impl From<EventCmd> for Result<Event> {
 }
 
 impl Event {
-    // get short event identifer
+    /// Create a short event identifier, suitable for logging.
     pub fn get_event_id_prefix(&self) -> String {
         self.id.chars().take(8).collect()
     }
 
-    // check if this event is valid (should be propagated, stored) based on signature.
+    /// Check if this event has a valid signature.
     fn is_valid(&self) -> bool {
         // validation is performed by:
         // * parsing JSON string into event fields
@@ -89,7 +94,7 @@ impl Event {
         }
     }
 
-    // convert event to canonical representation for signing
+    /// Convert event to canonical representation for signing.
     fn to_canonical(&self) -> Option<String> {
         // create a JsonValue for each event element
         let mut c: Vec<Value> = vec![];
@@ -110,6 +115,8 @@ impl Event {
         c.push(Value::String(self.content.to_owned()));
         serde_json::to_string(&Value::Array(c)).ok()
     }
+
+    /// Convert tags to a canonical form for signing.
     fn tags_to_canonical(&self) -> Value {
         let mut tags = Vec::<Value>::new();
         // iterate over self tags,
@@ -124,7 +131,7 @@ impl Event {
         serde_json::Value::Array(tags)
     }
 
-    // get set of event tags
+    /// Get a list of event tags.
     pub fn get_event_tags(&self) -> Vec<&str> {
         let mut etags = vec![];
         for t in self.tags.iter() {
@@ -137,7 +144,7 @@ impl Event {
         etags
     }
 
-    // get set of pubkey tags
+    /// Get a list of pubkey/petname tags.
     pub fn get_pubkey_tags(&self) -> Vec<&str> {
         let mut ptags = vec![];
         for t in self.tags.iter() {
@@ -150,7 +157,7 @@ impl Event {
         ptags
     }
 
-    // check if given event is referenced in a tag
+    /// Check if a given event is referenced in an event tag.
     pub fn event_tag_match(&self, eventid: &str) -> bool {
         self.get_event_tags().contains(&eventid)
     }
