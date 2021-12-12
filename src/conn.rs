@@ -61,26 +61,30 @@ impl ClientConn {
         // prevent arbitrarily long subscription identifiers from
         // being used.
         if sub_id_len > MAX_SUBSCRIPTION_ID_LEN {
-            info!("Dropping subscription with huge ({}) length", sub_id_len);
+            info!(
+                "ignoring sub request with excessive length: ({})",
+                sub_id_len
+            );
             return Ok(());
         }
         // check if an existing subscription exists, and replace if so
         if self.subscriptions.contains_key(&k) {
             self.subscriptions.remove(&k);
             self.subscriptions.insert(k, s);
-            debug!("Replaced existing subscription");
+            debug!("replaced existing subscription");
             return Ok(());
         }
 
         // check if there is room for another subscription.
         if self.subscriptions.len() >= self.max_subs {
-            info!("Client has reached the maximum number of unique subscriptions");
+            // TODO: return error/notice for this
+            info!("client has reached the maximum number of unique subscriptions");
             return Ok(());
         }
         // add subscription
         self.subscriptions.insert(k, s);
-        info!(
-            "Registered new subscription, currently have {} active subs",
+        debug!(
+            "registered new subscription, currently have {} active subs",
             self.subscriptions.len()
         );
         Ok(())
@@ -90,8 +94,8 @@ impl ClientConn {
     pub fn unsubscribe(&mut self, c: Close) {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
-        info!(
-            "Removed subscription, currently have {} active subs",
+        debug!(
+            "removed subscription, currently have {} active subs",
             self.subscriptions.len()
         );
     }

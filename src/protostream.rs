@@ -57,7 +57,7 @@ impl Stream for NostrStream {
             match parsed_res {
                 Ok(m) => Ok(m),
                 Err(e) => {
-                    debug!("Proto parse error: {:?}", e);
+                    debug!("proto parse error: {:?}", e);
                     Err(Error::ProtoParseError)
                 }
             }

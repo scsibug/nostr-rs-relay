@@ -73,12 +73,12 @@ pub async fn db_writer(
             Path::new(DB_FILE),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
-        info!("Opened database for writing");
+        info!("opened database for writing");
         // TODO: determine if we need to execute the init script.
         // TODO: check database app id / version before proceeding.
         match conn.execute_batch(INIT_SQL) {
-            Ok(()) => info!("init completed"),
-            Err(err) => info!("update failed: {}", err),
+            Ok(()) => info!("database pragma/schema initialized and ready"),
+            Err(err) => error!("update failed: {}", err),
         }
         loop {
             // call blocking read on channel
@@ -88,13 +88,12 @@ pub async fn db_writer(
                 break;
             }
             let event = next_event.unwrap();
-            info!("Got event to write: {}", event.get_event_id_prefix());
             match write_event(&mut conn, &event) {
                 Ok(updated) => {
                     if updated == 0 {
                         info!("nothing inserted (dupe?)");
                     } else {
-                        info!("persisted new event");
+                        info!("persisted event: {}", event.get_event_id_prefix());
                     }
                 }
                 Err(err) => {
@@ -251,7 +250,7 @@ fn query_from_sub(sub: &Subscription) -> String {
         query.push_str(" WHERE ");
         query.push_str(&filter_clauses.join(" OR "));
     }
-    debug!("Query: {}", query);
+    debug!("query string: {}", query);
     query
 }
 
@@ -270,8 +269,8 @@ pub async fn db_query(
         let conn =
             Connection::open_with_flags(Path::new(DB_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .unwrap();
-        info!("Opened database for reading");
-        info!("Going to query for: {:?}", sub);
+        debug!("opened database for reading");
+        debug!("going to query for: {:?}", sub);
         // generate SQL query
         let q = query_from_sub(&sub);
         // execute the query
