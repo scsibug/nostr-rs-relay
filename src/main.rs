@@ -58,6 +58,8 @@ fn main() -> Result<(), Error> {
             info!("shutting down due to SIGINT");
             ctrl_c_shutdown.send(()).ok();
         });
+        // track unique client connection count
+        let mut client_accept_count: usize = 0;
         let mut stop_listening = invoke_shutdown.subscribe();
         // handle new client connection requests, or SIGINT signals.
         loop {
@@ -66,6 +68,8 @@ fn main() -> Result<(), Error> {
                     break;
                 }
                 Ok((stream, _)) = listener.accept() => {
+                    client_accept_count += 1;
+                    info!("creating new connection for client #{}",client_accept_count);
                     tokio::spawn(nostr_server(
                         stream,
                         bcast_tx.clone(),
