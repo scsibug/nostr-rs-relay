@@ -22,9 +22,9 @@ impl From<CloseCmd> for Result<Close> {
     fn from(cc: CloseCmd) -> Result<Close> {
         // ensure command is correct
         if cc.cmd != "CLOSE" {
-            return Err(Error::CommandUnknownError);
+            Err(Error::CommandUnknownError)
         } else {
-            return Ok(Close { id: cc.id });
+            Ok(Close { id: cc.id })
         }
     }
 }

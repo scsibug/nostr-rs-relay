@@ -39,7 +39,7 @@ where
     D: Deserializer<'de>,
 {
     let opt = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_else(|| vec![]))
+    Ok(opt.unwrap_or_else(Vec::new))
 }
 
 /// Convert network event to parsed/validated event.
@@ -47,11 +47,11 @@ impl From<EventCmd> for Result<Event> {
     fn from(ec: EventCmd) -> Result<Event> {
         // ensure command is correct
         if ec.cmd != "EVENT" {
-            return Err(CommandUnknownError);
+            Err(CommandUnknownError)
         } else if ec.event.is_valid() {
-            return Ok(ec.event);
+            Ok(ec.event)
         } else {
-            return Err(EventInvalid);
+            Err(EventInvalid)
         }
     }
 }
@@ -76,7 +76,7 @@ impl Event {
         }
         let c = c_opt.unwrap();
         // * compute the sha256sum.
-        let digest: sha256::Hash = sha256::Hash::hash(&c.as_bytes());
+        let digest: sha256::Hash = sha256::Hash::hash(c.as_bytes());
         let hex_digest = format!("{:x}", digest);
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
@@ -88,10 +88,7 @@ impl Event {
         let message = secp256k1::Message::from(digest);
         let pubkey = schnorrsig::PublicKey::from_str(&self.pubkey).unwrap();
         let verify = secp.schnorrsig_verify(&sig, &message, &pubkey);
-        match verify {
-            Ok(()) => true,
-            _ => false,
-        }
+        matches!(verify, Ok(()))
     }
 
     /// Convert event to canonical representation for signing.
@@ -99,7 +96,7 @@ impl Event {
         // create a JsonValue for each event element
         let mut c: Vec<Value> = vec![];
         // id must be set to 0
-        let id = Number::from(0 as u64);
+        let id = Number::from(0_u64);
         c.push(serde_json::Value::Number(id));
         // public key
         c.push(Value::String(self.pubkey.to_owned()));
@@ -135,10 +132,8 @@ impl Event {
     pub fn get_event_tags(&self) -> Vec<&str> {
         let mut etags = vec![];
         for t in self.tags.iter() {
-            if t.len() >= 2 {
-                if t.get(0).unwrap() == "e" {
-                    etags.push(&t.get(1).unwrap()[..]);
-                }
+            if t.len() >= 2 && t.get(0).unwrap() == "e" {
+                etags.push(&t.get(1).unwrap()[..]);
             }
         }
         etags
@@ -148,10 +143,8 @@ impl Event {
     pub fn get_pubkey_tags(&self) -> Vec<&str> {
         let mut ptags = vec![];
         for t in self.tags.iter() {
-            if t.len() >= 2 {
-                if t.get(0).unwrap() == "p" {
-                    ptags.push(&t.get(1).unwrap()[..]);
-                }
+            if t.len() >= 2 && t.get(0).unwrap() == "p" {
+                ptags.push(&t.get(1).unwrap()[..]);
             }
         }
         ptags

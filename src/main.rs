@@ -177,12 +177,9 @@ async fn nostr_server(
                         match parsed {
                             Ok(c) => {
                                 let stop_tx = running_queries.remove(&c.id);
-                                match stop_tx {
-                                    Some(tx) => {
-                                        info!("Removing query, telling DB to abandon query");
-                                        tx.send(()).ok();
-                                    },
-                                    None => {}
+                                if let Some(tx) = stop_tx {
+                                    info!("Removing query, telling DB to abandon query");
+                                    tx.send(()).ok();
                                 }
                                 conn.unsubscribe(c);
                             },

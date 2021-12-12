@@ -20,6 +20,12 @@ pub struct ClientConn {
     max_subs: usize,
 }
 
+impl Default for ClientConn {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClientConn {
     /// Create a new, empty connection state.
     pub fn new() -> Self {
@@ -77,7 +83,7 @@ impl ClientConn {
             "Registered new subscription, currently have {} active subs",
             self.subscriptions.len()
         );
-        return Ok(());
+        Ok(())
     }
 
     /// Remove the subscription for this connection.

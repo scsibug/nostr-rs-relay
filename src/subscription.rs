@@ -52,18 +52,18 @@ impl<'de> Deserialize<'de> for Subscription {
         // check for array
         let va = v
             .as_array_mut()
-            .ok_or(serde::de::Error::custom("not array"))?;
+            .ok_or_else(|| serde::de::Error::custom("not array"))?;
 
         // check length
         if va.len() < 3 {
             return Err(serde::de::Error::custom("not enough fields"));
         }
-        let mut i = va.into_iter();
+        let mut i = va.iter_mut();
         // get command ("REQ") and ensure it is a string
         let req_cmd_str: serde_json::Value = i.next().unwrap().take();
-        let req = req_cmd_str.as_str().ok_or(serde::de::Error::custom(
-            "first element of request was not a string",
-        ))?;
+        let req = req_cmd_str
+            .as_str()
+            .ok_or_else(|| serde::de::Error::custom("first element of request was not a string"))?;
         if req != "REQ" {
             return Err(serde::de::Error::custom("missing REQ command"));
         }
@@ -72,7 +72,7 @@ impl<'de> Deserialize<'de> for Subscription {
         let sub_id_str: serde_json::Value = i.next().unwrap().take();
         let sub_id = sub_id_str
             .as_str()
-            .ok_or(serde::de::Error::custom("missing subscription id"))?;
+            .ok_or_else(|| serde::de::Error::custom("missing subscription id"))?;
 
         let mut filters = vec![];
         for fv in i {
@@ -100,7 +100,7 @@ impl Subscription {
                 return true;
             }
         }
-        return false;
+        false
     }
 }
 
@@ -135,9 +135,8 @@ impl ReqFilter {
         self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)
-            && self.author_match(&event)
-            && self.event_match(&event)
-            && true // match if all other fields are absent
+            && self.author_match(event)
+            && self.event_match(event)
     }
 }
 

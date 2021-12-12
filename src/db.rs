@@ -130,7 +130,7 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     let ev_id = tx.last_insert_rowid();
     // add all event tags into the event_ref table
     let etags = e.get_event_tags();
-    if etags.len() > 0 {
+    if !etags.is_empty() {
         for etag in etags.iter() {
             tx.execute(
                 "INSERT OR IGNORE INTO event_ref (event_id, referenced_event) VALUES (?1, ?2)",
@@ -140,7 +140,7 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     }
     // add all event tags into the pubkey_ref table
     let ptags = e.get_pubkey_tags();
-    if ptags.len() > 0 {
+    if !ptags.is_empty() {
         for ptag in ptags.iter() {
             tx.execute(
                 "INSERT OR IGNORE INTO event_ref (event_id, referenced_pubkey) VALUES (?1, ?2)",
@@ -238,7 +238,7 @@ fn query_from_sub(sub: &Subscription) -> String {
             filter_components.push(created_clause);
         }
         // combine all clauses, and add to filter_clauses
-        if filter_components.len() > 0 {
+        if !filter_components.is_empty() {
             let mut fc = "( ".to_owned();
             fc.push_str(&filter_components.join(" AND "));
             fc.push_str(" )");
@@ -247,7 +247,7 @@ fn query_from_sub(sub: &Subscription) -> String {
     }
 
     // combine all filters with OR clauses, if any exist
-    if filter_clauses.len() > 0 {
+    if !filter_clauses.is_empty() {
         query.push_str(" WHERE ");
         query.push_str(&filter_clauses.join(" OR "));
     }

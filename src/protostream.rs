@@ -44,7 +44,7 @@ pub struct NostrStream {
 
 /// Given a websocket, return a protocol stream wrapper.
 pub fn wrap_ws_in_nostr(ws: WebSocketStream<TcpStream>) -> NostrStream {
-    return NostrStream { ws_stream: ws };
+    NostrStream { ws_stream: ws }
 }
 
 /// Implement the [`Stream`] interface to produce Nostr messages.
