@@ -245,6 +245,9 @@ fn query_from_sub(sub: &Subscription) -> String {
             fc.push_str(&filter_components.join(" AND "));
             fc.push_str(" )");
             filter_clauses.push(fc);
+        } else {
+            // if there are no filter clauses, we should return everything
+            filter_clauses.push(" 1=1 ".to_owned());
         }
     }
 
