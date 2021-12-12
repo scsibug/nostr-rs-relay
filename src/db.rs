@@ -145,7 +145,7 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     if !ptags.is_empty() {
         for ptag in ptags.iter() {
             tx.execute(
-                "INSERT OR IGNORE INTO event_ref (event_id, referenced_pubkey) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO pubkey_ref (event_id, referenced_pubkey) VALUES (?1, ?2)",
                 params![ev_id, hex::decode(&ptag).ok()],
             )?;
         }
