@@ -15,6 +15,9 @@ The provided `Dockerfile` will compile and build the server application.  Use a 
 ```console
 $ docker build -t nostr-rs-relay .
 $ docker run -p 8090:8080 --mount src=$(pwd)/nostr_data,target=/usr/src/app/db,type=bind nostr-rs-relay
+[2021-12-12T04:20:47Z INFO  nostr_rs_relay] Listening on: 0.0.0.0:8080
+[2021-12-12T04:20:47Z INFO  nostr_rs_relay::db] Opened database for writing
+[2021-12-12T04:20:47Z INFO  nostr_rs_relay::db] init completed
 ```
 
 Use a `nostr` client such as [`noscl`](https://github.com/fiatjaf/noscl) to publish and query events.
