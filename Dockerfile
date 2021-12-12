@@ -14,6 +14,7 @@ RUN cargo build --release
 
 FROM debian:buster-slim
 ARG APP=/usr/src/app
+ARG APP_DATA=/usr/src/app/db
 
 RUN apt-get update \
     && apt-get install -y ca-certificates tzdata sqlite3 \
@@ -26,15 +27,17 @@ ENV TZ=Etc/UTC \
 
 RUN groupadd $APP_USER \
     && useradd -g $APP_USER $APP_USER \
-    && mkdir -p ${APP}
+    && mkdir -p ${APP} \
+    && mkdir -p ${APP_DATA}
 
 COPY --from=builder /nostr-rs-relay/target/release/nostr-rs-relay ${APP}/nostr-rs-relay
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 
 USER $APP_USER
-WORKDIR ${APP}
+WORKDIR ${APP_DATA}
 
 ENV RUST_LOG=info
 
-CMD ["./nostr-rs-relay"]
+
+CMD ["../nostr-rs-relay"]
