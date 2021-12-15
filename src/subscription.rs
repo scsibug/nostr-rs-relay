@@ -105,23 +105,36 @@ impl Subscription {
 }
 
 impl ReqFilter {
-    /// Check if this filter either matches, or does not care about an author.
-    fn author_match(&self, event: &Event) -> bool {
+    /// Check for a match within the authors list.
+    // TODO: Ambiguity; what if the array is empty?  Should we
+    // consider that the same as null?
+    fn authors_match(&self, event: &Event) -> bool {
         self.authors
             .as_ref()
             .map(|vs| vs.contains(&event.pubkey.to_owned()))
             .unwrap_or(true)
-            && self
-                .author
-                .as_ref()
-                .map(|v| v == &event.pubkey)
-                .unwrap_or(true)
+    }
+    /// Check for a specific author match
+    fn author_match(&self, event: &Event) -> bool {
+        self.author
+            .as_ref()
+            .map(|v| v == &event.pubkey)
+            .unwrap_or(true)
     }
     /// Check if this filter either matches, or does not care about the event tags.
     fn event_match(&self, event: &Event) -> bool {
         self.event
             .as_ref()
             .map(|t| event.event_tag_match(t))
+            .unwrap_or(true)
+    }
+
+    /// Check if this filter either matches, or does not care about
+    /// the pubkey/petname tags.
+    fn pubkey_match(&self, event: &Event) -> bool {
+        self.pubkey
+            .as_ref()
+            .map(|t| event.pubkey_tag_match(t))
             .unwrap_or(true)
     }
 
@@ -136,6 +149,8 @@ impl ReqFilter {
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)
             && self.author_match(event)
+            && self.authors_match(event)
+            && self.pubkey_match(event)
             && self.event_match(event)
     }
 }

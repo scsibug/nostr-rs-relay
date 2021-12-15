@@ -45,15 +45,15 @@ impl ClientConn {
         self.client_id.to_string().chars().take(8).collect()
     }
 
-    /// Find the first subscription identifier that matches the event,
-    /// if any do.
-    pub fn get_matching_subscription(&self, e: &Event) -> Option<&str> {
+    /// Find all matching subscriptions.
+    pub fn get_matching_subscriptions(&self, e: &Event) -> Vec<&str> {
+        let mut v: Vec<&str> = vec![];
         for (id, sub) in self.subscriptions.iter() {
             if sub.interested_in_event(e) {
-                return Some(id);
+                v.push(id);
             }
         }
-        None
+        return v;
     }
 
     /// Add a new subscription for this connection.

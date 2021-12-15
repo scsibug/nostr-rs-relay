@@ -154,6 +154,11 @@ impl Event {
     pub fn event_tag_match(&self, eventid: &str) -> bool {
         self.get_event_tags().contains(&eventid)
     }
+
+    /// Check if a given event is referenced in an event tag.
+    pub fn pubkey_tag_match(&self, pubkey: &str) -> bool {
+        self.get_pubkey_tags().contains(&pubkey)
+    }
 }
 
 #[cfg(test)]

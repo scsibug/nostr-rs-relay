@@ -129,16 +129,16 @@ async fn nostr_server(
             Ok(global_event) = bcast_rx.recv() => {
                 // an event has been broadcast to all clients
                 // first check if there is a subscription for this event.
-                let sub_name_opt = conn.get_matching_subscription(&global_event);
-                if let Some(sub_name) = sub_name_opt {
+                let matching_subs = conn.get_matching_subscriptions(&global_event);
+                for s in matching_subs {
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
                         debug!("sub match: client: {}, sub: {}, event: {}",
-                               cid, sub_name,
+                               cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
-                        let res = EventRes(sub_name.to_owned(),event_str);
+                        let res = EventRes(s.to_owned(),event_str);
                         nostr_stream.send(res).await.ok();
                     } else {
                         warn!("could not convert event to string");
