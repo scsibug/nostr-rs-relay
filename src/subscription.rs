@@ -20,8 +20,6 @@ pub struct Subscription {
 pub struct ReqFilter {
     /// Event hash
     pub id: Option<String>,
-    /// Author public key
-    pub author: Option<String>,
     /// Event kind
     pub kind: Option<u64>,
     /// Referenced event hash
@@ -114,13 +112,6 @@ impl ReqFilter {
             .map(|vs| vs.contains(&event.pubkey.to_owned()))
             .unwrap_or(true)
     }
-    /// Check for a specific author match
-    fn author_match(&self, event: &Event) -> bool {
-        self.author
-            .as_ref()
-            .map(|v| v == &event.pubkey)
-            .unwrap_or(true)
-    }
     /// Check if this filter either matches, or does not care about the event tags.
     fn event_match(&self, event: &Event) -> bool {
         self.event
@@ -148,7 +139,6 @@ impl ReqFilter {
         self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)
-            && self.author_match(event)
             && self.authors_match(event)
             && self.pubkey_match(event)
             && self.event_match(event)
@@ -165,17 +155,7 @@ mod tests {
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
-        assert_eq!(s.filters.get(0).unwrap().author, None);
-        Ok(())
-    }
-
-    #[test]
-    fn multi_empty_request_parse() -> Result<()> {
-        let raw_json = r#"["REQ","some-id",{}]"#;
-        let s: Subscription = serde_json::from_str(raw_json)?;
-        assert_eq!(s.id, "some-id");
-        assert_eq!(s.filters.len(), 1);
-        assert_eq!(s.filters.get(0).unwrap().author, None);
+        assert_eq!(s.filters.get(0).unwrap().authors, None);
         Ok(())
     }
 
@@ -278,23 +258,6 @@ mod tests {
     }
 
     #[test]
-    fn author_single() -> Result<()> {
-        // subscription with a filter for ID
-        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"author":"abc"}]"#)?;
-        let e = Event {
-            id: "123".to_owned(),
-            pubkey: "abc".to_owned(),
-            created_at: 0,
-            kind: 0,
-            tags: Vec::new(),
-            content: "".to_owned(),
-            sig: "".to_owned(),
-        };
-        assert_eq!(s.interested_in_event(&e), true);
-        Ok(())
-    }
-
-    #[test]
     fn authors_single() -> Result<()> {
         // subscription with a filter for ID
         let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"authors":["abc"]}]"#)?;
@@ -311,6 +274,7 @@ mod tests {
         Ok(())
     }
     #[test]
+
     fn authors_multi_pubkey() -> Result<()> {
         // check for any of a set of authors, against the pubkey
         let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"authors":["abc", "bcd"]}]"#)?;

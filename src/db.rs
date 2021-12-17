@@ -181,16 +181,6 @@ fn query_from_sub(sub: &Subscription) -> String {
     for f in sub.filters.iter() {
         // individual filter components
         let mut filter_components: Vec<String> = Vec::new();
-        // Query for "author"
-        // https://github.com/fiatjaf/nostr/issues/34
-        // I believe the author & authors fields are redundant.
-        if f.author.is_some() {
-            let author_str = f.author.as_ref().unwrap();
-            if is_hex(author_str) {
-                let author_clause = format!("author = x'{}'", author_str);
-                filter_components.push(author_clause);
-            }
-        }
         // Query for "authors"
         if f.authors.is_some() {
             let authors_escaped: Vec<String> = f
