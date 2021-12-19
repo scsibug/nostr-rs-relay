@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "nostr-rs-relay"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bitcoin_hashes",
  "env_logger",
