@@ -16,7 +16,6 @@ pub struct Subscription {
 /// element can be present if it should be used in filtering, or
 /// absent ([`None`]) if it should be ignored.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-#[serde(deny_unknown_fields)]
 pub struct ReqFilter {
     /// Event hash
     pub id: Option<String>,
