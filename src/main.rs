@@ -18,6 +18,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tungstenite::protocol::WebSocketConfig;
 
 /// Start running a Nostr relay server.
 fn main() -> Result<(), Error> {
@@ -93,8 +94,15 @@ async fn nostr_server(
 ) {
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
+    // websocket configuration / limits
+    let config = WebSocketConfig {
+        max_send_queue: None,
+        max_message_size: Some(2 << 19), // 512K
+        max_frame_size: Some(2 << 19),   // 512k
+        accept_unmasked_frames: false,   // follow the spec
+    };
     // upgrade the TCP connection to WebSocket
-    let conn = tokio_tungstenite::accept_async(stream).await;
+    let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
     let ws_stream = conn.expect("websocket handshake error");
     // wrap websocket into a stream & sink of Nostr protocol messages
     let mut nostr_stream = protostream::wrap_ws_in_nostr(ws_stream);

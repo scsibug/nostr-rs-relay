@@ -53,7 +53,7 @@ impl ClientConn {
                 v.push(id);
             }
         }
-        return v;
+        v
     }
 
     /// Add a new subscription for this connection.
