@@ -229,6 +229,12 @@ fn query_from_sub(sub: &Subscription) -> String {
             let created_clause = format!("created_at > {}", f.since.unwrap());
             filter_components.push(created_clause);
         }
+        // Query for timestamp
+        if f.until.is_some() {
+            let until_clause = format!("created_at < {}", f.until.unwrap());
+            filter_components.push(until_clause);
+        }
+
         // combine all clauses, and add to filter_clauses
         if !filter_components.is_empty() {
             let mut fc = "( ".to_owned();

@@ -29,6 +29,8 @@ pub struct ReqFilter {
     pub pubkey: Option<String>,
     /// Events published after this time
     pub since: Option<u64>,
+    /// Events published before this time
+    pub until: Option<u64>,
     /// List of author public keys
     pub authors: Option<Vec<String>>,
 }
