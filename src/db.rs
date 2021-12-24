@@ -246,6 +246,8 @@ fn query_from_sub(sub: &Subscription) -> String {
         query.push_str(" WHERE ");
         query.push_str(&filter_clauses.join(" OR "));
     }
+    // add order clause
+    query.push_str(" ORDER BY created_at ASC");
     debug!("query string: {}", query);
     query
 }
