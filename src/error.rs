@@ -34,6 +34,8 @@ pub enum Error {
     CommandUnknownError,
     #[error("SQL error")]
     SqlError(rusqlite::Error),
+    #[error("Config error")]
+    ConfigError(config::ConfigError),
 }
 
 impl From<rusqlite::Error> for Error {
@@ -54,5 +56,12 @@ impl From<WsError> for Error {
     /// Wrap Websocket error
     fn from(r: WsError) -> Self {
         Error::WebsocketError(r)
+    }
+}
+
+impl From<config::ConfigError> for Error {
+    /// Wrap Config error
+    fn from(r: config::ConfigError) -> Self {
+        Error::ConfigError(r)
     }
 }

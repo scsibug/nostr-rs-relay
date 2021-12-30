@@ -1,8 +1,10 @@
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
+use lazy_static::lazy_static;
 use log::*;
 use nostr_rs_relay::close::Close;
+use nostr_rs_relay::config;
 use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
@@ -11,7 +13,7 @@ use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
 use std::collections::HashMap;
-use std::env;
+use std::sync::RwLock;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio::sync::broadcast;
@@ -19,14 +21,24 @@ use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tungstenite::protocol::WebSocketConfig;
+// initialize a singleton default configuration
+lazy_static! {
+    static ref SETTINGS: RwLock<config::Settings> = RwLock::new(config::Settings::default());
+}
 
 /// Start running a Nostr relay server.
 fn main() -> Result<(), Error> {
-    // setup logger and environment
+    // setup logger
     let _ = env_logger::try_init();
-    let addr = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "0.0.0.0:8080".to_string());
+    {
+        let mut settings = SETTINGS.write().unwrap();
+        // replace default settings with those read from config.toml
+        let c = config::Settings::new();
+        debug!("using settings: {:?}", c);
+        *settings = c;
+    }
+    let config = SETTINGS.read().unwrap();
+    let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
@@ -35,16 +47,17 @@ fn main() -> Result<(), Error> {
         .unwrap();
     // start tokio
     rt.block_on(async {
+        let settings = SETTINGS.read().unwrap();
         let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
         info!("listening on: {}", addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
         // clients can not keep up).
-        let (bcast_tx, _) = broadcast::channel::<Event>(4096);
+        let (bcast_tx, _) = broadcast::channel::<Event>(settings.limits.broadcast_buffer);
         // validated events that need to be persisted are sent to the
         // database on via this channel.
-        let (event_tx, event_rx) = mpsc::channel::<Event>(16);
+        let (event_tx, event_rx) = mpsc::channel::<Event>(settings.limits.event_persist_buffer);
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
@@ -94,13 +107,12 @@ async fn nostr_server(
 ) {
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
-    // websocket configuration / limits
-    let config = WebSocketConfig {
-        max_send_queue: None,
-        max_message_size: Some(2 << 19), // 512K
-        max_frame_size: Some(2 << 19),   // 512k
-        accept_unmasked_frames: false,   // follow the spec
-    };
+    let mut config = WebSocketConfig::default();
+    {
+        let settings = SETTINGS.read().unwrap();
+        config.max_message_size = settings.limits.max_ws_message_bytes;
+        config.max_frame_size = settings.limits.max_ws_frame_bytes;
+    }
     // upgrade the TCP connection to WebSocket
     let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
     let ws_stream = conn.expect("websocket handshake error");
