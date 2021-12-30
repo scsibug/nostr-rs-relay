@@ -83,7 +83,7 @@ impl Event {
             // calculate difference, plus how far future we allow
             if curr_time + (allowable_future as u64) < self.created_at {
                 let delta = self.created_at - curr_time;
-                info!(
+                debug!(
                     "Event is too far in the future ({} seconds), rejecting",
                     delta
                 );
