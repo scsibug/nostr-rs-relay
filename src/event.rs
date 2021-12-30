@@ -3,7 +3,7 @@ use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
 use bitcoin_hashes::{sha256, Hash};
-use log::info;
+use log::*;
 use secp256k1::{schnorrsig, Secp256k1};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
