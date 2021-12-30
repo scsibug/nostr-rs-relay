@@ -1,7 +1,6 @@
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
-use lazy_static::lazy_static;
 use log::*;
 use nostr_rs_relay::close::Close;
 use nostr_rs_relay::config;
@@ -13,7 +12,6 @@ use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
 use std::collections::HashMap;
-use std::sync::RwLock;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio::sync::broadcast;
@@ -21,23 +19,19 @@ use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tungstenite::protocol::WebSocketConfig;
-// initialize a singleton default configuration
-lazy_static! {
-    static ref SETTINGS: RwLock<config::Settings> = RwLock::new(config::Settings::default());
-}
 
 /// Start running a Nostr relay server.
 fn main() -> Result<(), Error> {
     // setup logger
     let _ = env_logger::try_init();
     {
-        let mut settings = SETTINGS.write().unwrap();
+        let mut settings = config::SETTINGS.write().unwrap();
         // replace default settings with those read from config.toml
         let c = config::Settings::new();
         debug!("using settings: {:?}", c);
         *settings = c;
     }
-    let config = SETTINGS.read().unwrap();
+    let config = config::SETTINGS.read().unwrap();
     let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
@@ -47,7 +41,7 @@ fn main() -> Result<(), Error> {
         .unwrap();
     // start tokio
     rt.block_on(async {
-        let settings = SETTINGS.read().unwrap();
+        let settings = config::SETTINGS.read().unwrap();
         let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
         info!("listening on: {}", addr);
         // all client-submitted valid events are broadcast to every
@@ -109,7 +103,7 @@ async fn nostr_server(
     let mut bcast_rx = broadcast.subscribe();
     let mut config = WebSocketConfig::default();
     {
-        let settings = SETTINGS.read().unwrap();
+        let settings = config::SETTINGS.read().unwrap();
         config.max_message_size = settings.limits.max_ws_message_bytes;
         config.max_frame_size = settings.limits.max_ws_frame_bytes;
     }

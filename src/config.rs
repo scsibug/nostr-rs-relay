@@ -1,10 +1,24 @@
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+use std::sync::RwLock;
+
+// initialize a singleton default configuration
+lazy_static! {
+    pub static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::default());
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Network {
     pub port: u16,
     pub address: String,
+}
+
+//
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(unused)]
+pub struct Options {
+    pub reject_future_seconds: Option<usize>, // if defined, reject any events with a timestamp more than X seconds in the future
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,6 +48,7 @@ pub struct Settings {
     pub network: Network,
     pub limits: Limits,
     pub retention: Retention,
+    pub options: Options,
 }
 
 impl Settings {
@@ -75,6 +90,9 @@ impl Default for Settings {
                 max_bytes: None,             // max size
                 persist_days: None,          // oldest message
                 whitelist_addresses: vec![], // whitelisted addresses (never delete)
+            },
+            options: Options {
+                reject_future_seconds: Some(30 * 60), // Reject events 30min in the future or greater
             },
         }
     }

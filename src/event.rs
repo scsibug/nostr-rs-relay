@@ -1,4 +1,5 @@
 //! Event parsing and validation
+use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
 use bitcoin_hashes::{sha256, Hash};
@@ -8,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
 use serde_json::Number;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 /// Event command in network format
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -56,6 +58,14 @@ impl From<EventCmd> for Result<Event> {
     }
 }
 
+/// Seconds since 1970
+fn unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|x| x.as_secs())
+        .unwrap_or(0)
+}
+
 impl Event {
     /// Create a short event identifier, suitable for logging.
     pub fn get_event_id_prefix(&self) -> String {
@@ -64,6 +74,23 @@ impl Event {
 
     /// Check if this event has a valid signature.
     fn is_valid(&self) -> bool {
+        // TODO: return a Result with a reason for invalid events
+        // don't bother to validate an event with a timestamp in the distant future.
+        let config = config::SETTINGS.read().unwrap();
+        let max_future_sec = config.options.reject_future_seconds;
+        if max_future_sec.is_some() {
+            let allowable_future = max_future_sec.unwrap();
+            let curr_time = unix_time();
+            // calculate difference, plus how far future we allow
+            if curr_time + (allowable_future as u64) < self.created_at {
+                let delta = self.created_at - curr_time;
+                info!(
+                    "Event is too far in the future ({} seconds), rejecting",
+                    delta
+                );
+                return false;
+            }
+        }
         // validation is performed by:
         // * parsing JSON string into event fields
         // * create an array:
