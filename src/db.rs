@@ -204,14 +204,25 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
         }
     }
     // if this event is for a metadata update, hide every other kind=0
-    // event from the same author that was issued earlier
+    // event from the same author that was issued earlier than this.
     if e.kind == 0 {
         let update_count = tx.execute(
-            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=0 AND author=? AND created_at <= ?",
+            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=0 AND author=? AND created_at <= ? and hidden!=TRUE",
             params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
         )?;
         if update_count > 0 {
             info!("hid {} older metadata events", update_count);
+        }
+    }
+    // if this event is for a contact update, hide every other kind=3
+    // event from the same author that was issued earlier than this.
+    if e.kind == 3 {
+        let update_count = tx.execute(
+            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=3 AND author=? AND created_at <= ? and hidden!=TRUE",
+            params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
+        )?;
+        if update_count > 0 {
+            info!("hid {} older contact events", update_count);
         }
     }
     tx.commit()?;
