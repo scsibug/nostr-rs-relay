@@ -78,8 +78,7 @@ impl Event {
         // don't bother to validate an event with a timestamp in the distant future.
         let config = config::SETTINGS.read().unwrap();
         let max_future_sec = config.options.reject_future_seconds;
-        if max_future_sec.is_some() {
-            let allowable_future = max_future_sec.unwrap();
+        if let Some(allowable_future) = max_future_sec {
             let curr_time = unix_time();
             // calculate difference, plus how far future we allow
             if curr_time + (allowable_future as u64) < self.created_at {
