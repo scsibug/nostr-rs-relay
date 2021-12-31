@@ -10,17 +10,26 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 
 ## Quick Start
 
-The provided `Dockerfile` will compile and build the server application.  Use a bind mount to store the SQLite database outside of the container image, and map the container's 8080 port to a host port (8090 in the example below).
+The provided `Dockerfile` will compile and build the server
+application.  Use a bind mount to store the SQLite database outside of
+the container image, and map the container's 8080 port to a host port
+(7000 in the example below).
 
 ```console
 $ docker build -t nostr-rs-relay .
-$ docker run -p 8090:8080 --mount src=$(pwd)/nostr_data,target=/usr/src/app/db,type=bind nostr-rs-relay
-[2021-12-12T04:20:47Z INFO  nostr_rs_relay] Listening on: 0.0.0.0:8080
-[2021-12-12T04:20:47Z INFO  nostr_rs_relay::db] Opened database for writing
-[2021-12-12T04:20:47Z INFO  nostr_rs_relay::db] init completed
+
+$ docker run -it -p 7000:8080 \
+  --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
+  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
+  nostr-rs-relay
+[2021-12-31T19:58:31Z INFO  nostr_rs_relay] listening on: 0.0.0.0:8080
+[2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] opened database "/usr/src/app/db/nostr.db" for writing
+[2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] DB version = 2
 ```
 
-Use a `nostr` client such as [`noscl`](https://github.com/fiatjaf/noscl) to publish and query events.
+Use a `nostr` client such as
+[`noscl`](https://github.com/fiatjaf/noscl) to publish and query
+events.
 
 ```console
 $ noscl publish "hello world"
@@ -30,6 +39,21 @@ $ noscl home
 Text Note [81cf...2652] from 296a...9b92 5 seconds ago
   hello world
 ```
+
+## Configuration
+
+The sample `[config.toml](config.toml)` file demonstrates the
+configuration available to the relay.  This file is optional, but may
+be mounted into a docker container like so:
+
+```console
+$ docker run -it -p 7000:8080 \
+  --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
+  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
+```
+
+Options include rate-limiting, event size limits, and network address
+settings.
 
 License
 ---

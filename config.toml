@@ -1,7 +1,8 @@
 # Nostr-rs-relay configuration
 [database]
 # Directory for SQLite files.  Defaults to the current directory.  Can
-# also be specified with the "--db dirname" command line option.
+# also be specified (and overriden) with the "--db dirname" command
+# line option.
 data_directory = "data"
 
 [network]
