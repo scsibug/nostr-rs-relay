@@ -12,6 +12,8 @@ use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
 use std::collections::HashMap;
+use std::env;
+use std::path::Path;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio::sync::broadcast;
@@ -20,17 +22,39 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tungstenite::protocol::WebSocketConfig;
 
+fn db_from_args(args: Vec<String>) -> Option<String> {
+    if args.len() == 3 {
+        if args.get(1) == Some(&"--db".to_owned()) {
+            return args.get(2).map(|x| x.to_owned());
+        }
+    }
+    None
+}
+
 /// Start running a Nostr relay server.
 fn main() -> Result<(), Error> {
     // setup logger
     let _ = env_logger::try_init();
+    // get database directory from args
+    let args: Vec<String> = env::args().collect();
+    let db_dir: Option<String> = db_from_args(args);
+    info!("Using database: {:?}", db_dir);
     {
         let mut settings = config::SETTINGS.write().unwrap();
         // replace default settings with those read from config.toml
-        let c = config::Settings::new();
+        let mut c = config::Settings::new();
+        // update with database location
+        if let Some(db) = db_dir {
+            c.database.data_directory = db.to_owned();
+        }
         *settings = c;
     }
     let config = config::SETTINGS.read().unwrap();
+    // do some config validation.
+    if !Path::new(&config.database.data_directory).is_dir() {
+        error!("Database directory does not exist");
+        return Err(Error::DatabaseDirError);
+    }
     debug!("config: {:?}", config);
     let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
     // configure tokio runtime

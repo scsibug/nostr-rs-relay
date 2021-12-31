@@ -1,4 +1,8 @@
 # Nostr-rs-relay configuration
+[database]
+# Directory for SQLite files.  Defaults to the current directory.  Can
+# also be specified with the "--db dirname" command line option.
+data_directory = "data"
 
 [network]
 # Bind to this network address
@@ -18,15 +22,15 @@ port = 8080
 messages_per_sec = 0
 
 # Maximum WebSocket message in bytes.  Defaults to 128k.
-#max_ws_message_bytes = 131072
+max_ws_message_bytes = 131072
 
 # Maximum WebSocket frame size in bytes.  Defaults to 128k.
-#max_ws_frame_bytes = 131072
+max_ws_frame_bytes = 131072
 
 # Broadcast buffer size, in number of events.  This prevents slow
 # readers from consuming memory.  Defaults to 4096.
-#broadcast_buffer = 4096
+broadcast_buffer = 4096
 
 # Event persistence buffer size, in number of events.  This provides
 # backpressure to senders if writes are slow.  Defaults to 16.
-#event_persist_buffer = 16
+event_persist_buffer = 16

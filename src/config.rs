@@ -10,6 +10,12 @@ lazy_static! {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Database {
+    pub data_directory: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Network {
     pub port: u16,
     pub address: String,
@@ -46,6 +52,7 @@ pub struct Limits {
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
+    pub database: Database,
     pub network: Network,
     pub limits: Limits,
     pub retention: Retention,
@@ -82,6 +89,9 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            database: Database {
+                data_directory: ".".to_owned(),
+            },
             network: Network {
                 port: 8080,
                 address: "0.0.0.0".to_owned(),

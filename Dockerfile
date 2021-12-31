@@ -35,9 +35,7 @@ COPY --from=builder /nostr-rs-relay/target/release/nostr-rs-relay ${APP}/nostr-r
 RUN chown -R $APP_USER:$APP_USER ${APP}
 
 USER $APP_USER
-WORKDIR ${APP_DATA}
+WORKDIR ${APP}
 
 ENV RUST_LOG=info
-
-
-CMD ["../nostr-rs-relay"]
+CMD ["./nostr-rs-relay --db $APP_DATA"]

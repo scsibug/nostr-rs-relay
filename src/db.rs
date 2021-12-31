@@ -122,14 +122,18 @@ pub async fn db_writer(
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> tokio::task::JoinHandle<Result<()>> {
     task::spawn_blocking(move || {
+        // get database configuration settings
+        let config = SETTINGS.read().unwrap();
+        let db_dir = &config.database.data_directory;
+        let full_path = Path::new(db_dir).join(DB_FILE);
+        // create a connection
         let mut conn = Connection::open_with_flags(
-            Path::new(DB_FILE),
+            &full_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
-        info!("opened database for writing");
+        info!("opened database {:?} for writing", full_path);
         upgrade_db(&mut conn)?;
         // get rate limit settings
-        let config = SETTINGS.read().unwrap();
         let rps_setting = config.limits.messages_per_sec;
         let mut lim_opt = None;
         let clock = governor::clock::QuantaClock::default();
@@ -373,9 +377,12 @@ pub async fn db_query(
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     task::spawn_blocking(move || {
+        let config = SETTINGS.read().unwrap();
+        let db_dir = &config.database.data_directory;
+        let full_path = Path::new(db_dir).join(DB_FILE);
+
         let conn =
-            Connection::open_with_flags(Path::new(DB_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
-                .unwrap();
+            Connection::open_with_flags(&full_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         debug!("opened database for reading");
         debug!("going to query for: {:?}", sub);
         // generate SQL query

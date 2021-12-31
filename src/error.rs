@@ -36,6 +36,8 @@ pub enum Error {
     SqlError(rusqlite::Error),
     #[error("Config error")]
     ConfigError(config::ConfigError),
+    #[error("Data directory does not exist")]
+    DatabaseDirError,
 }
 
 impl From<rusqlite::Error> for Error {
