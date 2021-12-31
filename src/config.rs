@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log::*;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
@@ -25,16 +26,16 @@ pub struct Options {
 #[allow(unused)]
 pub struct Retention {
     // TODO: implement
-    pub max_events: Option<usize>,        // max events
-    pub max_bytes: Option<usize>,         // max size
-    pub persist_days: Option<usize>,      // oldest message
-    pub whitelist_addresses: Vec<String>, // whitelisted addresses (never delete)
+    pub max_events: Option<usize>,                // max events
+    pub max_bytes: Option<usize>,                 // max size
+    pub persist_days: Option<usize>,              // oldest message
+    pub whitelist_addresses: Option<Vec<String>>, // whitelisted addresses (never delete)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Limits {
-    pub messages_per_sec: Option<usize>, // Artificially slow down event writing to limit disk consumption
+    pub messages_per_sec: Option<u32>, // Artificially slow down event writing to limit disk consumption (averaged over 1 minute)
     pub max_event_bytes: Option<usize>,
     pub max_ws_message_bytes: Option<usize>,
     pub max_ws_frame_bytes: Option<usize>,
@@ -55,7 +56,15 @@ impl Settings {
     pub fn new() -> Self {
         let d = Self::default();
         // attempt to construct settings with file
-        Self::new_from_default(&d).unwrap_or(d)
+        //        Self::new_from_default(&d).unwrap_or(d)
+        let from_file = Self::new_from_default(&d);
+        match from_file {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("Error reading config file ({:?})", e);
+                d
+            }
+        }
     }
 
     fn new_from_default(default: &Settings) -> Result<Self, config::ConfigError> {
@@ -86,10 +95,10 @@ impl Default for Settings {
                 event_persist_buffer: 16,
             },
             retention: Retention {
-                max_events: None,            // max events
-                max_bytes: None,             // max size
-                persist_days: None,          // oldest message
-                whitelist_addresses: vec![], // whitelisted addresses (never delete)
+                max_events: None,          // max events
+                max_bytes: None,           // max size
+                persist_days: None,        // oldest message
+                whitelist_addresses: None, // whitelisted addresses (never delete)
             },
             options: Options {
                 reject_future_seconds: Some(30 * 60), // Reject events 30min in the future or greater

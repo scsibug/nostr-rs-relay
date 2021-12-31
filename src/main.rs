@@ -28,10 +28,10 @@ fn main() -> Result<(), Error> {
         let mut settings = config::SETTINGS.write().unwrap();
         // replace default settings with those read from config.toml
         let c = config::Settings::new();
-        debug!("using settings: {:?}", c);
         *settings = c;
     }
     let config = config::SETTINGS.read().unwrap();
+    debug!("config: {:?}", config);
     let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
@@ -52,10 +52,6 @@ fn main() -> Result<(), Error> {
         // validated events that need to be persisted are sent to the
         // database on via this channel.
         let (event_tx, event_rx) = mpsc::channel::<Event>(settings.limits.event_persist_buffer);
-        // start the database writer thread.  Give it a channel for
-        // writing events, and for publishing events that have been
-        // written (to all connected clients).
-        db::db_writer(event_rx, bcast_tx.clone()).await;
         // establish a channel for letting all threads now about a
         // requested server shutdown.
         let (invoke_shutdown, _) = broadcast::channel::<()>(1);
@@ -66,6 +62,11 @@ fn main() -> Result<(), Error> {
             info!("shutting down due to SIGINT");
             ctrl_c_shutdown.send(()).ok();
         });
+        // start the database writer thread.  Give it a channel for
+        // writing events, and for publishing events that have been
+        // written (to all connected clients).
+        db::db_writer(event_rx, bcast_tx.clone(), invoke_shutdown.subscribe()).await;
+
         // track unique client connection count
         let mut client_accept_count: usize = 0;
         let mut stop_listening = invoke_shutdown.subscribe();

@@ -2,12 +2,17 @@
 use crate::error::Result;
 use crate::event::Event;
 use crate::subscription::Subscription;
+use governor::clock::Clock;
+use governor::{Quota, RateLimiter};
 use hex;
 use log::*;
 use rusqlite::params;
 use rusqlite::Connection;
 use rusqlite::OpenFlags;
+//use std::num::NonZeroU32;
+use crate::config::SETTINGS;
 use std::path::Path;
+use std::thread;
 use tokio::task;
 
 /// Database file
@@ -114,6 +119,7 @@ PRAGMA user_version = 2;
 pub async fn db_writer(
     mut event_rx: tokio::sync::mpsc::Receiver<Event>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
+    mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> tokio::task::JoinHandle<Result<()>> {
     task::spawn_blocking(move || {
         let mut conn = Connection::open_with_flags(
@@ -122,32 +128,54 @@ pub async fn db_writer(
         )?;
         info!("opened database for writing");
         upgrade_db(&mut conn)?;
-        // if version is zero, then we need to initialize from scratch.
-        // if version is one, we need to upgrade.
-        // if version is two, we are at the latest!
-
-        // TODO: determine if we need to execute the init script.
-        // TODO: check database app id / version before proceeding.
+        // get rate limit settings
+        let config = SETTINGS.read().unwrap();
+        let rps_setting = config.limits.messages_per_sec;
+        let mut lim_opt = None;
+        let clock = governor::clock::QuantaClock::default();
+        if let Some(rps) = rps_setting {
+            if rps > 0 {
+                info!("Enabling rate limits for event creation ({}/sec)", rps);
+                let quota = core::num::NonZeroU32::new(rps * 60).unwrap();
+                lim_opt = Some(RateLimiter::direct(Quota::per_minute(quota)));
+            }
+        }
         loop {
+            if let Ok(_) = shutdown.try_recv() {
+                info!("shutting down database writer");
+                break;
+            }
             // call blocking read on channel
             let next_event = event_rx.blocking_recv();
             // if the channel has closed, we will never get work
             if next_event.is_none() {
                 break;
             }
+            let mut event_write = false;
             let event = next_event.unwrap();
             match write_event(&mut conn, &event) {
                 Ok(updated) => {
                     if updated == 0 {
-                        info!("nothing inserted (dupe?)");
+                        debug!("ignoring duplicate event");
                     } else {
                         info!("persisted event: {}", event.get_event_id_prefix());
+                        event_write = true;
                         // send this out to all clients
                         bcast_tx.send(event.clone()).ok();
                     }
                 }
                 Err(err) => {
                     warn!("event insert failed: {}", err);
+                }
+            }
+            // use rate limit, if defined, and if an event was actually written.
+            if event_write {
+                if let Some(ref lim) = lim_opt {
+                    if let Err(n) = lim.check() {
+                        info!("Rate limiting event creation");
+                        thread::sleep(n.wait_time_from(clock.now()));
+                        continue;
+                    }
                 }
             }
         }

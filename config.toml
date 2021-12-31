@@ -1,0 +1,32 @@
+# Nostr-rs-relay configuration
+
+[network]
+# Bind to this network address
+address = "0.0.0.0"
+# Listen on this port
+port = 8080
+
+[options]
+# Reject events that have timestamps greater than this many seconds in
+# the future.  Defaults to rejecting anything greater than 30 minutes
+# from the current time.
+#reject_future_seconds = 1800
+
+[limits]
+# Limit events created per second, averaged over one minute.  Must be
+# an integer.  If not set (or set to 0), defaults to unlimited.
+messages_per_sec = 0
+
+# Maximum WebSocket message in bytes.  Defaults to 128k.
+#max_ws_message_bytes = 131072
+
+# Maximum WebSocket frame size in bytes.  Defaults to 128k.
+#max_ws_frame_bytes = 131072
+
+# Broadcast buffer size, in number of events.  This prevents slow
+# readers from consuming memory.  Defaults to 4096.
+#broadcast_buffer = 4096
+
+# Event persistence buffer size, in number of events.  This provides
+# backpressure to senders if writes are slow.  Defaults to 16.
+#event_persist_buffer = 16

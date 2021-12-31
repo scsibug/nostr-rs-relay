@@ -54,6 +54,8 @@ impl Stream for NostrStream {
         /// Convert Message to NostrMessage
         fn convert(msg: String) -> Result<NostrMessage> {
             debug!("raw msg: {}", msg);
+            let event_size = msg.len();
+            debug!("event size is {} bytes", event_size);
             let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
             match parsed_res {
                 Ok(m) => Ok(m),
