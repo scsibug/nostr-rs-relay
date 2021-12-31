@@ -19,9 +19,8 @@ the container image, and map the container's 8080 port to a host port
 $ docker build -t nostr-rs-relay .
 
 $ docker run -it -p 7000:8080 \
-  --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
-  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
-  nostr-rs-relay
+  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind nostr-rs-relay
+
 [2021-12-31T19:58:31Z INFO  nostr_rs_relay] listening on: 0.0.0.0:8080
 [2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] opened database "/usr/src/app/db/nostr.db" for writing
 [2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] DB version = 2
@@ -50,6 +49,7 @@ be mounted into a docker container like so:
 $ docker run -it -p 7000:8080 \
   --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
   --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
+  nostr-rs-relay
 ```
 
 Options include rate-limiting, event size limits, and network address
