@@ -350,7 +350,7 @@ fn query_from_sub(sub: &Subscription) -> String {
             filter_clauses.push(fc);
         } else {
             // never display hidden events
-            filter_clauses.push("hidden!=FALSE".to_owned());
+            filter_clauses.push("hidden!=TRUE".to_owned());
         }
     }
 
