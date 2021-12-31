@@ -42,7 +42,7 @@ pub struct Retention {
 #[allow(unused)]
 pub struct Limits {
     pub messages_per_sec: Option<u32>, // Artificially slow down event writing to limit disk consumption (averaged over 1 minute)
-    pub max_event_bytes: Option<usize>,
+    pub max_event_bytes: Option<usize>, // Maximum size of an EVENT message
     pub max_ws_message_bytes: Option<usize>,
     pub max_ws_frame_bytes: Option<usize>,
     pub broadcast_buffer: usize, // events to buffer for subscribers (prevents slow readers from consuming memory)

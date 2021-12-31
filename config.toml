@@ -3,7 +3,7 @@
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command
 # line option.
-data_directory = "data"
+data_directory = "."
 
 [network]
 # Bind to this network address
@@ -15,17 +15,21 @@ port = 8080
 # Reject events that have timestamps greater than this many seconds in
 # the future.  Defaults to rejecting anything greater than 30 minutes
 # from the current time.
-#reject_future_seconds = 1800
+reject_future_seconds = 1800
 
 [limits]
 # Limit events created per second, averaged over one minute.  Must be
 # an integer.  If not set (or set to 0), defaults to unlimited.
 messages_per_sec = 0
 
-# Maximum WebSocket message in bytes.  Defaults to 128k.
+# Limit the maximum size of an EVENT message.  Defaults to 128 KB.
+# Set to 0 for unlimited.
+max_event_bytes = 131072
+
+# Maximum WebSocket message in bytes.  Defaults to 128 KB.
 max_ws_message_bytes = 131072
 
-# Maximum WebSocket frame size in bytes.  Defaults to 128k.
+# Maximum WebSocket frame size in bytes.  Defaults to 128 KB.
 max_ws_frame_bytes = 131072
 
 # Broadcast buffer size, in number of events.  This prevents slow

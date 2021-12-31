@@ -1,5 +1,6 @@
 //! Nostr protocol layered over WebSocket
 use crate::close::CloseCmd;
+use crate::config;
 use crate::error::{Error, Result};
 use crate::event::EventCmd;
 use crate::subscription::Subscription;
@@ -51,14 +52,23 @@ pub fn wrap_ws_in_nostr(ws: WebSocketStream<TcpStream>) -> NostrStream {
 impl Stream for NostrStream {
     type Item = Result<NostrMessage>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // get the configuration
         /// Convert Message to NostrMessage
         fn convert(msg: String) -> Result<NostrMessage> {
-            debug!("raw msg: {}", msg);
-            let event_size = msg.len();
-            debug!("event size is {} bytes", event_size);
+            let config = config::SETTINGS.read().unwrap();
             let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
             match parsed_res {
-                Ok(m) => Ok(m),
+                Ok(m) => {
+                    if let NostrMessage::EventMsg(_) = m {
+                        if let Some(max_size) = config.limits.max_event_bytes {
+                            // check length, ensure that some max size is set.
+                            if msg.len() > max_size && max_size > 0 {
+                                return Err(Error::EventMaxLengthError(msg.len()));
+                            }
+                        }
+                    }
+                    Ok(m)
+                }
                 Err(e) => {
                     debug!("proto parse error: {:?}", e);
                     Err(Error::ProtoParseError)

@@ -145,7 +145,7 @@ pub async fn db_writer(
             }
         }
         loop {
-            if let Ok(_) = shutdown.try_recv() {
+            if shutdown.try_recv().is_ok() {
                 info!("shutting down database writer");
                 break;
             }

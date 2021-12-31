@@ -23,10 +23,8 @@ use tokio::sync::oneshot;
 use tungstenite::protocol::WebSocketConfig;
 
 fn db_from_args(args: Vec<String>) -> Option<String> {
-    if args.len() == 3 {
-        if args.get(1) == Some(&"--db".to_owned()) {
-            return args.get(2).map(|x| x.to_owned());
-        }
+    if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
+        return args.get(2).map(|x| x.to_owned());
     }
     None
 }
@@ -44,7 +42,7 @@ fn main() -> Result<(), Error> {
         let mut c = config::Settings::new();
         // update with database location
         if let Some(db) = db_dir {
-            c.database.data_directory = db.to_owned();
+            c.database.data_directory = db;
         }
         *settings = c;
     }
@@ -253,6 +251,10 @@ async fn nostr_server(
                         debug!("got connection close/error, disconnecting client: {}",cid);
                         break;
                     }
+                    Some(Err(Error::EventMaxLengthError(s))) => {
+                        info!("client {} sent event larger ({} bytes) than max size", cid, s);
+                        nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
+                    },
                     Some(Err(e)) => {
                         info!("got non-fatal error from client: {}, error: {:?}", cid, e);
                     },

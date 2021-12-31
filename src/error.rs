@@ -21,6 +21,8 @@ pub enum Error {
     CloseParseFailed,
     #[error("Event validation failed")]
     EventInvalid,
+    #[error("Event too large")]
+    EventMaxLengthError(usize),
     #[error("Subscription identifier max length exceeded")]
     SubIdMaxLengthError,
     #[error("Maximum concurrent subscription count reached")]
