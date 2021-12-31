@@ -38,7 +38,6 @@ fn main() -> Result<(), Error> {
     // get database directory from args
     let args: Vec<String> = env::args().collect();
     let db_dir: Option<String> = db_from_args(args);
-    info!("Using database: {:?}", db_dir);
     {
         let mut settings = config::SETTINGS.write().unwrap();
         // replace default settings with those read from config.toml

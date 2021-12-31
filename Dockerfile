@@ -15,7 +15,6 @@ RUN cargo build --release
 FROM debian:buster-slim
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
-
 RUN apt-get update \
     && apt-get install -y ca-certificates tzdata sqlite3 \
     && rm -rf /var/lib/apt/lists/*
@@ -38,4 +37,6 @@ USER $APP_USER
 WORKDIR ${APP}
 
 ENV RUST_LOG=info
-CMD ["./nostr-rs-relay --db $APP_DATA"]
+ENV APP_DATA=${APP_DATA}
+
+CMD ./nostr-rs-relay --db ${APP_DATA}
