@@ -67,6 +67,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin_hashes"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -645,7 +651,7 @@ checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 name = "nostr-rs-relay"
 version = "0.2.2"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.9.7",
  "config",
  "env_logger",
  "futures",
@@ -1031,10 +1037,9 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "secp256k1"
 version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
+source = "git+https://github.com/rust-bitcoin/rust-secp256k1.git?rev=50034ccb18fdd84904ab3aa6c84a12fcced33209#50034ccb18fdd84904ab3aa6c84a12fcced33209"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.10.0",
  "rand 0.6.5",
  "secp256k1-sys",
  "serde 1.0.131",
@@ -1043,8 +1048,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-sys"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "827cb7cce42533829c792fc51b82fbf18b125b45a702ef2c8be77fce65463a7b"
+source = "git+https://github.com/rust-bitcoin/rust-secp256k1.git?rev=50034ccb18fdd84904ab3aa6c84a12fcced33209#50034ccb18fdd84904ab3aa6c84a12fcced33209"
 dependencies = [
  "cc",
 ]

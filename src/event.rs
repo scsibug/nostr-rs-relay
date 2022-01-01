@@ -3,13 +3,18 @@ use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
 use bitcoin_hashes::{sha256, Hash};
+use lazy_static::lazy_static;
 use log::*;
-use secp256k1::{schnorrsig, Secp256k1};
+use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
 use serde_json::Number;
 use std::str::FromStr;
 use std::time::SystemTime;
+
+lazy_static! {
+    pub static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
+}
 
 /// Event command in network format
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -109,12 +114,15 @@ impl Event {
             return false;
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
-        let secp = Secp256k1::new();
-        let sig = schnorrsig::Signature::from_str(&self.sig).unwrap();
-        let message = secp256k1::Message::from(digest);
-        let pubkey = schnorrsig::PublicKey::from_str(&self.pubkey).unwrap();
-        let verify = secp.schnorrsig_verify(&sig, &message, &pubkey);
-        matches!(verify, Ok(()))
+        let sig = schnorr::Signature::from_str(&self.sig).unwrap();
+        if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
+            let pubkey = XOnlyPublicKey::from_str(&self.pubkey).unwrap();
+            let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
+            matches!(verify, Ok(()))
+        } else {
+            warn!("Error converting digest to secp256k1 message");
+            false
+        }
     }
 
     /// Convert event to canonical representation for signing.

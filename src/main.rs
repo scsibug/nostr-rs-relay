@@ -98,9 +98,9 @@ async fn handle_web_request(
         }
         ("/", false) => {
             // handle request at root with no upgrade header
-            Ok(Response::new(Body::from(format!(
-                "This is a Nostr relay.\n"
-            ))))
+            Ok(Response::new(Body::from(
+                "This is a Nostr relay.\n".to_string(),
+            )))
         }
         (_, _) => {
             //handle any other url
