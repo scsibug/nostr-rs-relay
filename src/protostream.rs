@@ -9,9 +9,9 @@ use futures::sink::Sink;
 use futures::stream::Stream;
 use futures::task::Context;
 use futures::task::Poll;
+use hyper::upgrade::Upgraded;
 use log::*;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::error::Error as WsError;
 use tungstenite::protocol::Message;
@@ -40,11 +40,11 @@ pub enum NostrResponse {
 
 /// A Nostr protocol stream is layered on top of a Websocket stream.
 pub struct NostrStream {
-    ws_stream: WebSocketStream<TcpStream>,
+    ws_stream: WebSocketStream<Upgraded>,
 }
 
 /// Given a websocket, return a protocol stream wrapper.
-pub fn wrap_ws_in_nostr(ws: WebSocketStream<TcpStream>) -> NostrStream {
+pub fn wrap_ws_in_nostr(ws: WebSocketStream<Upgraded>) -> NostrStream {
     NostrStream { ws_stream: ws }
 }
 

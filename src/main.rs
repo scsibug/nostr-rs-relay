@@ -1,6 +1,11 @@
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::upgrade::Upgraded;
+use hyper::{
+    header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
+};
 use log::*;
 use nostr_rs_relay::close::Close;
 use nostr_rs_relay::config;
@@ -12,14 +17,17 @@ use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::env;
+use std::net::SocketAddr;
 use std::path::Path;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio_tungstenite::WebSocketStream;
+use tungstenite::handshake;
 use tungstenite::protocol::WebSocketConfig;
 
 fn db_from_args(args: Vec<String>) -> Option<String> {
@@ -27,6 +35,88 @@ fn db_from_args(args: Vec<String>) -> Option<String> {
         return args.get(2).map(|x| x.to_owned());
     }
     None
+}
+async fn handle_web_request(
+    mut request: Request<Body>,
+    remote_addr: SocketAddr,
+    broadcast: Sender<Event>,
+    event_tx: tokio::sync::mpsc::Sender<Event>,
+    shutdown: Receiver<()>,
+) -> Result<Response<Body>, Infallible> {
+    match (
+        request.uri().path(),
+        request.headers().contains_key(header::UPGRADE),
+    ) {
+        //if the request is ws_echo and the request headers contains an Upgrade key
+        ("/", true) => {
+            debug!("websocket with upgrade request");
+            //assume request is a handshake, so create the handshake response
+            let response = match handshake::server::create_response_with_body(&request, || {
+                Body::empty()
+            }) {
+                Ok(response) => {
+                    //in case the handshake response creation succeeds,
+                    //spawn a task to handle the websocket connection
+                    tokio::spawn(async move {
+                        //using the hyper feature of upgrading a connection
+                        match upgrade::on(&mut request).await {
+                            //if successfully upgraded
+                            Ok(upgraded) => {
+                                //create a websocket stream from the upgraded object
+                                let ws_stream = WebSocketStream::from_raw_socket(
+                                    //pass the upgraded object
+                                    //as the base layer stream of the Websocket
+                                    upgraded,
+                                    tokio_tungstenite::tungstenite::protocol::Role::Server,
+                                    None,
+                                )
+                                .await;
+                                tokio::spawn(nostr_server(
+                                    ws_stream, broadcast, event_tx, shutdown,
+                                ));
+                            }
+                            Err(e) => println!(
+                                "error when trying to upgrade connection \
+                                 from address {} to websocket connection. \
+                                 Error is: {}",
+                                remote_addr, e
+                            ),
+                        }
+                    });
+                    //return the response to the handshake request
+                    response
+                }
+                Err(error) => {
+                    warn!("websocket response failed");
+                    let mut res =
+                        Response::new(Body::from(format!("Failed to create websocket: {}", error)));
+                    *res.status_mut() = StatusCode::BAD_REQUEST;
+                    return Ok(res);
+                }
+            };
+            Ok::<_, Infallible>(response)
+        }
+        ("/", false) => {
+            // handle request at root with no upgrade header
+            Ok(Response::new(Body::from(format!(
+                "This is a Nostr relay.\n"
+            ))))
+        }
+        (_, _) => {
+            //handle any other url
+            Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Nothing here."))
+                .unwrap())
+        }
+    }
+}
+
+async fn shutdown_signal() {
+    // Wait for the CTRL+C signal
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
 }
 
 /// Start running a Nostr relay server.
@@ -46,6 +136,7 @@ fn main() -> Result<(), Error> {
         }
         *settings = c;
     }
+
     let config = config::SETTINGS.read().unwrap();
     // do some config validation.
     if !Path::new(&config.database.data_directory).is_dir() {
@@ -54,6 +145,7 @@ fn main() -> Result<(), Error> {
     }
     debug!("config: {:?}", config);
     let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
+    let socket_addr = addr.parse().expect("listening address not valid");
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
@@ -63,8 +155,7 @@ fn main() -> Result<(), Error> {
     // start tokio
     rt.block_on(async {
         let settings = config::SETTINGS.read().unwrap();
-        let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
-        info!("listening on: {}", addr);
+        info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
@@ -77,7 +168,7 @@ fn main() -> Result<(), Error> {
         // requested server shutdown.
         let (invoke_shutdown, _) = broadcast::channel::<()>(1);
         let ctrl_c_shutdown = invoke_shutdown.clone();
-        // listen for ctrl-c interruupts
+        // // listen for ctrl-c interruupts
         tokio::spawn(async move {
             tokio::signal::ctrl_c().await.unwrap();
             info!("shutting down due to SIGINT");
@@ -87,28 +178,35 @@ fn main() -> Result<(), Error> {
         // writing events, and for publishing events that have been
         // written (to all connected clients).
         db::db_writer(event_rx, bcast_tx.clone(), invoke_shutdown.subscribe()).await;
-
-        // track unique client connection count
-        let mut client_accept_count: usize = 0;
-        let mut stop_listening = invoke_shutdown.subscribe();
-        // handle new client connection requests, or SIGINT signals.
-        loop {
-            tokio::select! {
-                _ = stop_listening.recv() => {
-                    break;
-                }
-                Ok((stream, _)) = listener.accept() => {
-                    client_accept_count += 1;
-                    info!("creating new connection for client #{}",client_accept_count);
-                    tokio::spawn(nostr_server(
-                        stream,
-                        bcast_tx.clone(),
-                        event_tx.clone(),
-                        invoke_shutdown.subscribe(),
-                    ));
-                }
+        info!("db writer created");
+        // A `Service` is needed for every connection, so this
+        // creates one from our `handle_request` function.
+        let make_svc = make_service_fn(|conn: &AddrStream| {
+            let remote_addr = conn.remote_addr();
+            let bcast = bcast_tx.clone();
+            let event = event_tx.clone();
+            let stop = invoke_shutdown.clone();
+            async move {
+                // service_fn converts our function into a `Service`
+                Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                    handle_web_request(
+                        request,
+                        remote_addr,
+                        bcast.clone(),
+                        event.clone(),
+                        stop.subscribe(),
+                    )
+                }))
             }
+        });
+        let server = Server::bind(&socket_addr)
+            .serve(make_svc)
+            .with_graceful_shutdown(shutdown_signal());
+        // run hyper
+        if let Err(e) = server.await {
+            eprintln!("server error: {}", e);
         }
+        // our code
     });
     Ok(())
 }
@@ -116,7 +214,7 @@ fn main() -> Result<(), Error> {
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
-    stream: TcpStream,
+    ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<Event>,
     mut shutdown: Receiver<()>,
@@ -130,8 +228,8 @@ async fn nostr_server(
         config.max_frame_size = settings.limits.max_ws_frame_bytes;
     }
     // upgrade the TCP connection to WebSocket
-    let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
-    let ws_stream = conn.expect("websocket handshake error");
+    //let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
+    //let ws_stream = conn.expect("websocket handshake error");
     // wrap websocket into a stream & sink of Nostr protocol messages
     let mut nostr_stream = protostream::wrap_ws_in_nostr(ws_stream);
     // Track internal client state
