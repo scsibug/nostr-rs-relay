@@ -71,6 +71,7 @@ impl Stream for NostrStream {
                 }
                 Err(e) => {
                     debug!("proto parse error: {:?}", e);
+                    debug!("parse error on message: {}", msg.trim());
                     Err(Error::ProtoParseError)
                 }
             }

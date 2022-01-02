@@ -13,6 +13,7 @@ use rusqlite::OpenFlags;
 use crate::config::SETTINGS;
 use std::path::Path;
 use std::thread;
+use std::time::Instant;
 use tokio::task;
 
 /// Database file
@@ -157,12 +158,17 @@ pub async fn db_writer(
             }
             let mut event_write = false;
             let event = next_event.unwrap();
+            let start = Instant::now();
             match write_event(&mut conn, &event) {
                 Ok(updated) => {
                     if updated == 0 {
                         debug!("ignoring duplicate event");
                     } else {
-                        info!("persisted event: {}", event.get_event_id_prefix());
+                        info!(
+                            "persisted event: {} in {:?}",
+                            event.get_event_id_prefix(),
+                            start.elapsed()
+                        );
                         event_write = true;
                         // send this out to all clients
                         bcast_tx.send(event.clone()).ok();
@@ -402,6 +408,8 @@ pub async fn db_query(
             Connection::open_with_flags(&full_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         debug!("opened database for reading");
         debug!("going to query for: {:?}", sub);
+        let mut row_count: usize = 0;
+        let start = Instant::now();
         // generate SQL query
         let q = query_from_sub(&sub);
         // execute the query
@@ -413,6 +421,7 @@ pub async fn db_query(
                 debug!("query aborted");
                 return;
             }
+            row_count += 1;
             // TODO: check before unwrapping
             let event_json = row.get(0).unwrap();
             query_tx
@@ -422,6 +431,10 @@ pub async fn db_query(
                 })
                 .ok();
         }
-        debug!("query completed");
+        debug!(
+            "query completed ({} rows) in {:?}",
+            row_count,
+            start.elapsed()
+        );
     });
 }
