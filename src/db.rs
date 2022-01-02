@@ -302,35 +302,52 @@ fn query_from_sub(sub: &Subscription) -> String {
             filter_components.push(authors_clause);
         }
         // Query for Kind
-        if f.kind.is_some() {
+        if let Some(ks) = &f.kinds {
             // kind is number, no escaping needed
-            let kind_clause = format!("kind = {}", f.kind.unwrap());
+            let str_kinds: Vec<String> = ks.iter().map(|x| x.to_string()).collect();
+            let kind_clause = format!("kind IN ({})", str_kinds.join(", "));
             filter_components.push(kind_clause);
         }
         // Query for event
-        if f.id.is_some() {
-            let id_str = f.id.as_ref().unwrap();
-            if is_hex(id_str) {
-                let id_clause = format!("event_hash = x'{}'", id_str);
-                filter_components.push(id_clause);
-            }
+        if f.ids.is_some() {
+            let ids_escaped: Vec<String> = f
+                .ids
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|&x| is_hex(x))
+                .map(|x| format!("x'{}'", x))
+                .collect();
+            let id_clause = format!("event_hash IN ({})", ids_escaped.join(", "));
+            filter_components.push(id_clause);
         }
         // Query for referenced event
-        if f.event.is_some() {
-            let ev_str = f.event.as_ref().unwrap();
-            if is_hex(ev_str) {
-                let ev_clause = format!("referenced_event = x'{}'", ev_str);
-                filter_components.push(ev_clause);
-            }
+        if f.events.is_some() {
+            let events_escaped: Vec<String> = f
+                .events
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|&x| is_hex(x))
+                .map(|x| format!("x'{}'", x))
+                .collect();
+            let events_clause = format!("referenced_event IN ({})", events_escaped.join(", "));
+            filter_components.push(events_clause);
         }
-        // Query for referenced pet name pubkey
-        if f.pubkey.is_some() {
-            let pet_str = f.pubkey.as_ref().unwrap();
-            if is_hex(pet_str) {
-                let pet_clause = format!("referenced_pubkey = x'{}'", pet_str);
-                filter_components.push(pet_clause);
-            }
+        // Query for referenced pubkey
+        if f.pubkeys.is_some() {
+            let pubkeys_escaped: Vec<String> = f
+                .pubkeys
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|&x| is_hex(x))
+                .map(|x| format!("x'{}'", x))
+                .collect();
+            let pubkeys_clause = format!("referenced_pubkey IN ({})", pubkeys_escaped.join(", "));
+            filter_components.push(pubkeys_clause);
         }
+
         // Query for timestamp
         if f.since.is_some() {
             let created_clause = format!("created_at > {}", f.since.unwrap());

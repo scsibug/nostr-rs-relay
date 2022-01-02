@@ -2,6 +2,7 @@
 use crate::error::Result;
 use crate::event::Event;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashSet;
 
 /// Subscription identifier and set of request filters
 #[derive(Serialize, PartialEq, Debug, Clone)]
@@ -17,16 +18,16 @@ pub struct Subscription {
 /// absent ([`None`]) if it should be ignored.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ReqFilter {
-    /// Event hash
-    pub id: Option<String>,
-    /// Event kind
-    pub kind: Option<u64>,
+    /// Event hashes
+    pub ids: Option<Vec<String>>,
+    /// Event kinds
+    pub kinds: Option<Vec<u64>>,
     /// Referenced event hash
     #[serde(rename = "#e")]
-    pub event: Option<String>,
+    pub events: Option<Vec<String>>,
     /// Referenced public key for a petname
     #[serde(rename = "#p")]
-    pub pubkey: Option<String>,
+    pub pubkeys: Option<Vec<String>>,
     /// Events published after this time
     pub since: Option<u64>,
     /// Events published before this time
@@ -105,8 +106,13 @@ impl Subscription {
 
 impl ReqFilter {
     /// Check for a match within the authors list.
-    // TODO: Ambiguity; what if the array is empty?  Should we
-    // consider that the same as null?
+    fn ids_match(&self, event: &Event) -> bool {
+        self.ids
+            .as_ref()
+            .map(|vs| vs.contains(&event.id.to_owned()))
+            .unwrap_or(true)
+    }
+
     fn authors_match(&self, event: &Event) -> bool {
         self.authors
             .as_ref()
@@ -115,29 +121,47 @@ impl ReqFilter {
     }
     /// Check if this filter either matches, or does not care about the event tags.
     fn event_match(&self, event: &Event) -> bool {
-        self.event
-            .as_ref()
-            .map(|t| event.event_tag_match(t))
-            .unwrap_or(true)
+        // This needs to be analyzed for performance; building these
+        // hash sets for each active subscription isn't great.
+        if let Some(es) = &self.events {
+            let event_refs =
+                HashSet::<_>::from_iter(event.get_event_tags().iter().map(|x| x.to_owned()));
+            let filter_refs = HashSet::<_>::from_iter(es.iter().map(|x| &x[..]));
+            let cardinality = event_refs.intersection(&filter_refs).count();
+            cardinality > 0
+        } else {
+            true
+        }
     }
 
     /// Check if this filter either matches, or does not care about
     /// the pubkey/petname tags.
     fn pubkey_match(&self, event: &Event) -> bool {
-        self.pubkey
-            .as_ref()
-            .map(|t| event.pubkey_tag_match(t))
-            .unwrap_or(true)
+        // This needs to be analyzed for performance; building these
+        // hash sets for each active subscription isn't great.
+        if let Some(ps) = &self.pubkeys {
+            let pubkey_refs =
+                HashSet::<_>::from_iter(event.get_pubkey_tags().iter().map(|x| x.to_owned()));
+            let filter_refs = HashSet::<_>::from_iter(ps.iter().map(|x| &x[..]));
+            let cardinality = pubkey_refs.intersection(&filter_refs).count();
+            cardinality > 0
+        } else {
+            true
+        }
     }
 
     /// Check if this filter either matches, or does not care about the kind.
     fn kind_match(&self, kind: u64) -> bool {
-        self.kind.map(|v| v == kind).unwrap_or(true)
+        self.kinds
+            .as_ref()
+            .map(|ks| ks.contains(&kind))
+            .unwrap_or(true)
     }
 
     /// Determine if all populated fields in this filter match the provided event.
     pub fn interested_in_event(&self, event: &Event) -> bool {
-        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
+        //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
+        self.ids_match(event)
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)
             && self.authors_match(event)
