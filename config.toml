@@ -1,4 +1,16 @@
 # Nostr-rs-relay configuration
+
+[info]
+# Relay information for clients.  Put your unique server name here.
+name = "nostr-rs-relay"
+# Description
+description = "A newly created nostr-rs-relay.\n\nCustomize this with your own info."
+# Administrative contact pubkey
+#pubkey = "0c2d168a4ae8ca58c9f1ab237b5df682599c6c7ab74307ea8b05684b60405d41"
+
+# Administrative contact email
+#email = "contact@example.com"
+
 [database]
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command

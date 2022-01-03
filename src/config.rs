@@ -10,6 +10,16 @@ lazy_static! {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Info {
+    pub name: Option<String>,
+    #[serde(rename = "description")]
+    pub descr: Option<String>,
+    pub pubkey: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Database {
     pub data_directory: String,
 }
@@ -52,6 +62,7 @@ pub struct Limits {
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
+    pub info: Info,
     pub database: Database,
     pub network: Network,
     pub limits: Limits,
@@ -89,6 +100,12 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            info: Info {
+                name: Some("Unnamed nostr-rs-relay".to_owned()),
+                descr: None,
+                pubkey: None,
+                email: None,
+            },
             database: Database {
                 data_directory: ".".to_owned(),
             },

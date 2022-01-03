@@ -1,6 +1,7 @@
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
+use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::upgrade::Upgraded;
 use hyper::{
@@ -13,6 +14,7 @@ use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
+use nostr_rs_relay::info::relay_info_json;
 use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
@@ -47,7 +49,7 @@ async fn handle_web_request(
         request.uri().path(),
         request.headers().contains_key(header::UPGRADE),
     ) {
-        //if the request is ws_echo and the request headers contains an Upgrade key
+        // Request for / as websocket
         ("/", true) => {
             debug!("websocket with upgrade request");
             //assume request is a handshake, so create the handshake response
@@ -96,11 +98,30 @@ async fn handle_web_request(
             };
             Ok::<_, Infallible>(response)
         }
+        // Request for Relay info
         ("/", false) => {
             // handle request at root with no upgrade header
-            Ok(Response::new(Body::from(
-                "This is a Nostr relay.\n".to_string(),
-            )))
+            // Check if this is a nostr server info request
+            let accept_header = &request.headers().get(ACCEPT);
+            // check if application/nostr+json is included
+            if let Some(media_types) = accept_header {
+                if let Ok(mt_str) = media_types.to_str() {
+                    if mt_str.contains("application/nostr+json") {
+                        let config = config::SETTINGS.read().unwrap();
+                        // build a relay info response
+                        debug!("Responding to server info request");
+                        let b = Body::from(relay_info_json(&config.info));
+                        return Ok(Response::builder()
+                            .status(200)
+                            .header("Content-Type", "application/nostr+json")
+                            .body(b)
+                            .unwrap());
+                    }
+                }
+            }
+            return Ok(Response::new(Body::from(
+                "Please use a Nostr client to connect.",
+            )));
         }
         (_, _) => {
             //handle any other url
