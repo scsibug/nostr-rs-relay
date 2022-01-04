@@ -119,9 +119,9 @@ async fn handle_web_request(
                     }
                 }
             }
-            return Ok(Response::new(Body::from(
+            Ok(Response::new(Body::from(
                 "Please use a Nostr client to connect.",
-            )));
+            )))
         }
         (_, _) => {
             //handle any other url

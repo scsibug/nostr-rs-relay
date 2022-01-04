@@ -11,9 +11,9 @@ lazy_static! {
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Info {
+    pub relay_url: Option<String>,
     pub name: Option<String>,
-    #[serde(rename = "description")]
-    pub descr: Option<String>,
+    pub description: Option<String>,
     pub pubkey: Option<String>,
     pub email: Option<String>,
 }
@@ -101,8 +101,9 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             info: Info {
+                relay_url: None,
                 name: Some("Unnamed nostr-rs-relay".to_owned()),
-                descr: None,
+                description: None,
                 pubkey: None,
                 email: None,
             },
