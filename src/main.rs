@@ -32,12 +32,15 @@ use tokio_tungstenite::WebSocketStream;
 use tungstenite::handshake;
 use tungstenite::protocol::WebSocketConfig;
 
+/// Return a requested DB name from command line arguments.
 fn db_from_args(args: Vec<String>) -> Option<String> {
     if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
         return args.get(2).map(|x| x.to_owned());
     }
     None
 }
+
+/// Handle arbitrary HTTP requests, including for WebSocket upgrades.
 async fn handle_web_request(
     mut request: Request<Body>,
     remote_addr: SocketAddr,
@@ -64,13 +67,20 @@ async fn handle_web_request(
                         match upgrade::on(&mut request).await {
                             //if successfully upgraded
                             Ok(upgraded) => {
+                                // set WebSocket configuration options
+                                let mut config = WebSocketConfig::default();
+                                {
+                                    let settings = config::SETTINGS.read().unwrap();
+                                    config.max_message_size = settings.limits.max_ws_message_bytes;
+                                    config.max_frame_size = settings.limits.max_ws_frame_bytes;
+                                }
                                 //create a websocket stream from the upgraded object
                                 let ws_stream = WebSocketStream::from_raw_socket(
                                     //pass the upgraded object
                                     //as the base layer stream of the Websocket
                                     upgraded,
                                     tokio_tungstenite::tungstenite::protocol::Role::Server,
-                                    None,
+                                    Some(config),
                                 )
                                 .await;
                                 tokio::spawn(nostr_server(
@@ -243,12 +253,6 @@ async fn nostr_server(
 ) {
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
-    let mut config = WebSocketConfig::default();
-    {
-        let settings = config::SETTINGS.read().unwrap();
-        config.max_message_size = settings.limits.max_ws_message_bytes;
-        config.max_frame_size = settings.limits.max_ws_frame_bytes;
-    }
     // upgrade the TCP connection to WebSocket
     //let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
     //let ws_stream = conn.expect("websocket handshake error");
