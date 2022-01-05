@@ -136,6 +136,7 @@ pub async fn db_writer(
         upgrade_db(&mut conn)?;
         // get rate limit settings
         let rps_setting = config.limits.messages_per_sec;
+        let mut most_recent_rate_limit = Instant::now();
         let mut lim_opt = None;
         let clock = governor::clock::QuantaClock::default();
         if let Some(rps) = rps_setting {
@@ -182,8 +183,20 @@ pub async fn db_writer(
             if event_write {
                 if let Some(ref lim) = lim_opt {
                     if let Err(n) = lim.check() {
-                        info!("Rate limiting event creation");
-                        thread::sleep(n.wait_time_from(clock.now()));
+                        let wait_for = n.wait_time_from(clock.now());
+                        // check if we have recently logged rate
+                        // limits, but print out a message only once
+                        // per second.
+                        if most_recent_rate_limit.elapsed().as_secs() > 1 {
+                            warn!(
+                                "rate limit reached for event creation (sleep for {:?})",
+                                wait_for
+                            );
+                            // reset last rate limit message
+                            most_recent_rate_limit = Instant::now();
+                        }
+                        // block event writes, allowing them to queue up
+                        thread::sleep(wait_for);
                         continue;
                     }
                 }
