@@ -34,6 +34,12 @@ pub struct ReqFilter {
     pub until: Option<u64>,
     /// List of author public keys
     pub authors: Option<Vec<String>>,
+    /// Set of event tags, for quick indexing
+    #[serde(skip)]
+    event_tag_set: Option<HashSet<String>>,
+    /// Set of pubkey tags, for quick indexing
+    #[serde(skip)]
+    pubkey_tag_set: Option<HashSet<String>>,
 }
 
 impl<'de> Deserialize<'de> for Subscription {
@@ -76,8 +82,10 @@ impl<'de> Deserialize<'de> for Subscription {
 
         let mut filters = vec![];
         for fv in i {
-            let f: ReqFilter = serde_json::from_value(fv.take())
+            let mut f: ReqFilter = serde_json::from_value(fv.take())
                 .map_err(|_| serde::de::Error::custom("could not parse filter"))?;
+            // create indexes
+            f.update_tag_indexes();
             filters.push(f);
         }
         Ok(Subscription {
@@ -105,6 +113,15 @@ impl Subscription {
 }
 
 impl ReqFilter {
+    /// Update pubkey and event indexes
+    fn update_tag_indexes(&mut self) {
+        if let Some(event_vec) = &self.events {
+            self.event_tag_set = Some(HashSet::from_iter(event_vec.iter().cloned()));
+        }
+        if let Some(pubkey_vec) = &self.pubkeys {
+            self.pubkey_tag_set = Some(HashSet::from_iter(pubkey_vec.iter().cloned()));
+        }
+    }
     /// Check for a match within the authors list.
     fn ids_match(&self, event: &Event) -> bool {
         self.ids
@@ -119,33 +136,27 @@ impl ReqFilter {
             .map(|vs| vs.contains(&event.pubkey.to_owned()))
             .unwrap_or(true)
     }
+
     /// Check if this filter either matches, or does not care about the event tags.
     fn event_match(&self, event: &Event) -> bool {
-        // This needs to be analyzed for performance; building these
-        // hash sets for each active subscription isn't great.
-        if let Some(es) = &self.events {
-            let event_refs =
-                HashSet::<_>::from_iter(event.get_event_tags().iter().map(|x| x.to_owned()));
-            let filter_refs = HashSet::<_>::from_iter(es.iter().map(|x| &x[..]));
-            let cardinality = event_refs.intersection(&filter_refs).count();
-            cardinality > 0
+        // an event match is performed by looking at the ReqFilter events field, and sending a hashset to the event to intersect with.
+        if let Some(es) = &self.event_tag_set {
+            // if there exists event tags in this filter, find if any intersect.
+            event.generic_tag_val_intersect("e", es)
         } else {
+            // if no event tags were requested in a filter, we do match
             true
         }
     }
 
-    /// Check if this filter either matches, or does not care about
-    /// the pubkey/petname tags.
+    /// Check if this filter either matches, or does not care about the event tags.
     fn pubkey_match(&self, event: &Event) -> bool {
-        // This needs to be analyzed for performance; building these
-        // hash sets for each active subscription isn't great.
-        if let Some(ps) = &self.pubkeys {
-            let pubkey_refs =
-                HashSet::<_>::from_iter(event.get_pubkey_tags().iter().map(|x| x.to_owned()));
-            let filter_refs = HashSet::<_>::from_iter(ps.iter().map(|x| &x[..]));
-            let cardinality = pubkey_refs.intersection(&filter_refs).count();
-            cardinality > 0
+        // an event match is performed by looking at the ReqFilter events field, and sending a hashset to the event to intersect with.
+        if let Some(ps) = &self.pubkey_tag_set {
+            // if there exists event tags in this filter, find if any intersect.
+            event.generic_tag_val_intersect("p", ps)
         } else {
+            // if no event tags were requested in a filter, we do match
             true
         }
     }

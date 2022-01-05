@@ -9,6 +9,8 @@ use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
 use serde_json::Number;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::SystemTime;
 
@@ -35,6 +37,9 @@ pub struct Event {
     pub(crate) tags: Vec<Vec<String>>,
     pub(crate) content: String,
     pub(crate) sig: String,
+    // Optimization for tag search, built on demand
+    #[serde(skip)]
+    pub(crate) tagidx: Option<HashMap<String, HashSet<String>>>,
 }
 
 /// Simple tag type for array of array of strings.
@@ -56,7 +61,9 @@ impl From<EventCmd> for Result<Event> {
         if ec.cmd != "EVENT" {
             Err(CommandUnknownError)
         } else if ec.event.is_valid() {
-            Ok(ec.event)
+            let mut e = ec.event;
+            e.build_index();
+            Ok(e)
         } else {
             Err(EventInvalid)
         }
@@ -72,6 +79,30 @@ fn unix_time() -> u64 {
 }
 
 impl Event {
+    /// Build an event tag index
+    fn build_index(&mut self) {
+        // if there are no tags; just leave the index as None
+        if self.tags.is_empty() {
+            return;
+        }
+        // otherwise, build an index
+        let mut idx: HashMap<String, HashSet<String>> = HashMap::new();
+        // iterate over tags that have at least 2 elements
+        for t in self.tags.iter().filter(|x| x.len() > 1) {
+            let tagname = t.get(0).unwrap();
+            let tagval = t.get(1).unwrap();
+            // ensure a vector exists for this tag
+            if !idx.contains_key(tagname) {
+                idx.insert(tagname.clone(), HashSet::new());
+            }
+            // get the tag vec and insert entry
+            let tidx = idx.get_mut(tagname).expect("could not get tag vector");
+            tidx.insert(tagval.clone());
+        }
+        // save the tag structure
+        self.tagidx = Some(idx);
+    }
+
     /// Create a short event identifier, suitable for logging.
     pub fn get_event_id_prefix(&self) -> String {
         self.id.chars().take(8).collect()
@@ -192,6 +223,34 @@ impl Event {
     /// Check if a given event is referenced in an event tag.
     pub fn pubkey_tag_match(&self, pubkey: &str) -> bool {
         self.get_pubkey_tags().contains(&pubkey)
+    }
+
+    /// Generic tag match
+    pub fn generic_tag_match(&self, tagname: &str, tagvalue: &str) -> bool {
+        match &self.tagidx {
+            Some(idx) => {
+                // get the set of values for this tag
+                match idx.get(tagname) {
+                    Some(valset) => valset.contains(tagvalue),
+                    None => false,
+                }
+            }
+            None => false,
+        }
+    }
+
+    /// Determine if the given tag and value set intersect with tags in this event.
+    pub fn generic_tag_val_intersect(&self, tagname: &str, check: &HashSet<String>) -> bool {
+        match &self.tagidx {
+            Some(idx) => match idx.get(tagname) {
+                Some(valset) => {
+                    let common = valset.intersection(check);
+                    common.count() > 0
+                }
+                None => false,
+            },
+            None => false,
+        }
     }
 }
 
