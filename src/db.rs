@@ -417,8 +417,7 @@ pub async fn db_query(
         let db_dir = &config.database.data_directory;
         let full_path = Path::new(db_dir).join(DB_FILE);
 
-        let conn =
-            Connection::open_with_flags(&full_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let conn = Connection::open_with_flags(&full_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         debug!("opened database for reading");
         debug!("going to query for: {:?}", sub);
         let mut row_count: usize = 0;
@@ -426,17 +425,16 @@ pub async fn db_query(
         // generate SQL query
         let q = query_from_sub(&sub);
         // execute the query
-        let mut stmt = conn.prepare(&q).unwrap();
-        let mut event_rows = stmt.query([]).unwrap();
-        while let Some(row) = event_rows.next().unwrap() {
+        let mut stmt = conn.prepare(&q)?;
+        let mut event_rows = stmt.query([])?;
+        while let Some(row) = event_rows.next()? {
             // check if this is still active (we could do this every N rows)
             if abandon_query_rx.try_recv().is_ok() {
                 debug!("query aborted");
-                return;
+                return Ok(());
             }
             row_count += 1;
-            // TODO: check before unwrapping
-            let event_json = row.get(0).unwrap();
+            let event_json = row.get(0)?;
             query_tx
                 .blocking_send(QueryResult {
                     sub_id: sub.get_id(),
@@ -449,5 +447,7 @@ pub async fn db_query(
             row_count,
             start.elapsed()
         );
+        let ok: Result<()> = Ok(());
+        return ok;
     });
 }
