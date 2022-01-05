@@ -8,7 +8,7 @@ lazy_static! {
     pub static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::default());
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
 pub struct Info {
     pub relay_url: Option<String>,

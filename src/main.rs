@@ -14,7 +14,7 @@ use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
-use nostr_rs_relay::info::relay_info_json;
+use nostr_rs_relay::info::RelayInfo;
 use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
@@ -110,7 +110,8 @@ async fn handle_web_request(
                         let config = config::SETTINGS.read().unwrap();
                         // build a relay info response
                         debug!("Responding to server info request");
-                        let b = Body::from(relay_info_json(&config.info));
+                        let rinfo = RelayInfo::from(config.info.clone());
+                        let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
                             .status(200)
                             .header("Content-Type", "application/nostr+json")

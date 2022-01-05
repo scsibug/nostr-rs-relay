@@ -25,36 +25,18 @@ pub struct RelayInfo {
     pub version: Option<String>,
 }
 
-impl Default for RelayInfo {
-    fn default() -> Self {
+/// Convert an Info configuration into public Relay Info
+impl From<config::Info> for RelayInfo {
+    fn from(i: config::Info) -> Self {
         RelayInfo {
-            id: None,
-            name: None,
-            description: None,
-            pubkey: None,
-            email: None,
+            id: i.relay_url,
+            name: i.name,
+            description: i.description,
+            pubkey: i.pubkey,
+            email: i.email,
             supported_nips: Some(vec![1]),
             software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(|x| x.to_owned()),
         }
-    }
-}
-
-/// Convert an Info struct into Relay Info json string
-pub fn relay_info_json(info: &config::Info) -> String {
-    // get a default RelayInfo
-    let mut r = RelayInfo::default();
-    // update fields from Info, if present
-    r.id = info.relay_url.clone();
-    r.name = info.name.clone();
-    r.description = info.description.clone();
-    r.pubkey = info.pubkey.clone();
-    r.email = info.email.clone();
-    r.to_json()
-}
-
-impl RelayInfo {
-    pub fn to_json(self) -> String {
-        serde_json::to_string_pretty(&self).unwrap()
     }
 }
