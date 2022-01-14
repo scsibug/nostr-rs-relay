@@ -266,6 +266,7 @@ mod tests {
             tags: vec![],
             content: "".to_owned(),
             sig: "0".to_owned(),
+            tagidx: None,
         }
     }
 
@@ -340,6 +341,7 @@ mod tests {
             tags: vec![],
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
+            tagidx: None,
         };
         let c = e.to_canonical();
         let expected = Some(r#"[0,"012345",501234,1,[],"this is a test"]"#.to_owned());
@@ -363,6 +365,7 @@ mod tests {
             ],
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
+            tagidx: None,
         };
         let c = e.to_canonical();
         let expected_json = r###"[0,"012345",501234,1,[["#e","aoeu"],["#p","aaaa","ws://example.com"]],"this is a test"]"###;

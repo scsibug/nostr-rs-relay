@@ -216,19 +216,22 @@ mod tests {
 
     #[test]
     fn author_filter() -> Result<()> {
-        let raw_json = "[\"REQ\",\"some-id\",{\"author\": \"test-author-id\"}]";
+        let raw_json = r#"["REQ","some-id",{"authors": ["test-author-id"]}]"#;
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
         let first_filter = s.filters.get(0).unwrap();
-        assert_eq!(first_filter.author, Some("test-author-id".to_owned()));
+        assert_eq!(
+            first_filter.authors,
+            Some(vec!("test-author-id".to_owned()))
+        );
         Ok(())
     }
 
     #[test]
     fn interest_id_nomatch() -> Result<()> {
         // subscription with a filter for ID
-        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc"}]"#)?;
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"]}]"#)?;
         let e = Event {
             id: "abcde".to_owned(),
             pubkey: "".to_owned(),
@@ -237,6 +240,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), false);
         Ok(())
@@ -245,7 +249,7 @@ mod tests {
     #[test]
     fn interest_time_and_id() -> Result<()> {
         // subscription with a filter for ID and time
-        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"id":"abc", "since": 1000}]"#)?;
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 1000}]"#)?;
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
@@ -254,6 +258,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), false);
         Ok(())
@@ -271,6 +276,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), true);
         Ok(())
@@ -288,6 +294,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), true);
         Ok(())
@@ -305,6 +312,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), true);
         Ok(())
@@ -322,6 +330,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), true);
         Ok(())
@@ -339,6 +348,7 @@ mod tests {
             tags: Vec::new(),
             content: "".to_owned(),
             sig: "".to_owned(),
+            tagidx: None,
         };
         assert_eq!(s.interested_in_event(&e), false);
         Ok(())
