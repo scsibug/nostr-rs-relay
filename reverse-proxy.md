@@ -38,7 +38,7 @@ backend relay
     mode http
     option tcp-check
     default-server maxconn 400 check inter 20s fastinter 1s
-    server nostr 127.0.0.1:8080
+    server relay 127.0.0.1:8080
 ```
 
 ### Notes
