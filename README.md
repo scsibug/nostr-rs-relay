@@ -44,7 +44,7 @@ https://hub.docker.com/repository/docker/scsibug/nostr-rs-relay
 
 ## Configuration
 
-The sample `[config.toml](config.toml)` file demonstrates the
+The sample [`config.toml`](config.toml) file demonstrates the
 configuration available to the relay.  This file is optional, but may
 be mounted into a docker container like so:
 
@@ -57,6 +57,12 @@ $ docker run -it -p 7000:8080 \
 
 Options include rate-limiting, event size limits, and network address
 settings.
+
+## Reverse Proxy Configuration
+
+For examples of putting the relay behind a reverse proxy (for TLS
+termination, load balancing, and other features), see [Reverse
+Proxy](reverse-proxy.md).
 
 License
 ---
