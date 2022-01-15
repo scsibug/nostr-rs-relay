@@ -37,6 +37,8 @@ pub struct Event {
     pub(crate) tags: Vec<Vec<String>>,
     pub(crate) content: String,
     pub(crate) sig: String,
+    #[serde(deserialize_with = "pow_from_string")]
+    pub(crate) pow: Vec<String>,
     // Optimization for tag search, built on demand
     #[serde(skip)]
     pub(crate) tagidx: Option<HashMap<String, HashSet<String>>>,
@@ -47,6 +49,18 @@ type Tag = Vec<Vec<String>>;
 
 /// Deserializer that ensures we always have a [`Tag`].
 fn tag_from_string<'de, D>(deserializer: D) -> Result<Tag, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_else(Vec::new))
+}
+
+/// Simple pow type for array of strings.
+type Pow = Vec<String>;
+
+/// Deserializer that ensures we always have a Pow.
+fn pow_from_string<'de, D>(deserializer: D) -> Result<Pow, D::Error>
 where
     D: Deserializer<'de>,
 {
