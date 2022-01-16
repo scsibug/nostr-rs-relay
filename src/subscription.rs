@@ -208,10 +208,10 @@ mod tests {
     }
 
     #[test]
-    fn invalid_filter() {
-        // unrecognized field in filter
-        let raw_json = "[\"REQ\",\"some-id\",{\"foo\": 3}]";
-        assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
+    fn legacy_filter() {
+        // legacy field in filter
+        let raw_json = "[\"REQ\",\"some-id\",{\"kind\": 3}]";
+        assert!(serde_json::from_str::<Subscription>(raw_json).is_ok());
     }
 
     #[test]
@@ -249,7 +249,8 @@ mod tests {
     #[test]
     fn interest_time_and_id() -> Result<()> {
         // subscription with a filter for ID and time
-        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 1000}]"#)?;
+        let s: Subscription =
+            serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 1000}]"#)?;
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
