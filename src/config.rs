@@ -15,7 +15,7 @@ pub struct Info {
     pub name: Option<String>,
     pub description: Option<String>,
     pub pubkey: Option<String>,
-    pub email: Option<String>,
+    pub contact: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -105,7 +105,7 @@ impl Default for Settings {
                 name: Some("Unnamed nostr-rs-relay".to_owned()),
                 description: None,
                 pubkey: None,
-                email: None,
+                contact: None,
             },
             database: Database {
                 data_directory: ".".to_owned(),

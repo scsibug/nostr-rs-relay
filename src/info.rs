@@ -16,7 +16,7 @@ pub struct RelayInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub contact: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supported_nips: Option<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,7 +33,7 @@ impl From<config::Info> for RelayInfo {
             name: i.name,
             description: i.description,
             pubkey: i.pubkey,
-            email: i.email,
+            contact: i.contact,
             supported_nips: Some(vec![1]),
             software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(|x| x.to_owned()),
