@@ -8,6 +8,17 @@ The project master repository is available on
 [sourcehut](https://sr.ht/~gheartsfield/nostr-rs-relay/), and is
 mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 
+## Features
+
+NIPs with relay-specific implementation requirements are listed here.
+
+- [x] NIP-01: Core event model
+- [x] NIP-01: Hide old metadata events
+- [x] NIP-02: Hide old contact list events
+- [ ] NIP-03: OpenTimestamps
+- [ ] NIP-09: Event deletion
+- [x] NIP-11: Relay information document
+
 ## Quick Start
 
 The provided `Dockerfile` will compile and build the server
