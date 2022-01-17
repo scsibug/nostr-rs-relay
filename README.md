@@ -75,6 +75,10 @@ For examples of putting the relay behind a reverse proxy (for TLS
 termination, load balancing, and other features), see [Reverse
 Proxy](reverse-proxy.md).
 
+## Dev Channel
+The current dev discussions for this project is happening at https://discord.gg/AEG5Z8AP.
+Drop in to query any development related questions.
+
 License
 ---
 This project is MIT licensed.
