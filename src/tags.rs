@@ -12,7 +12,6 @@ use serde::de::Unexpected;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
-use std::net::SocketAddr;
 
 use crate::error::Error;
 
@@ -21,13 +20,13 @@ type EventId = sha256::Hash;
 #[derive(Debug, PartialEq)]
 struct EventTag {
     event_id: EventId,
-    recommended_url: Option<SocketAddr>,
+    recommended_url: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
 struct PubkeyTag {
     pubkey: XOnlyPublicKey,
-    recommended_url: Option<SocketAddr>,
+    recommended_url: Option<String>,
 }
 
 // Tag structure representing two possible types of tags
@@ -50,8 +49,8 @@ impl serde::Serialize for Tag {
                 let mut seq = serializer.serialize_seq(None)?;
                 seq.serialize_element("e")?;
                 seq.serialize_element(&event_tag.event_id.to_hex())?;
-                if let Some(url) = event_tag.recommended_url {
-                    seq.serialize_element(&url.to_string())?;
+                if let Some(url) = &event_tag.recommended_url {
+                    seq.serialize_element(url)?;
                 } else {
                 }
                 seq.end()
@@ -60,8 +59,8 @@ impl serde::Serialize for Tag {
                 let mut seq = serializer.serialize_seq(None)?;
                 seq.serialize_element("p")?;
                 seq.serialize_element(&pubkey_tag.pubkey.to_hex())?;
-                if let Some(url) = pubkey_tag.recommended_url {
-                    seq.serialize_element(&url.to_string())?;
+                if let Some(url) = &pubkey_tag.recommended_url {
+                    seq.serialize_element(url)?;
                 } else {
                 }
                 seq.end()
@@ -111,10 +110,7 @@ impl<'de> serde::Deserialize<'de> for Tag {
                     let event_id = EventId::from_str(values[1])
                         .map_err(|e| serde::de::Error::custom(e.to_string()))?;
                     let recomended_url = if values.len() == 3 {
-                        Some(
-                            SocketAddr::from_str(values[2])
-                                .map_err(|e| serde::de::Error::custom(e.to_string()))?,
-                        )
+                        Some(values[2].into())
                     } else {
                         None
                     };
@@ -128,10 +124,7 @@ impl<'de> serde::Deserialize<'de> for Tag {
                     let pubkey = XOnlyPublicKey::from_str(values[1])
                         .map_err(|e| serde::de::Error::custom(e.to_string()))?;
                     let recomended_url = if values.len() == 3 {
-                        Some(
-                            SocketAddr::from_str(values[2])
-                                .map_err(|e| serde::de::Error::custom(e.to_string()))?,
-                        )
+                        Some(values[2].into())
                     } else {
                         None
                     };
@@ -154,30 +147,30 @@ impl<'de> serde::Deserialize<'de> for Tag {
 #[allow(dead_code)]
 // Some api (not public currently) to use Tags
 impl Tag {
-    fn new_event_tag(event_id: EventId, recomended_url: Option<SocketAddr>) -> Self {
+    fn new_event_tag(event_id: EventId, recomended_url: Option<String>) -> Self {
         Self::Event(EventTag {
             event_id,
             recommended_url: recomended_url,
         })
     }
 
-    fn new_pubkey_tag(pubkey: XOnlyPublicKey, recomended_url: Option<SocketAddr>) -> Self {
+    fn new_pubkey_tag(pubkey: XOnlyPublicKey, recomended_url: Option<String>) -> Self {
         Self::Pubkey(PubkeyTag {
             pubkey,
             recommended_url: recomended_url,
         })
     }
 
-    fn get_recomended_url(&self) -> Option<SocketAddr> {
+    fn get_recomended_url(&self) -> Option<String> {
         match self {
             Self::Event(EventTag {
                 event_id: _,
                 recommended_url,
-            }) => *recommended_url,
+            }) => recommended_url.clone(),
             Self::Pubkey(PubkeyTag {
                 pubkey: _,
                 recommended_url,
-            }) => *recommended_url,
+            }) => recommended_url.clone(),
         }
     }
 
@@ -213,7 +206,7 @@ mod test {
             "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166",
         )
         .unwrap();
-        let url = SocketAddr::from_str("127.0.0.5:8080").unwrap();
+        let url = "wss://rsslay.fiatjaf.com";
         static HASH_BYTES: [u8; 32] = [
             0xef, 0x53, 0x7f, 0x25, 0xc8, 0x95, 0xbf, 0xa7, 0x82, 0x52, 0x65, 0x29, 0xa9, 0xb6,
             0x3d, 0x97, 0xaa, 0x63, 0x15, 0x64, 0xd5, 0xd7, 0x89, 0xc2, 0xb7, 0x65, 0x44, 0x8c,
@@ -221,8 +214,8 @@ mod test {
         ];
         let event_id = EventId::from_slice(&HASH_BYTES).expect("right number of bytes");
 
-        let event_tag = Tag::new_event_tag(event_id, Some(url));
-        let pubkey_tag = Tag::new_pubkey_tag(pubkey, Some(url));
+        let event_tag = Tag::new_event_tag(event_id, Some(url.to_string()));
+        let pubkey_tag = Tag::new_pubkey_tag(pubkey, Some(url.to_string()));
 
         let ser_event_tag = serde_json::to_string(&event_tag).unwrap();
         let ser_pubkey_tag = serde_json::to_string(&pubkey_tag).unwrap();
@@ -236,7 +229,7 @@ mod test {
 
     #[test]
     fn invalid_pubkey() {
-        let test_string = r#"["p","845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166","127.0.0.5:8080"]"#;
+        let test_string = r#"["p","845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166","wss://rsslay.fiatjaf.com"]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
@@ -246,7 +239,7 @@ mod test {
 
     #[test]
     fn invalid_datatype() {
-        let test_string = r#"["p", 188457, "127.0.0.5:8080"]"#;
+        let test_string = r#"["p", 188457, "wss://rsslay.fiatjaf.com"]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
@@ -256,7 +249,7 @@ mod test {
 
     #[test]
     fn invalid_tagbyte() {
-        let test_string = r#"["q", "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166", "127.0.0.5:8080"]"#;
+        let test_string = r#"["q", "18845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166", "wss://rsslay.fiatjaf.com"]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
@@ -266,8 +259,7 @@ mod test {
 
     #[test]
     fn invalid_event_id() {
-        let test_string =
-            r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d78c8635fb6c","127.0.0.5:8080"]"#;
+        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d78c8635fb6c","wss://rsslay.fiatjaf.com"]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
@@ -276,18 +268,8 @@ mod test {
     }
 
     #[test]
-    fn invalid_url() {
-        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c","127.0.5:8080"]"#;
-        let tag: Result<Tag, _> = serde_json::from_str(test_string);
-        assert_eq!(
-            tag.err().expect("expect error").to_string(),
-            "invalid IP address syntax".to_string()
-        );
-    }
-
-    #[test]
     fn invalid_url_type() {
-        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c", 1270058080]"#;
+        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c", 123456788]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
@@ -297,7 +279,7 @@ mod test {
 
     #[test]
     fn invalid_length() {
-        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c","127.0.0.5:8080", "Random extra data"]"#;
+        let test_string = r#"["e","ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c","wss://rsslay.fiatjaf.com", "Random extra data"]"#;
         let tag: Result<Tag, _> = serde_json::from_str(test_string);
         assert_eq!(
             tag.err().expect("expect error").to_string(),
