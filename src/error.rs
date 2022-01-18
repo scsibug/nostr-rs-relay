@@ -40,6 +40,8 @@ pub enum Error {
     ConfigError(config::ConfigError),
     #[error("Data directory does not exist")]
     DatabaseDirError,
+    #[error("Custom Error : {0}")]
+    CustomError(String),
 }
 
 impl From<rusqlite::Error> for Error {
