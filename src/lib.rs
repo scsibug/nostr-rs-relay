@@ -7,3 +7,4 @@ pub mod event;
 pub mod info;
 pub mod protostream;
 pub mod subscription;
+pub mod tags;
