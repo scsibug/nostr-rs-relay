@@ -4,8 +4,8 @@
 //!
 
 use bitcoin_hashes::hex::ToHex;
-use bitcoin_hashes::sha256;
 use secp256k1::XOnlyPublicKey;
+use std::fmt::Display;
 use std::str::FromStr;
 
 use serde::de::Unexpected;
@@ -13,30 +13,36 @@ use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 
+use super::event::EventId;
 use crate::error::Error;
 
-type EventId = sha256::Hash;
-
-#[derive(Debug, PartialEq)]
-struct EventTag {
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct EventTag {
     event_id: EventId,
     recommended_url: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
-struct PubkeyTag {
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct PubkeyTag {
     pubkey: XOnlyPublicKey,
     recommended_url: Option<String>,
 }
 
-// Tag structure representing two possible types of tags
-#[derive(Debug, PartialEq)]
-enum Tag {
+/// A Type denoting kind of a [`Tag`]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TagType {
+    Event,
+    Pubkey,
+}
+
+/// A Tag struct used to reference other events or pubkeys in an [`crate::event::Event`]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum Tag {
     Event(EventTag),
     Pubkey(PubkeyTag),
 }
 
-// Custom json serialization into protocol network format
+// Custom json serialization into protocol format
 // Event tag : ["e", "<32 byte event-id>", "optional<url>"]
 // Pubkey tag : ["p", "<32 byte Xonly Pubkey>", "optional<url>"]
 impl serde::Serialize for Tag {
@@ -69,7 +75,14 @@ impl serde::Serialize for Tag {
     }
 }
 
-// Custom json deserialization from protocol network format
+/// Tags are displayed in their protocol format
+impl Display for Tag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+// Custom json deserialization from protocol format
 impl<'de> serde::Deserialize<'de> for Tag {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -145,22 +158,24 @@ impl<'de> serde::Deserialize<'de> for Tag {
 }
 
 #[allow(dead_code)]
-// Some api (not public currently) to use Tags
 impl Tag {
-    fn new_event_tag(event_id: EventId, recomended_url: Option<String>) -> Self {
+    /// Crate a Tag from a given [`EventId`]
+    pub fn from_event_id(event_id: EventId, recomended_url: Option<String>) -> Self {
         Self::Event(EventTag {
             event_id,
             recommended_url: recomended_url,
         })
     }
 
-    fn new_pubkey_tag(pubkey: XOnlyPublicKey, recomended_url: Option<String>) -> Self {
+    /// Crate a Tag from a given [`XOnlyPublicKey`]
+    pub fn from_pubkey(pubkey: XOnlyPublicKey, recomended_url: Option<String>) -> Self {
         Self::Pubkey(PubkeyTag {
             pubkey,
             recommended_url: recomended_url,
         })
     }
 
+    /// Get the recomended url, if any, else None
     fn get_recomended_url(&self) -> Option<String> {
         match self {
             Self::Event(EventTag {
@@ -174,23 +189,53 @@ impl Tag {
         }
     }
 
+    /// Get [`EventId`] for this tag, errors if called on an incompatible tag
     fn get_event_id(&self) -> Result<EventId, Error> {
         match self {
             Self::Event(EventTag {
                 event_id,
                 recommended_url: _,
             }) => Ok(*event_id),
-            _ => Err(Error::CustomError("Expected event tag".to_string())),
+            _ => Err(Error::GenericError("Expected event tag".to_string())),
         }
     }
 
+    /// Get [`XOnlyPublicKey`] for this tag, errors if called on an incompatible tag
     fn get_pubkey(&self) -> Result<XOnlyPublicKey, Error> {
         match self {
             Self::Pubkey(PubkeyTag {
                 pubkey,
                 recommended_url: _,
             }) => Ok(*pubkey),
-            _ => Err(Error::CustomError("Expected pubkey tag".to_string())),
+            _ => Err(Error::GenericError("Expected pubkey tag".to_string())),
+        }
+    }
+
+    /// Check if an [`EventId`] matches with this tag, errors if called on an incompatible tag
+    pub fn match_event_id(&self, event_id: &EventId) -> Result<bool, Error> {
+        match self {
+            Tag::Event(event_tag) => Ok(event_tag.event_id == *event_id),
+            _ => Err(Error::GenericError(
+                "Pubkey Tag used for event matching".to_string(),
+            )),
+        }
+    }
+
+    /// Check if an [`XOnlyPublicKey`] matches with this tag, errors if called on an incompatible tag
+    pub fn match_pubkey(&self, pubkey: &XOnlyPublicKey) -> Result<bool, Error> {
+        match self {
+            Tag::Pubkey(pubkey_tag) => Ok(pubkey_tag.pubkey == *pubkey),
+            _ => Err(Error::GenericError(
+                "Event Tag used for pubkey matching".to_string(),
+            )),
+        }
+    }
+
+    /// get the type of this tag
+    pub fn get_type(&self) -> TagType {
+        match self {
+            Tag::Event(_) => TagType::Event,
+            Tag::Pubkey(_) => TagType::Pubkey,
         }
     }
 }
@@ -214,8 +259,8 @@ mod test {
         ];
         let event_id = EventId::from_slice(&HASH_BYTES).expect("right number of bytes");
 
-        let event_tag = Tag::new_event_tag(event_id, Some(url.to_string()));
-        let pubkey_tag = Tag::new_pubkey_tag(pubkey, Some(url.to_string()));
+        let event_tag = Tag::from_event_id(event_id, Some(url.to_string()));
+        let pubkey_tag = Tag::from_pubkey(pubkey, Some(url.to_string()));
 
         let ser_event_tag = serde_json::to_string(&event_tag).unwrap();
         let ser_pubkey_tag = serde_json::to_string(&pubkey_tag).unwrap();
