@@ -1,10 +1,10 @@
 //! Client connection state
-use crate::close::Close;
 use crate::error::Error;
 use crate::error::Result;
-use crate::event::Event;
+use crate::messages::Close;
+use crate::messages::Event;
 
-use crate::subscription::Subscription;
+use crate::messages::Subscription;
 use log::*;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -58,7 +58,7 @@ impl ClientConn {
 
     /// Add a new subscription for this connection.
     pub fn subscribe(&mut self, s: Subscription) -> Result<()> {
-        let k = s.get_id();
+        let k = s.get_id().clone();
         let sub_id_len = k.len();
         // prevent arbitrarily long subscription identifiers from
         // being used.
@@ -70,9 +70,9 @@ impl ClientConn {
             return Err(Error::SubIdMaxLengthError);
         }
         // check if an existing subscription exists, and replace if so
-        if self.subscriptions.contains_key(&k) {
-            self.subscriptions.remove(&k);
-            self.subscriptions.insert(k, s);
+        if self.subscriptions.contains_key(k) {
+            self.subscriptions.remove(k);
+            self.subscriptions.insert(k.to_string(), s);
             debug!("replaced existing subscription");
             return Ok(());
         }
@@ -82,7 +82,7 @@ impl ClientConn {
             return Err(Error::SubMaxExceededError);
         }
         // add subscription
-        self.subscriptions.insert(k, s);
+        self.subscriptions.insert(k.to_string(), s);
         debug!(
             "registered new subscription, currently have {} active subs",
             self.subscriptions.len()

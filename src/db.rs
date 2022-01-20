@@ -1,7 +1,7 @@
 //! Event persistence and querying
 use crate::error::Result;
-use crate::event::Event;
-use crate::subscription::Subscription;
+use crate::messages::Event;
+use crate::messages::Subscription;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
@@ -15,6 +15,10 @@ use std::path::Path;
 use std::thread;
 use std::time::Instant;
 use tokio::task;
+
+use std::str::FromStr;
+
+use bitcoin_hashes::{hex::ToHex, Hash};
 
 /// Database file
 const DB_FILE: &str = "nostr.db";
@@ -167,7 +171,7 @@ pub async fn db_writer(
                     } else {
                         info!(
                             "persisted event: {} in {:?}",
-                            event.get_event_id_prefix(),
+                            event.get_short_event_id(),
                             start.elapsed()
                         );
                         event_write = true;
@@ -219,13 +223,16 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     // start transaction
     let tx = conn.transaction()?;
     // get relevant fields from event and convert to blobs.
-    let id_blob = hex::decode(&e.id).ok();
-    let pubkey_blob = hex::decode(&e.pubkey).ok();
+    let id_blob = e.id.as_inner().to_vec();
+    let pubkey_blob = e.pubkey.serialize().to_vec();
     let event_str = serde_json::to_string(&e).ok();
+    let event_kind = serde_json::to_value(&e.kind)?
+        .as_u64()
+        .expect("expect a kind");
     // ignore if the event hash is a duplicate.
     let ins_count = tx.execute(
         "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), FALSE);",
-        params![id_blob, e.created_at, e.kind, pubkey_blob, event_str]
+        params![id_blob, e.created_at, event_kind, pubkey_blob, event_str]
     )?;
     if ins_count == 0 {
         // if the event was a duplicate, no need to insert event or
@@ -235,31 +242,31 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     // remember primary key of the event most recently inserted.
     let ev_id = tx.last_insert_rowid();
     // add all event tags into the event_ref table
-    let etags = e.get_event_tags();
+    let etags = e.clone().get_event_tags().unwrap();
     if !etags.is_empty() {
         for etag in etags.iter() {
             tx.execute(
                 "INSERT OR IGNORE INTO event_ref (event_id, referenced_event) VALUES (?1, ?2)",
-                params![ev_id, hex::decode(&etag).ok()],
+                params![ev_id, hex::decode(&etag.to_string().as_bytes()).ok()],
             )?;
         }
     }
     // add all event tags into the pubkey_ref table
-    let ptags = e.get_pubkey_tags();
+    let ptags = e.clone().get_pubkey_tags().unwrap();
     if !ptags.is_empty() {
         for ptag in ptags.iter() {
             tx.execute(
                 "INSERT OR IGNORE INTO pubkey_ref (event_id, referenced_pubkey) VALUES (?1, ?2)",
-                params![ev_id, hex::decode(&ptag).ok()],
+                params![ev_id, hex::decode(&ptag.to_string().as_bytes()).ok()],
             )?;
         }
     }
     // if this event is for a metadata update, hide every other kind=0
     // event from the same author that was issued earlier than this.
-    if e.kind == 0 {
+    if event_kind == 0 {
         let update_count = tx.execute(
             "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=0 AND author=? AND created_at <= ? and hidden!=TRUE",
-            params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
+            params![ev_id, hex::decode(&e.pubkey.to_string()).ok(), e.created_at],
         )?;
         if update_count > 0 {
             info!("hid {} older metadata events", update_count);
@@ -267,10 +274,10 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
     }
     // if this event is for a contact update, hide every other kind=3
     // event from the same author that was issued earlier than this.
-    if e.kind == 3 {
+    if event_kind == 3 {
         let update_count = tx.execute(
             "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=3 AND author=? AND created_at <= ? and hidden!=TRUE",
-            params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
+            params![ev_id, hex::decode(&e.pubkey.to_string()).ok(), e.created_at],
         )?;
         if update_count > 0 {
             info!("hid {} older contact events", update_count);
@@ -286,7 +293,7 @@ pub struct QueryResult {
     /// Subscription identifier
     pub sub_id: String,
     /// Serialized event
-    pub event: String,
+    pub event: Event,
 }
 
 /// Check if a string contains only hex characters.
@@ -304,7 +311,7 @@ fn query_from_sub(sub: &Subscription) -> String {
             .to_owned();
     // for every filter in the subscription, generate a where clause
     let mut filter_clauses: Vec<String> = Vec::new();
-    for f in sub.filters.iter() {
+    for f in sub.get_filters().iter() {
         // individual filter components
         let mut filter_components: Vec<String> = Vec::new();
         // Query for "authors"
@@ -314,7 +321,7 @@ fn query_from_sub(sub: &Subscription) -> String {
                 .as_ref()
                 .unwrap()
                 .iter()
-                .filter(|&x| is_hex(x))
+                .filter(|&x| is_hex(&x.to_hex()))
                 .map(|x| format!("x'{}'", x))
                 .collect();
             let authors_clause = format!("author IN ({})", authors_escaped.join(", "));
@@ -334,7 +341,7 @@ fn query_from_sub(sub: &Subscription) -> String {
                 .as_ref()
                 .unwrap()
                 .iter()
-                .filter(|&x| is_hex(x))
+                .filter(|&x| is_hex(&x.to_hex()))
                 .map(|x| format!("x'{}'", x))
                 .collect();
             let id_clause = format!("event_hash IN ({})", ids_escaped.join(", "));
@@ -347,7 +354,7 @@ fn query_from_sub(sub: &Subscription) -> String {
                 .as_ref()
                 .unwrap()
                 .iter()
-                .filter(|&x| is_hex(x))
+                .filter(|&x| is_hex(&x.to_hex()))
                 .map(|x| format!("x'{}'", x))
                 .collect();
             let events_clause = format!("referenced_event IN ({})", events_escaped.join(", "));
@@ -360,7 +367,7 @@ fn query_from_sub(sub: &Subscription) -> String {
                 .as_ref()
                 .unwrap()
                 .iter()
-                .filter(|&x| is_hex(x))
+                .filter(|&x| is_hex(&x.to_hex()))
                 .map(|x| format!("x'{}'", x))
                 .collect();
             let pubkeys_clause = format!("referenced_pubkey IN ({})", pubkeys_escaped.join(", "));
@@ -434,11 +441,12 @@ pub async fn db_query(
                 return Ok(());
             }
             row_count += 1;
-            let event_json = row.get(0)?;
+            let event_json: String = row.get(0)?;
+            let event = Event::from_str(&event_json)?;
             query_tx
                 .blocking_send(QueryResult {
-                    sub_id: sub.get_id(),
-                    event: event_json,
+                    sub_id: sub.get_id().to_string(),
+                    event,
                 })
                 .ok();
         }

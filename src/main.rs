@@ -8,21 +8,20 @@ use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
 use log::*;
-use nostr_rs_relay::close::Close;
 use nostr_rs_relay::config;
 use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
-use nostr_rs_relay::event::Event;
 use nostr_rs_relay::info::RelayInfo;
+use nostr_rs_relay::messages::Event;
 use nostr_rs_relay::protostream;
-use nostr_rs_relay::protostream::NostrMessage::*;
-use nostr_rs_relay::protostream::NostrResponse::*;
+use nostr_rs_relay::protostream::{NostrMessage, NostrResponse};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::str::FromStr;
 use tokio::runtime::Builder;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver, Sender};
@@ -282,7 +281,7 @@ async fn nostr_server(
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
-                let res = EventRes(query_result.sub_id,query_result.event);
+                let res = NostrResponse::new_event(&query_result.sub_id, &query_result.event);
                 client_received_event_count += 1;
                 nostr_stream.send(res).await.ok();
             },
@@ -296,10 +295,10 @@ async fn nostr_server(
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
                         debug!("sub match: client: {}, sub: {}, event: {}",
                                cid, s,
-                               global_event.get_event_id_prefix());
+                               global_event.get_short_event_id());
                         // create an event response and send it
-                        let res = EventRes(s.to_owned(),event_str);
-                        nostr_stream.send(res).await.ok();
+                        let event = Event::from_str(&event_str).unwrap();
+                        nostr_stream.send(NostrResponse::new_event(s, &event)).await.ok();
                     } else {
                         warn!("could not convert event to string");
                     }
@@ -308,25 +307,16 @@ async fn nostr_server(
             // check if this client has a subscription
             proto_next = nostr_stream.next() => {
                 match proto_next {
-                    Some(Ok(EventMsg(ec))) => {
-                        // An EventCmd needs to be validated to be converted into an Event
-                        // handle each type of message
-                        let parsed : Result<Event> = Result::<Event>::from(ec);
-                        match parsed {
-                            Ok(e) => {
-                                let id_prefix:String = e.id.chars().take(8).collect();
-                                debug!("successfully parsed/validated event: {} from client: {}", id_prefix, cid);
-                                // Write this to the database
-                                event_tx.send(e.clone()).await.ok();
-                                client_published_event_count += 1;
-                            },
-                            Err(_) => {
-                                info!("client {} sent an invalid event", cid);
-                                nostr_stream.send(NoticeRes("event was invalid".to_owned())).await.ok();
-                            }
-                        }
+                    Some(Ok(NostrMessage::Event(ec))) => {
+                        // If we successfully parse an EventCmd, we have the correct Event
+                        let e = Event::from(ec);
+                        let id_prefix:String = e.get_short_event_id();
+                        debug!("successfully parsed/validated event: {} from client: {}", id_prefix, cid);
+                        // Write this to the database
+                        event_tx.send(e.clone()).await.ok();
+                        client_published_event_count += 1;
                     },
-                    Some(Ok(SubMsg(s))) => {
+                    Some(Ok(NostrMessage::Req(s))) => {
                         debug!("client {} requesting a subscription", cid);
                         // subscription handling consists of:
                         // * registering the subscription so future events can be matched
@@ -335,37 +325,28 @@ async fn nostr_server(
                         let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
                         match conn.subscribe(s.clone()) {
                             Ok(()) => {
-                                running_queries.insert(s.id.to_owned(), abandon_query_tx);
+                                running_queries.insert(s.get_id().to_owned(), abandon_query_tx);
                                 // start a database query
                                 db::db_query(s, query_tx.clone(), abandon_query_rx).await;
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);
-                                nostr_stream.send(NoticeRes(format!("{}",e))).await.ok();
+                                nostr_stream.send(NostrResponse::new_notice(&e.to_string())).await.ok();
 
                             }
                         }
                     },
-                    Some(Ok(CloseMsg(cc))) => {
+                    Some(Ok(NostrMessage::Close(close))) => {
                         // closing a request simply removes the subscription.
-                        let parsed : Result<Close> = Result::<Close>::from(cc);
-                        match parsed {
-                            Ok(c) => {
-                                // check if a query is currently
-                                // running, and remove it if so.
-                                let stop_tx = running_queries.remove(&c.id);
-                                if let Some(tx) = stop_tx {
-                                    tx.send(()).ok();
-                                }
-                                // stop checking new events against
-                                // the subscription
-                                conn.unsubscribe(c);
-                            },
-                            Err(_) => {
-                                info!("invalid command ignored");
-
-                            }
+                        // check if a query is currently
+                        // running, and remove it if so.
+                        let stop_tx = running_queries.remove(&close.id);
+                        if let Some(tx) = stop_tx {
+                            tx.send(()).ok();
                         }
+                        // stop checking new events against
+                        // the subscription
+                        conn.unsubscribe(close);
                     },
                     None => {
                         debug!("normal websocket close from client: {}",cid);
@@ -377,7 +358,7 @@ async fn nostr_server(
                     }
                     Some(Err(Error::EventMaxLengthError(s))) => {
                         info!("client {} sent event larger ({} bytes) than max size", cid, s);
-                        nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
+                        nostr_stream.send(NostrResponse::new_notice("event exceeded max size")).await.ok();
                     },
                     Some(Err(e)) => {
                         info!("got non-fatal error from client: {}, error: {:?}", cid, e);

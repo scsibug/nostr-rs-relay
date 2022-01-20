@@ -1,10 +1,7 @@
-pub mod close;
 pub mod config;
 pub mod conn;
 pub mod db;
 pub mod error;
-pub mod event;
 pub mod info;
+pub mod messages;
 pub mod protostream;
-pub mod subscription;
-pub mod tags;
