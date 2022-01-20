@@ -36,6 +36,11 @@ frontend fe_prod
 
 backend relay
     mode http
+    timeout connect 5s
+    timeout client 50s
+    timeout server 50s
+    timeout tunnel 1h
+    timeout client-fin 30s
     option tcp-check
     default-server maxconn 400 check inter 20s fastinter 1s
     server relay 127.0.0.1:8080
