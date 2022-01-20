@@ -19,55 +19,26 @@ pub enum Error {
     EventParseFailed,
     #[error("ClOSE message parse failed")]
     CloseParseFailed,
-    #[error("Event validation failed")]
-    EventInvalid,
-    #[error("Event too large")]
+    #[error("Event validation failed, Reason : {0}")]
+    EventInvalid(String),
+    #[error("Event too large, Size : {0}")]
     EventMaxLengthError(usize),
     #[error("Subscription identifier max length exceeded")]
     SubIdMaxLengthError,
     #[error("Maximum concurrent subscription count reached")]
     SubMaxExceededError,
-    // this should be used if the JSON is invalid
-    #[error("JSON parsing failed")]
-    JsonParseFailed(serde_json::Error),
-    #[error("WebSocket proto error")]
-    WebsocketError(WsError),
+    #[error("JSON parsing failed, Reason : {0}")]
+    JsonParseFailed(#[from] serde_json::Error),
+    #[error("WebSocket error : Reason : {0}")]
+    WebsocketError(#[from] WsError),
     #[error("Command unknown")]
     CommandUnknownError,
-    #[error("SQL error")]
-    SqlError(rusqlite::Error),
-    #[error("Config error")]
-    ConfigError(config::ConfigError),
+    #[error("SQL error, Reason : {0}")]
+    SqlError(#[from] rusqlite::Error),
+    #[error("Config error, Reason : {0}")]
+    ConfigError(#[from] config::ConfigError),
     #[error("Data directory does not exist")]
     DatabaseDirError,
-    #[error("Custom Error : {0}")]
-    CustomError(String),
-}
-
-impl From<rusqlite::Error> for Error {
-    /// Wrap SQL error
-    fn from(r: rusqlite::Error) -> Self {
-        Error::SqlError(r)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    /// Wrap JSON error
-    fn from(r: serde_json::Error) -> Self {
-        Error::JsonParseFailed(r)
-    }
-}
-
-impl From<WsError> for Error {
-    /// Wrap Websocket error
-    fn from(r: WsError) -> Self {
-        Error::WebsocketError(r)
-    }
-}
-
-impl From<config::ConfigError> for Error {
-    /// Wrap Config error
-    fn from(r: config::ConfigError) -> Self {
-        Error::ConfigError(r)
-    }
+    #[error("Generic Error, Reason: {0}")]
+    GenericError(String),
 }
