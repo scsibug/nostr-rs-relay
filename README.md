@@ -51,7 +51,7 @@ Text Note [81cf...2652] from 296a...9b92 5 seconds ago
 ```
 
 A pre-built container is also available on DockerHub:
-https://hub.docker.com/repository/docker/scsibug/nostr-rs-relay
+https://hub.docker.com/r/scsibug/nostr-rs-relay
 
 ## Configuration
 
