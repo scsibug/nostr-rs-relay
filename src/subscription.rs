@@ -1,7 +1,10 @@
 //! Subscription and filter parsing
 use crate::error::Result;
 use crate::event::Event;
+use serde::de::Unexpected;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 /// Subscription identifier and set of request filters
@@ -16,30 +19,76 @@ pub struct Subscription {
 /// Corresponds to client-provided subscription request elements.  Any
 /// element can be present if it should be used in filtering, or
 /// absent ([`None`]) if it should be ignored.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Debug, Clone)]
 pub struct ReqFilter {
     /// Event hashes
     pub ids: Option<Vec<String>>,
     /// Event kinds
     pub kinds: Option<Vec<u64>>,
-    /// Referenced event hash
-    #[serde(rename = "#e")]
-    pub events: Option<Vec<String>>,
-    /// Referenced public key for a petname
-    #[serde(rename = "#p")]
-    pub pubkeys: Option<Vec<String>>,
     /// Events published after this time
     pub since: Option<u64>,
     /// Events published before this time
     pub until: Option<u64>,
     /// List of author public keys
     pub authors: Option<Vec<String>>,
-    /// Set of event tags, for quick indexing
+    /// Set of tags
     #[serde(skip)]
-    event_tag_set: Option<HashSet<String>>,
-    /// Set of pubkey tags, for quick indexing
-    #[serde(skip)]
-    pubkey_tag_set: Option<HashSet<String>>,
+    pub tags: Option<HashMap<String, HashSet<String>>>,
+}
+
+impl<'de> Deserialize<'de> for ReqFilter {
+    fn deserialize<D>(deserializer: D) -> Result<ReqFilter, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let received: Value = Deserialize::deserialize(deserializer)?;
+        let filter = received.as_object().ok_or_else(|| {
+            serde::de::Error::invalid_type(
+                Unexpected::Other("reqfilter is not an object"),
+                &"a json object",
+            )
+        })?;
+        let mut rf = ReqFilter {
+            ids: None,
+            kinds: None,
+            since: None,
+            until: None,
+            authors: None,
+            tags: None,
+        };
+        let mut ts = None;
+        // iterate through each key, and assign values that exist
+        for (key, val) in filter.into_iter() {
+            // ids
+            if key == "ids" {
+                rf.ids = Deserialize::deserialize(val).ok();
+            } else if key == "kinds" {
+                rf.kinds = Deserialize::deserialize(val).ok();
+            } else if key == "since" {
+                rf.since = Deserialize::deserialize(val).ok();
+            } else if key == "until" {
+                rf.until = Deserialize::deserialize(val).ok();
+            } else if key == "authors" {
+                rf.authors = Deserialize::deserialize(val).ok();
+            } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
+                // remove the prefix
+                let tagname = &key[1..];
+                if ts.is_none() {
+                    // Initialize the tag if necessary
+                    ts = Some(HashMap::new());
+                }
+                if let Some(m) = ts.as_mut() {
+                    let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
+                    if let Some(v) = tag_vals {
+                        let hs = HashSet::from_iter(v.into_iter());
+                        m.insert(tagname.to_owned(), hs);
+                    }
+                };
+            }
+        }
+        rf.tags = ts;
+        Ok(rf)
+    }
 }
 
 impl<'de> Deserialize<'de> for Subscription {
@@ -49,7 +98,7 @@ impl<'de> Deserialize<'de> for Subscription {
     where
         D: Deserializer<'de>,
     {
-        let mut v: serde_json::Value = Deserialize::deserialize(deserializer)?;
+        let mut v: Value = Deserialize::deserialize(deserializer)?;
         // this shoud be a 3-or-more element array.
         // verify the first element is a String, REQ
         // get the subscription from the second element.
@@ -82,10 +131,9 @@ impl<'de> Deserialize<'de> for Subscription {
 
         let mut filters = vec![];
         for fv in i {
-            let mut f: ReqFilter = serde_json::from_value(fv.take())
+            let f: ReqFilter = serde_json::from_value(fv.take())
                 .map_err(|_| serde::de::Error::custom("could not parse filter"))?;
             // create indexes
-            f.update_tag_indexes();
             filters.push(f);
         }
         Ok(Subscription {
@@ -113,15 +161,6 @@ impl Subscription {
 }
 
 impl ReqFilter {
-    /// Update pubkey and event indexes
-    fn update_tag_indexes(&mut self) {
-        if let Some(event_vec) = &self.events {
-            self.event_tag_set = Some(HashSet::from_iter(event_vec.iter().cloned()));
-        }
-        if let Some(pubkey_vec) = &self.pubkeys {
-            self.pubkey_tag_set = Some(HashSet::from_iter(pubkey_vec.iter().cloned()));
-        }
-    }
     /// Check for a match within the authors list.
     fn ids_match(&self, event: &Event) -> bool {
         self.ids
@@ -137,28 +176,20 @@ impl ReqFilter {
             .unwrap_or(true)
     }
 
-    /// Check if this filter either matches, or does not care about the event tags.
-    fn event_match(&self, event: &Event) -> bool {
-        // an event match is performed by looking at the ReqFilter events field, and sending a hashset to the event to intersect with.
-        if let Some(es) = &self.event_tag_set {
-            // if there exists event tags in this filter, find if any intersect.
-            event.generic_tag_val_intersect("e", es)
-        } else {
-            // if no event tags were requested in a filter, we do match
-            true
+    fn tag_match(&self, event: &Event) -> bool {
+        // get the hashset from the filter.
+        if let Some(map) = &self.tags {
+            for (key, val) in map.iter() {
+                let tag_match = event.generic_tag_val_intersect(key, val);
+                // if there is no match for this tag, the match fails.
+                if !tag_match {
+                    return false;
+                }
+                // if there was a match, we move on to the next one.
+            }
         }
-    }
-
-    /// Check if this filter either matches, or does not care about the event tags.
-    fn pubkey_match(&self, event: &Event) -> bool {
-        // an event match is performed by looking at the ReqFilter events field, and sending a hashset to the event to intersect with.
-        if let Some(ps) = &self.pubkey_tag_set {
-            // if there exists event tags in this filter, find if any intersect.
-            event.generic_tag_val_intersect("p", ps)
-        } else {
-            // if no event tags were requested in a filter, we do match
-            true
-        }
+        // if the tag map is empty, the match succeeds (there was no filter)
+        true
     }
 
     /// Check if this filter either matches, or does not care about the kind.
@@ -176,8 +207,7 @@ impl ReqFilter {
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.kind_match(event.kind)
             && self.authors_match(event)
-            && self.pubkey_match(event)
-            && self.event_match(event)
+            && self.tag_match(event)
     }
 }
 

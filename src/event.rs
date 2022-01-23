@@ -193,39 +193,8 @@ impl Event {
         serde_json::Value::Array(tags)
     }
 
-    /// Get a list of event tags.
-    pub fn get_event_tags(&self) -> Vec<&str> {
-        let mut etags = vec![];
-        for t in self.tags.iter() {
-            if t.len() >= 2 && t.get(0).unwrap() == "e" {
-                etags.push(&t.get(1).unwrap()[..]);
-            }
-        }
-        etags
-    }
-
-    /// Get a list of pubkey/petname tags.
-    pub fn get_pubkey_tags(&self) -> Vec<&str> {
-        let mut ptags = vec![];
-        for t in self.tags.iter() {
-            if t.len() >= 2 && t.get(0).unwrap() == "p" {
-                ptags.push(&t.get(1).unwrap()[..]);
-            }
-        }
-        ptags
-    }
-
-    /// Check if a given event is referenced in an event tag.
-    pub fn event_tag_match(&self, eventid: &str) -> bool {
-        self.get_event_tags().contains(&eventid)
-    }
-
-    /// Check if a given event is referenced in an event tag.
-    pub fn pubkey_tag_match(&self, pubkey: &str) -> bool {
-        self.get_pubkey_tags().contains(&pubkey)
-    }
-
     /// Generic tag match
+    // TODO:  is this used anywhere?
     pub fn generic_tag_match(&self, tagname: &str, tagvalue: &str) -> bool {
         match &self.tagidx {
             Some(idx) => {

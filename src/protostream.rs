@@ -81,8 +81,14 @@ impl Stream for NostrStream {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(v)) => match v {
                 Ok(Message::Text(vs)) => Poll::Ready(Some(convert(vs))),
+                Ok(Message::Ping(_x)) => {
+                    debug!("client ping");
+                    //Pin::new(&mut self.ws_stream).start_send(Message::Pong(x));
+                    //info!("sent pong");
+                    Poll::Pending
+                }
                 Ok(Message::Binary(_)) => Poll::Ready(Some(Err(Error::ProtoParseError))),
-                Ok(Message::Pong(_)) | Ok(Message::Ping(_)) => Poll::Pending,
+                Ok(Message::Pong(_)) => Poll::Pending,
                 Ok(Message::Close(_)) => Poll::Ready(None),
                 Err(WsError::AlreadyClosed) | Err(WsError::ConnectionClosed) => Poll::Ready(None),
                 Err(_) => Poll::Ready(Some(Err(Error::ConnError))),
