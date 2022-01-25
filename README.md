@@ -76,7 +76,7 @@ termination, load balancing, and other features), see [Reverse
 Proxy](reverse-proxy.md).
 
 ## Dev Channel
-The current dev discussions for this project is happening at https://discord.gg/AEG5Z8AP.
+The current dev discussions for this project is happening at https://discord.gg/ufG6fH52Vk.
 Drop in to query any development related questions.
 
 License
