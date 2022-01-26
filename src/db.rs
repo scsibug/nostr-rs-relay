@@ -612,16 +612,17 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
             fc.push_str(&filter_components.join(" AND "));
             fc.push_str(" )");
             filter_clauses.push(fc);
-        } else {
-            // never display hidden events
-            filter_clauses.push("hidden!=TRUE".to_owned());
         }
     }
 
+    // never display hidden events
+    query.push_str(" WHERE hidden!=TRUE ");
+
     // combine all filters with OR clauses, if any exist
     if !filter_clauses.is_empty() {
-        query.push_str(" WHERE ");
+        query.push_str(" AND (");
         query.push_str(&filter_clauses.join(" OR "));
+        query.push_str(") ");
     }
     // add order clause
     query.push_str(" ORDER BY created_at ASC");
