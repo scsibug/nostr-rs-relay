@@ -14,10 +14,12 @@ NIPs with relay-specific implementation requirements are listed here.
 
 - [x] NIP-01: Core event model
 - [x] NIP-01: Hide old metadata events
+- [x] NIP-01: Id/Author prefix search (_experimental_)
 - [x] NIP-02: Hide old contact list events
 - [ ] NIP-03: OpenTimestamps
 - [ ] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
+- [x] NIP-12: Generic tag search (_experimental_)
 
 ## Quick Start
 
