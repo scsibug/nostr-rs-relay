@@ -1,4 +1,5 @@
 //! Event persistence and querying
+use crate::config;
 use crate::error::Result;
 use crate::event::Event;
 use crate::subscription::Subscription;
@@ -11,12 +12,16 @@ use rusqlite::Connection;
 use rusqlite::OpenFlags;
 //use std::num::NonZeroU32;
 use crate::config::SETTINGS;
+use r2d2;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::limits::Limit;
 use rusqlite::types::ToSql;
 use std::path::Path;
 use std::thread;
 use std::time::Instant;
 use tokio::task;
+
+pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 /// Database file
 const DB_FILE: &str = "nostr.db";
@@ -93,6 +98,23 @@ FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE RESTRICT ON DELETE CASCADE
 -- Pubkey References Index
 CREATE INDEX IF NOT EXISTS pubkey_ref_index ON pubkey_ref(referenced_pubkey);
 "##;
+
+pub fn build_read_pool() -> SqlitePool {
+    info!("Build a connection pool");
+    let config = config::SETTINGS.read().unwrap();
+    let db_dir = &config.database.data_directory;
+    let full_path = Path::new(db_dir).join(DB_FILE);
+    let manager = SqliteConnectionManager::file(&full_path)
+        .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_init(|c| c.execute_batch(STARTUP_SQL));
+    let pool: SqlitePool = r2d2::Pool::builder()
+        .test_on_check_out(true) // no noticeable performance hit
+        .min_idle(Some(config.database.min_conn))
+        .max_size(config.database.max_conn)
+        .build(manager)
+        .unwrap();
+    return pool;
+}
 
 /// Upgrade DB to latest version, and execute pragma settings
 pub fn upgrade_db(conn: &mut Connection) -> Result<()> {
@@ -615,22 +637,17 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
 /// query is immediately aborted.
 pub async fn db_query(
     sub: Subscription,
+    conn: r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>,
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     task::spawn_blocking(move || {
-        let config = SETTINGS.read().unwrap();
-        let db_dir = &config.database.data_directory;
-        let full_path = Path::new(db_dir).join(DB_FILE);
-
-        let conn = Connection::open_with_flags(&full_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        debug!("opened database for reading");
         debug!("going to query for: {:?}", sub);
         let mut row_count: usize = 0;
         let start = Instant::now();
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
-        // execute the query
+        // execute the query. Don't cache, since queries vary so much.
         let mut stmt = conn.prepare(&q)?;
         let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
         while let Some(row) = event_rows.next()? {

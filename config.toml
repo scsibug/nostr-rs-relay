@@ -22,9 +22,18 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # line option.
 data_directory = "."
 
+# Database connection pool settings:
+
+# Minimum number of SQLite reader connections
+#min_conn = 4
+
+# Maximum number of SQLite reader connections
+#max_conn = 128
+
 [network]
 # Bind to this network address
 address = "0.0.0.0"
+
 # Listen on this port
 port = 8080
 
@@ -37,22 +46,22 @@ reject_future_seconds = 1800
 [limits]
 # Limit events created per second, averaged over one minute.  Must be
 # an integer.  If not set (or set to 0), defaults to unlimited.
-messages_per_sec = 0
+#messages_per_sec = 0
 
 # Limit the maximum size of an EVENT message.  Defaults to 128 KB.
 # Set to 0 for unlimited.
-max_event_bytes = 131072
+#max_event_bytes = 131072
 
 # Maximum WebSocket message in bytes.  Defaults to 128 KB.
-max_ws_message_bytes = 131072
+#max_ws_message_bytes = 131072
 
 # Maximum WebSocket frame size in bytes.  Defaults to 128 KB.
-max_ws_frame_bytes = 131072
+#max_ws_frame_bytes = 131072
 
 # Broadcast buffer size, in number of events.  This prevents slow
 # readers from consuming memory.  Defaults to 4096.
-broadcast_buffer = 4096
+#broadcast_buffer = 4096
 
 # Event persistence buffer size, in number of events.  This provides
 # backpressure to senders if writes are slow.  Defaults to 16.
-event_persist_buffer = 16
+#event_persist_buffer = 16

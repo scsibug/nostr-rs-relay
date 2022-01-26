@@ -43,6 +43,7 @@ fn db_from_args(args: Vec<String>) -> Option<String> {
 /// Handle arbitrary HTTP requests, including for WebSocket upgrades.
 async fn handle_web_request(
     mut request: Request<Body>,
+    pool: db::SqlitePool,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<Event>,
@@ -83,8 +84,9 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
+
                                 tokio::spawn(nostr_server(
-                                    ws_stream, broadcast, event_tx, shutdown,
+                                    pool, ws_stream, broadcast, event_tx, shutdown,
                                 ));
                             }
                             Err(e) => println!(
@@ -188,6 +190,8 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         let settings = config::SETTINGS.read().unwrap();
         info!("listening on: {}", socket_addr);
+        // build a connection pool for sqlite connections
+        let pool = db::build_read_pool();
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
@@ -214,6 +218,7 @@ fn main() -> Result<(), Error> {
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
+            let svc_pool = pool.clone();
             let remote_addr = conn.remote_addr();
             let bcast = bcast_tx.clone();
             let event = event_tx.clone();
@@ -223,6 +228,7 @@ fn main() -> Result<(), Error> {
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
                     handle_web_request(
                         request,
+                        svc_pool.clone(),
                         remote_addr,
                         bcast.clone(),
                         event.clone(),
@@ -246,6 +252,7 @@ fn main() -> Result<(), Error> {
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
+    pool: db::SqlitePool,
     ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<Event>,
@@ -337,7 +344,9 @@ async fn nostr_server(
                             Ok(()) => {
                                 running_queries.insert(s.id.to_owned(), abandon_query_tx);
                                 // start a database query
-                                db::db_query(s, query_tx.clone(), abandon_query_rx).await;
+                                // show pool stats
+                                debug!("DB pool stats: {:?}", pool.state());
+                                db::db_query(s, pool.get().expect("could not get connection"), query_tx.clone(), abandon_query_rx).await;
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);

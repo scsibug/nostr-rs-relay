@@ -22,6 +22,8 @@ pub struct Info {
 #[allow(unused)]
 pub struct Database {
     pub data_directory: String,
+    pub min_conn: u32,
+    pub max_conn: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,6 +95,13 @@ impl Settings {
             // override with file contents
             .with_merged(config::File::with_name("config"))?
             .try_into()?;
+        // ensure connection pool size is logical
+        if settings.database.min_conn > settings.database.max_conn {
+            panic!(
+                "Database min_conn setting ({}) cannot exceed max_conn ({})",
+                settings.database.min_conn, settings.database.max_conn
+            );
+        }
         Ok(settings)
     }
 }
@@ -109,6 +118,8 @@ impl Default for Settings {
             },
             database: Database {
                 data_directory: ".".to_owned(),
+                min_conn: 4,
+                max_conn: 128,
             },
             network: Network {
                 port: 8080,
