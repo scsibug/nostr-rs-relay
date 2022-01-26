@@ -160,19 +160,28 @@ impl Subscription {
     }
 }
 
+fn prefix_match(prefixes: &[String], target: &str) -> bool {
+    for prefix in prefixes {
+        if target.starts_with(prefix) {
+            return true;
+        }
+    }
+    // none matched
+    false
+}
+
 impl ReqFilter {
-    /// Check for a match within the authors list.
     fn ids_match(&self, event: &Event) -> bool {
         self.ids
             .as_ref()
-            .map(|vs| vs.contains(&event.id.to_owned()))
+            .map(|vs| prefix_match(vs, &event.id))
             .unwrap_or(true)
     }
 
     fn authors_match(&self, event: &Event) -> bool {
         self.authors
             .as_ref()
-            .map(|vs| vs.contains(&event.pubkey.to_owned()))
+            .map(|vs| prefix_match(vs, &event.pubkey))
             .unwrap_or(true)
     }
 
@@ -259,9 +268,45 @@ mod tests {
     }
 
     #[test]
-    fn interest_id_nomatch() -> Result<()> {
+    fn interest_author_prefix_match() -> Result<()> {
+        // subscription with a filter for ID
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"authors": ["abc"]}]"#)?;
+        let e = Event {
+            id: "foo".to_owned(),
+            pubkey: "abcd".to_owned(),
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(s.interested_in_event(&e));
+        Ok(())
+    }
+
+    #[test]
+    fn interest_id_prefix_match() -> Result<()> {
         // subscription with a filter for ID
         let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"]}]"#)?;
+        let e = Event {
+            id: "abcd".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(s.interested_in_event(&e));
+        Ok(())
+    }
+
+    #[test]
+    fn interest_id_nomatch() -> Result<()> {
+        // subscription with a filter for ID
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["xyz"]}]"#)?;
         let e = Event {
             id: "abcde".to_owned(),
             pubkey: "".to_owned(),
@@ -272,7 +317,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), false);
+        assert!(!s.interested_in_event(&e));
         Ok(())
     }
 
@@ -291,7 +336,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), false);
+        assert!(!s.interested_in_event(&e));
         Ok(())
     }
 
@@ -309,7 +354,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), true);
+        assert!(s.interested_in_event(&e));
         Ok(())
     }
 
@@ -327,7 +372,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), true);
+        assert!(s.interested_in_event(&e));
         Ok(())
     }
 
@@ -345,7 +390,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), true);
+        assert!(s.interested_in_event(&e));
         Ok(())
     }
     #[test]
@@ -363,7 +408,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), true);
+        assert!(s.interested_in_event(&e));
         Ok(())
     }
 
@@ -381,7 +426,7 @@ mod tests {
             sig: "".to_owned(),
             tagidx: None,
         };
-        assert_eq!(s.interested_in_event(&e), false);
+        assert!(!s.interested_in_event(&e));
         Ok(())
     }
 }

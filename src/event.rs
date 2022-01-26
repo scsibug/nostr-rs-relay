@@ -145,6 +145,7 @@ impl Event {
             return false;
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
+
         let sig = schnorr::Signature::from_str(&self.sig).unwrap();
         if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
             let pubkey = XOnlyPublicKey::from_str(&self.pubkey).unwrap();
@@ -191,21 +192,6 @@ impl Event {
             tags.push(serde_json::Value::Array(a));
         }
         serde_json::Value::Array(tags)
-    }
-
-    /// Generic tag match
-    // TODO:  is this used anywhere?
-    pub fn generic_tag_match(&self, tagname: &str, tagvalue: &str) -> bool {
-        match &self.tagidx {
-            Some(idx) => {
-                // get the set of values for this tag
-                match idx.get(tagname) {
-                    Some(valset) => valset.contains(tagvalue),
-                    None => false,
-                }
-            }
-            None => false,
-        }
     }
 
     /// Determine if the given tag and value set intersect with tags in this event.
@@ -258,7 +244,8 @@ mod tests {
     #[test]
     fn empty_event_tag_match() -> Result<()> {
         let event = simple_event();
-        assert!(!event.event_tag_match("foo"));
+        assert!(!event
+            .generic_tag_val_intersect("e", &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
         Ok(())
     }
 
@@ -266,7 +253,14 @@ mod tests {
     fn single_event_tag_match() -> Result<()> {
         let mut event = simple_event();
         event.tags = vec![vec!["e".to_owned(), "foo".to_owned()]];
-        assert!(event.event_tag_match("foo"));
+        event.build_index();
+        assert_eq!(
+            event.generic_tag_val_intersect(
+                "e",
+                &HashSet::from(["foo".to_owned(), "bar".to_owned()])
+            ),
+            true
+        );
         Ok(())
     }
 
