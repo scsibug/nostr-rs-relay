@@ -100,7 +100,6 @@ CREATE INDEX IF NOT EXISTS pubkey_ref_index ON pubkey_ref(referenced_pubkey);
 "##;
 
 pub fn build_read_pool() -> SqlitePool {
-    info!("Build a connection pool");
     let config = config::SETTINGS.read().unwrap();
     let db_dir = &config.database.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
@@ -113,6 +112,10 @@ pub fn build_read_pool() -> SqlitePool {
         .max_size(config.database.max_conn)
         .build(manager)
         .unwrap();
+    info!(
+        "Built a connection pool (min={}, max={})",
+        config.database.min_conn, config.database.max_conn
+    );
     return pool;
 }
 
@@ -512,7 +515,6 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
             for auth in authvec {
                 match hex_range(auth) {
                     Some(HexSearch::Exact(ex)) => {
-                        info!("Exact match for author");
                         auth_searches.push("author=?".to_owned());
                         params.push(Box::new(ex));
                     }
@@ -527,7 +529,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
                         params.push(Box::new(lower));
                     }
                     None => {
-                        info!("Could not parse hex range from {:?}", auth);
+                        info!("Could not parse hex range from author {:?}", auth);
                     }
                 }
             }
@@ -561,7 +563,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
                         params.push(Box::new(lower));
                     }
                     None => {
-                        info!("Could not parse hex range from {:?}", id);
+                        info!("Could not parse hex range from id {:?}", id);
                     }
                 }
             }
