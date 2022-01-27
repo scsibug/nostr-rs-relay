@@ -18,6 +18,7 @@ use rusqlite::limits::Limit;
 use rusqlite::types::ToSql;
 use std::path::Path;
 use std::thread;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::task;
 
@@ -103,6 +104,13 @@ pub fn build_read_pool() -> SqlitePool {
     let config = config::SETTINGS.read().unwrap();
     let db_dir = &config.database.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
+    // small hack; if the database doesn't exist yet, that means the
+    // writer thread hasn't finished.  Give it a chance to work.  This
+    // is only an issue with the first time we run.
+    while !full_path.exists() {
+        debug!("Database reader pool is waiting on the database to be created...");
+        thread::sleep(Duration::from_millis(500));
+    }
     let manager = SqliteConnectionManager::file(&full_path)
         .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_init(|c| c.execute_batch(STARTUP_SQL));
@@ -248,6 +256,9 @@ pub async fn db_writer(
         info!("opened database {:?} for writing", full_path);
         upgrade_db(&mut conn)?;
 
+        // Make a copy of the whitelist
+        let whitelist = &config.authorization.pubkey_whitelist.clone();
+
         // get rate limit settings
         let rps_setting = config.limits.messages_per_sec;
         let mut most_recent_rate_limit = Instant::now();
@@ -273,6 +284,21 @@ pub async fn db_writer(
             }
             let mut event_write = false;
             let event = next_event.unwrap();
+
+            // check if this event is authorized.
+            if let Some(allowed_addrs) = whitelist {
+                debug!("Checking against whitelist");
+                // if the event address is not in allowed_addrs.
+                if !allowed_addrs.contains(&event.pubkey) {
+                    info!(
+                        "Rejecting event {}, unauthorized author",
+                        event.get_event_id_prefix()
+                    );
+                    // TODO: define a channel that can send NOTICEs back to the client.
+                    continue;
+                }
+            }
+
             let start = Instant::now();
             match write_event(&mut conn, &event) {
                 Ok(updated) => {

@@ -177,9 +177,15 @@ fn main() -> Result<(), Error> {
         error!("Database directory does not exist");
         return Err(Error::DatabaseDirError);
     }
-    debug!("config: {:?}", config);
+    trace!("config: {:?}", config);
     let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
     let socket_addr = addr.parse().expect("listening address not valid");
+    if let Some(addr_whitelist) = &config.authorization.pubkey_whitelist {
+        info!(
+            "Event publishing restricted to {} pubkey(s)",
+            addr_whitelist.len()
+        );
+    }
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
@@ -190,8 +196,6 @@ fn main() -> Result<(), Error> {
     rt.block_on(async {
         let settings = config::SETTINGS.read().unwrap();
         info!("listening on: {}", socket_addr);
-        // build a connection pool for sqlite connections
-        let pool = db::build_read_pool();
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
@@ -203,18 +207,20 @@ fn main() -> Result<(), Error> {
         // establish a channel for letting all threads now about a
         // requested server shutdown.
         let (invoke_shutdown, _) = broadcast::channel::<()>(1);
-        let ctrl_c_shutdown = invoke_shutdown.clone();
-        // // listen for ctrl-c interruupts
-        tokio::spawn(async move {
-            tokio::signal::ctrl_c().await.unwrap();
-            info!("shutting down due to SIGINT");
-            ctrl_c_shutdown.send(()).ok();
-        });
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
         db::db_writer(event_rx, bcast_tx.clone(), invoke_shutdown.subscribe()).await;
         info!("db writer created");
+        // // listen for ctrl-c interruupts
+        let ctrl_c_shutdown = invoke_shutdown.clone();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            info!("shutting down due to SIGINT");
+            ctrl_c_shutdown.send(()).ok();
+        });
+        // build a connection pool for sqlite connections
+        let pool = db::build_read_pool();
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {

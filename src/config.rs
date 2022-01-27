@@ -63,11 +63,18 @@ pub struct Limits {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Authorization {
+    pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Settings {
     pub info: Info,
     pub database: Database,
     pub network: Network,
     pub limits: Limits,
+    pub authorization: Authorization,
     pub retention: Retention,
     pub options: Options,
 }
@@ -132,6 +139,9 @@ impl Default for Settings {
                 max_ws_frame_bytes: Some(2 << 17),   // 128K
                 broadcast_buffer: 4096,
                 event_persist_buffer: 16,
+            },
+            authorization: Authorization {
+                pubkey_whitelist: None, // Allow any address to publish
             },
             retention: Retention {
                 max_events: None,          // max events
