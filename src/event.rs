@@ -148,9 +148,13 @@ impl Event {
 
         let sig = schnorr::Signature::from_str(&self.sig).unwrap();
         if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
-            let pubkey = XOnlyPublicKey::from_str(&self.pubkey).unwrap();
-            let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
-            matches!(verify, Ok(()))
+            if let Ok(pubkey) = XOnlyPublicKey::from_str(&self.pubkey) {
+                let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
+                matches!(verify, Ok(()))
+            } else {
+                info!("Client sent malformed pubkey");
+                false
+            }
         } else {
             warn!("Error converting digest to secp256k1 message");
             false
