@@ -280,7 +280,6 @@ async fn nostr_server(
     // maintain a hashmap of a oneshot channel for active subscriptions.
     // when these subscriptions are cancelled, make a message
     // available to the executing query so it knows to stop.
-    //let (abandon_query_tx, _) = oneshot::channel::<()>();
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
@@ -348,7 +347,10 @@ async fn nostr_server(
                         let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
                         match conn.subscribe(s.clone()) {
                             Ok(()) => {
-                                running_queries.insert(s.id.to_owned(), abandon_query_tx);
+                                // when we insert, if there was a previous query running with the same name, cancel it.
+                                if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
+                                    previous_query.send(()).ok();
+                                }
                                 // start a database query
                                 // show pool stats
                                 debug!("DB pool stats: {:?}", pool.state());
