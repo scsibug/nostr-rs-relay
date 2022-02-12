@@ -327,16 +327,6 @@ pub enum NostrMessage {
     CloseMsg(CloseCmd),
 }
 
-/// Nostr protocol messages from a relay/server
-#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
-pub enum NostrResponse {
-    /// A `NOTICE` response
-    NoticeRes(String),
-    /// An `EVENT` response, composed of the subscription identifier,
-    /// and serialized event JSON
-    EventRes(String, String),
-}
-
 /// Convert Message to NostrMessage
 fn convert_to_msg(msg: String) -> Result<NostrMessage> {
     let config = config::SETTINGS.read().unwrap();
@@ -372,14 +362,6 @@ async fn nostr_server(
 ) {
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
-    // upgrade the TCP connection to WebSocket
-    //let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
-    //let ws_stream = conn.expect("websocket handshake error");
-    // wrap websocket into a stream & sink of Nostr protocol messages
-
-    // don't wrap in a proto stream, because it broke pings.
-    //let mut nostr_stream = protostream::wrap_ws_in_nostr(ws_stream);
-
     // Track internal client state
     let mut conn = conn::ClientConn::new();
     let cid = conn.get_client_prefix();
@@ -431,12 +413,16 @@ async fn nostr_server(
                     }
                 }
             },
-            // check if this client has a subscription
             ws_next = ws_stream.next() => {
-                let protomsg = match ws_next {
+                // Consume text messages from the client, parse into Nostr messages.
+                let nostr_msg = match ws_next {
                     Some(Ok(Message::Text(m))) => {
                         let msg_parse = convert_to_msg(m);
                         Some(msg_parse)
+                    },
+                    Some(Ok(Message::Binary(_))) => {
+                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "binary messages are not accepted"))).await.ok();
+                        continue;
                     },
                     None | Some(Ok(Message::Close(_))) | Some(Err(WsError::AlreadyClosed)) | Some(Err(WsError::ConnectionClosed))  => {
                         info!("Closing connection");
@@ -449,7 +435,7 @@ async fn nostr_server(
                 };
 
                 // convert ws_next into proto_next
-                match protomsg {
+                match nostr_msg {
                     Some(Ok(NostrMessage::EventMsg(ec))) => {
                         // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
