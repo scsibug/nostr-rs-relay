@@ -9,16 +9,17 @@ use hyper::{
 };
 use log::*;
 use nostr_rs_relay::close::Close;
+use nostr_rs_relay::close::CloseCmd;
 use nostr_rs_relay::config;
 use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
+use nostr_rs_relay::event::EventCmd;
 use nostr_rs_relay::info::RelayInfo;
 use nostr_rs_relay::nip05;
-use nostr_rs_relay::protostream;
-use nostr_rs_relay::protostream::NostrMessage::*;
-use nostr_rs_relay::protostream::NostrResponse::*;
+use nostr_rs_relay::subscription::Subscription;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
@@ -29,7 +30,9 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::WebSocketStream;
+use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
+use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
 
 /// Return a requested DB name from command line arguments.
@@ -312,11 +315,57 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+/// Nostr protocol messages from a client
+#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
+#[serde(untagged)]
+pub enum NostrMessage {
+    /// An `EVENT` message
+    EventMsg(EventCmd),
+    /// A `REQ` message
+    SubMsg(Subscription),
+    /// A `CLOSE` message
+    CloseMsg(CloseCmd),
+}
+
+/// Nostr protocol messages from a relay/server
+#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
+pub enum NostrResponse {
+    /// A `NOTICE` response
+    NoticeRes(String),
+    /// An `EVENT` response, composed of the subscription identifier,
+    /// and serialized event JSON
+    EventRes(String, String),
+}
+
+/// Convert Message to NostrMessage
+fn convert_to_msg(msg: String) -> Result<NostrMessage> {
+    let config = config::SETTINGS.read().unwrap();
+    let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
+    match parsed_res {
+        Ok(m) => {
+            if let NostrMessage::EventMsg(_) = m {
+                if let Some(max_size) = config.limits.max_event_bytes {
+                    // check length, ensure that some max size is set.
+                    if msg.len() > max_size && max_size > 0 {
+                        return Err(Error::EventMaxLengthError(msg.len()));
+                    }
+                }
+            }
+            Ok(m)
+        }
+        Err(e) => {
+            debug!("proto parse error: {:?}", e);
+            debug!("parse error on message: {}", msg.trim());
+            Err(Error::ProtoParseError)
+        }
+    }
+}
+
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
     pool: db::SqlitePool,
-    ws_stream: WebSocketStream<Upgraded>,
+    mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<Event>,
     mut shutdown: Receiver<()>,
@@ -327,7 +376,10 @@ async fn nostr_server(
     //let conn = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await;
     //let ws_stream = conn.expect("websocket handshake error");
     // wrap websocket into a stream & sink of Nostr protocol messages
-    let mut nostr_stream = protostream::wrap_ws_in_nostr(ws_stream);
+
+    // don't wrap in a proto stream, because it broke pings.
+    //let mut nostr_stream = protostream::wrap_ws_in_nostr(ws_stream);
+
     // Track internal client state
     let mut conn = conn::ClientConn::new();
     let cid = conn.get_client_prefix();
@@ -351,9 +403,12 @@ async fn nostr_server(
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
-                let res = EventRes(query_result.sub_id,query_result.event);
+                //let res = EventRes(query_result.sub_id,query_result.event);
                 client_received_event_count += 1;
-                nostr_stream.send(res).await.ok();
+                // send a result
+                let subesc = query_result.sub_id.replace("\"", "");
+                let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
+                ws_stream.send(Message::Text(send_str)).await.ok();
             },
             // TODO: consider logging the LaggedRecv error
             Ok(global_event) = bcast_rx.recv() => {
@@ -368,17 +423,34 @@ async fn nostr_server(
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
-                        let res = EventRes(s.to_owned(),event_str);
-                        nostr_stream.send(res).await.ok();
+                        let subesc = s.replace("\"", "");
+                        ws_stream.send(Message::Text(format!("[\"EVENT\",\"{}\",{}]", subesc, event_str))).await.ok();
+                        //nostr_stream.send(res).await.ok();
                     } else {
                         warn!("could not serialize event {:?}", global_event.get_event_id_prefix());
                     }
                 }
             },
             // check if this client has a subscription
-            proto_next = nostr_stream.next() => {
-                match proto_next {
-                    Some(Ok(EventMsg(ec))) => {
+            ws_next = ws_stream.next() => {
+                let protomsg = match ws_next {
+                    Some(Ok(Message::Text(m))) => {
+                        let msg_parse = convert_to_msg(m);
+                        Some(msg_parse)
+                    },
+                    None | Some(Ok(Message::Close(_))) | Some(Err(WsError::AlreadyClosed)) | Some(Err(WsError::ConnectionClosed))  => {
+                        info!("Closing connection");
+                        None
+                    },
+                    x => {
+                        info!("message was: {:?} (ignoring)", x);
+                        continue;
+                    }
+                };
+
+                // convert ws_next into proto_next
+                match protomsg {
+                    Some(Ok(NostrMessage::EventMsg(ec))) => {
                         // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
                         let parsed : Result<Event> = Result::<Event>::from(ec);
@@ -398,11 +470,11 @@ async fn nostr_server(
                             },
                             Err(_) => {
                                 info!("client {:?} sent an invalid event", cid);
-                                nostr_stream.send(NoticeRes("event was invalid".to_owned())).await.ok();
+                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event was invalid"))).await.ok();
                             }
                         }
                     },
-                    Some(Ok(SubMsg(s))) => {
+                    Some(Ok(NostrMessage::SubMsg(s))) => {
                         debug!("client {} requesting a subscription", cid);
                         // subscription handling consists of:
                         // * registering the subscription so future events can be matched
@@ -422,12 +494,12 @@ async fn nostr_server(
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);
-                                nostr_stream.send(NoticeRes(format!("{}",e))).await.ok();
-
+                                let s = e.to_string().replace("\"", "");
+                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", s))).await.ok();
                             }
                         }
                     },
-                    Some(Ok(CloseMsg(cc))) => {
+                    Some(Ok(NostrMessage::CloseMsg(cc))) => {
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
                         match parsed {
@@ -458,7 +530,8 @@ async fn nostr_server(
                     }
                     Some(Err(Error::EventMaxLengthError(s))) => {
                         info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
-                        nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
+                        //TODO
+                        //nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
                     },
                     Some(Err(e)) => {
                         info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
