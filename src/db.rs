@@ -3,8 +3,11 @@ use crate::config::SETTINGS;
 use crate::error::Error;
 use crate::error::Result;
 use crate::event::Event;
+use crate::hexrange::hex_range;
+use crate::hexrange::HexSearch;
 use crate::nip05;
 use crate::subscription::Subscription;
+use crate::utils::is_hex;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
@@ -560,86 +563,6 @@ pub struct QueryResult {
     pub event: String,
 }
 
-/// Check if a string contains only hex characters.
-fn is_hex(s: &str) -> bool {
-    s.chars().all(|x| char::is_ascii_hexdigit(&x))
-}
-
-/// Check if a string contains only f chars
-fn is_all_fs(s: &str) -> bool {
-    s.chars().all(|x| x == 'f' || x == 'F')
-}
-
-/// Types of hexadecimal queries.
-#[derive(PartialEq, Debug, Clone)]
-enum HexSearch {
-    // when no range is needed, exact 32-byte
-    Exact(Vec<u8>),
-    // lower (inclusive) and upper range (exclusive)
-    Range(Vec<u8>, Vec<u8>),
-    // lower bound only, upper bound is MAX inclusive
-    LowerOnly(Vec<u8>),
-}
-
-/// Find the next hex sequence greater than the argument.
-fn hex_range(s: &str) -> Option<HexSearch> {
-    // handle special cases
-    if !is_hex(s) || s.len() > 64 {
-        return None;
-    }
-    if s.len() == 64 {
-        return Some(HexSearch::Exact(hex::decode(s).ok()?));
-    }
-    // if s is odd, add a zero
-    let mut hash_base = s.to_owned();
-    let mut odd = hash_base.len() % 2 != 0;
-    if odd {
-        // extend the string to make it even
-        hash_base.push('0');
-    }
-    let base = hex::decode(hash_base).ok()?;
-    // check for all ff's
-    if is_all_fs(s) {
-        // there is no higher bound, we only want to search for blobs greater than this.
-        return Some(HexSearch::LowerOnly(base));
-    }
-
-    // return a range
-    let mut upper = base.clone();
-    let mut byte_len = upper.len();
-
-    // for odd strings, we made them longer, but we want to increment the upper char (+16).
-    // we know we can do this without overflowing because we explicitly set the bottom half to 0's.
-    while byte_len > 0 {
-        byte_len -= 1;
-        // check if byte can be incremented, or if we need to carry.
-        let b = upper[byte_len];
-        if b == u8::MAX {
-            // reset and carry
-            upper[byte_len] = 0;
-        } else if odd {
-            // check if first char in this byte is NOT 'f'
-            if b < 240 {
-                upper[byte_len] = b + 16; // bump up the first character in this byte
-                                          // increment done, stop iterating through the vec
-                break;
-            } else {
-                // if it is 'f', reset the byte to 0 and do a carry
-                // reset and carry
-                upper[byte_len] = 0;
-            }
-            // done with odd logic, so don't repeat this
-            odd = false;
-        } else {
-            // bump up the first character in this byte
-            upper[byte_len] = b + 1;
-            // increment done, stop iterating
-            break;
-        }
-    }
-    Some(HexSearch::Range(base, upper))
-}
-
 /// Produce a arbitrary list of '?' parameters.
 fn repeat_vars(count: usize) -> String {
     if count == 0 {
@@ -683,7 +606,6 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
                         params.push(Box::new(upper));
                     }
                     Some(HexSearch::LowerOnly(lower)) => {
-                        //                        info!("{:?} => lower; {:?} ", auth, hex::encode(lower));
                         auth_searches.push("author>?".to_owned());
                         params.push(Box::new(lower));
                     }
@@ -835,85 +757,4 @@ pub async fn db_query(
         let ok: Result<()> = Ok(());
         ok
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hex_range_exact() -> Result<()> {
-        let hex = "abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00";
-        let r = hex_range(hex);
-        assert_eq!(
-            r,
-            Some(HexSearch::Exact(hex::decode(hex).expect("invalid hex")))
-        );
-        Ok(())
-    }
-    #[test]
-    fn hex_full_range() -> Result<()> {
-        //let hex = "abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00abcdef00";
-        let hex = "aaaa";
-        let hex_upper = "aaab";
-        let r = hex_range(hex);
-        assert_eq!(
-            r,
-            Some(HexSearch::Range(
-                hex::decode(hex).expect("invalid hex"),
-                hex::decode(hex_upper).expect("invalid hex")
-            ))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn hex_full_range_odd() -> Result<()> {
-        let r = hex_range("abc");
-        assert_eq!(
-            r,
-            Some(HexSearch::Range(
-                hex::decode("abc0").expect("invalid hex"),
-                hex::decode("abd0").expect("invalid hex")
-            ))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn hex_full_range_odd_end_f() -> Result<()> {
-        let r = hex_range("abf");
-        assert_eq!(
-            r,
-            Some(HexSearch::Range(
-                hex::decode("abf0").expect("invalid hex"),
-                hex::decode("ac00").expect("invalid hex")
-            ))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn hex_no_upper() -> Result<()> {
-        let r = hex_range("ffff");
-        assert_eq!(
-            r,
-            Some(HexSearch::LowerOnly(
-                hex::decode("ffff").expect("invalid hex")
-            ))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn hex_no_upper_odd() -> Result<()> {
-        let r = hex_range("fff");
-        assert_eq!(
-            r,
-            Some(HexSearch::LowerOnly(
-                hex::decode("fff0").expect("invalid hex")
-            ))
-        );
-        Ok(())
-    }
 }

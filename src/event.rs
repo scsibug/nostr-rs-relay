@@ -3,6 +3,7 @@ use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
 use crate::nip05;
+use crate::utils::unix_time;
 use bitcoin_hashes::{sha256, Hash};
 use lazy_static::lazy_static;
 use log::*;
@@ -13,7 +14,6 @@ use serde_json::Number;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::time::SystemTime;
 
 lazy_static! {
     /// Secp256k1 verification instance.
@@ -70,14 +70,6 @@ impl From<EventCmd> for Result<Event> {
             Err(EventInvalid)
         }
     }
-}
-
-/// Seconds since 1970.
-pub fn unix_time() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|x| x.as_secs())
-        .unwrap_or(0)
 }
 
 impl Event {

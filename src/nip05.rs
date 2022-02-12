@@ -7,7 +7,8 @@
 use crate::config::SETTINGS;
 use crate::db;
 use crate::error::{Error, Result};
-use crate::event::{unix_time, Event};
+use crate::event::Event;
+use crate::utils::unix_time;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
