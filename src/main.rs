@@ -502,7 +502,7 @@ async fn nostr_server(
                             },
                             Err(_) => {
                                 info!("invalid command ignored");
-
+                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "could not parse command"))).await.ok();
                             }
                         }
                     },
@@ -513,6 +513,10 @@ async fn nostr_server(
                     Err(Error::EventMaxLengthError(s)) => {
                         info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
                         ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event exceeded max size"))).await.ok();
+                    },
+                    Err(Error::ProtoParseError) => {
+                        info!("client {:?} sent event that could not be parsed", cid);
+                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "could not parse command"))).await.ok();
                     },
                     Err(e) => {
                         info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
