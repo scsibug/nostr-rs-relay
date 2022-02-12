@@ -24,7 +24,7 @@ PRAGMA journal_mode=WAL;
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA application_id = 1654008667;
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 -- Event Table
 CREATE TABLE IF NOT EXISTS event (
@@ -59,28 +59,6 @@ FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
 CREATE INDEX IF NOT EXISTS tag_val_hex_index ON tag(value_hex);
 
--- Event References Table
-CREATE TABLE IF NOT EXISTS event_ref (
-id INTEGER PRIMARY KEY,
-event_id INTEGER NOT NULL, -- an event ID that contains an #e tag.
-referenced_event BLOB NOT NULL, -- the event that is referenced.
-FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
-);
-
--- Event References Index
-CREATE INDEX IF NOT EXISTS event_ref_index ON event_ref(referenced_event);
-
--- Pubkey References Table
-CREATE TABLE IF NOT EXISTS pubkey_ref (
-id INTEGER PRIMARY KEY,
-event_id INTEGER NOT NULL, -- an event ID that contains an #p tag.
-referenced_pubkey BLOB NOT NULL, -- the pubkey that is referenced.
-FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE RESTRICT ON DELETE CASCADE
-);
-
--- Pubkey References Index
-CREATE INDEX IF NOT EXISTS pubkey_ref_index ON pubkey_ref(referenced_pubkey);
-
 -- NIP-05 User Validation.
 -- This represents the validation of  a user.
 -- cases;
@@ -104,6 +82,8 @@ failed_at INTEGER, -- timestamp a verification attempt failed (host down).
 failure_count INTEGER DEFAULT 0, -- number of consecutive failures.
 FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS user_verification_name_index ON user_verification(name);
+CREATE INDEX IF NOT EXISTS user_verification_event_index ON user_verification(metadata_event);
 "##;
 
 /// Determine the current application database schema version.
@@ -164,7 +144,7 @@ PRAGMA user_version = 2;
     }
     if curr_version == 2 {
         // this version lacks the tag column
-        debug!("database schema needs update from 2->3");
+        info!("database schema needs update from 2->3");
         let upgrade_sql = r##"
 CREATE TABLE IF NOT EXISTS tag (
 id INTEGER PRIMARY KEY,
@@ -211,7 +191,7 @@ PRAGMA user_version = 3;
         info!("Upgrade complete");
     }
     if curr_version == 3 {
-        debug!("database schema needs update from 3->4");
+        info!("database schema needs update from 3->4");
         let upgrade_sql = r##"
 -- incoming metadata events with nip05
 CREATE TABLE IF NOT EXISTS user_verification (
@@ -223,26 +203,46 @@ failed_at INTEGER, -- timestamp a verification attempt failed (host down).
 failure_count INTEGER DEFAULT 0, -- number of consecutive failures.
 FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS user_verification_author_index ON user_verification(author);
-CREATE INDEX IF NOT EXISTS user_verification_author_index ON user_verification(author);
+CREATE INDEX IF NOT EXISTS user_verification_name_index ON user_verification(name);
+CREATE INDEX IF NOT EXISTS user_verification_event_index ON user_verification(metadata_event);
 PRAGMA user_version = 4;
 "##;
-        // TODO: load existing refs into tag table
         match conn.execute_batch(upgrade_sql) {
             Ok(()) => {
                 info!("database schema upgraded v3 -> v4");
-                //curr_version = 4;
+                curr_version = 4;
             }
             Err(err) => {
                 error!("update failed: {}", err);
                 panic!("database could not be upgraded");
             }
         }
-    } else if curr_version == 4 {
+    }
+
+    if curr_version == 4 {
+        info!("database schema needs update from 4->5");
+        let upgrade_sql = r##"
+DROP TABLE IF EXISTS event_ref;
+DROP TABLE IF EXISTS pubkey_ref;
+PRAGMA user_version=5;
+"##;
+        match conn.execute_batch(upgrade_sql) {
+            Ok(()) => {
+                info!("database schema upgraded v4 -> v5");
+                // uncomment if we have a newer version
+                //curr_version = 5;
+            }
+            Err(err) => {
+                error!("update failed: {}", err);
+                panic!("database could not be upgraded");
+            }
+        }
+    } else if curr_version == 5 {
         debug!("Database version was already current");
-    } else if curr_version > 3 {
+    } else if curr_version > 5 {
         panic!("Database version is newer than supported by this executable");
     }
+
     // Setup PRAGMA
     conn.execute_batch(STARTUP_SQL)?;
     debug!("SQLite PRAGMA startup completed");
