@@ -418,15 +418,15 @@ async fn nostr_server(
                 let nostr_msg = match ws_next {
                     Some(Ok(Message::Text(m))) => {
                         let msg_parse = convert_to_msg(m);
-                        Some(msg_parse)
+                        msg_parse
                     },
                     Some(Ok(Message::Binary(_))) => {
                         ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "binary messages are not accepted"))).await.ok();
                         continue;
                     },
                     None | Some(Ok(Message::Close(_))) | Some(Err(WsError::AlreadyClosed)) | Some(Err(WsError::ConnectionClosed))  => {
-                        info!("Closing connection");
-                        None
+                        debug!("normal websocket close from client: {:?}",cid);
+                        break;
                     },
                     x => {
                         info!("message was: {:?} (ignoring)", x);
@@ -436,7 +436,7 @@ async fn nostr_server(
 
                 // convert ws_next into proto_next
                 match nostr_msg {
-                    Some(Ok(NostrMessage::EventMsg(ec))) => {
+                    Ok(NostrMessage::EventMsg(ec)) => {
                         // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
                         let parsed : Result<Event> = Result::<Event>::from(ec);
@@ -460,7 +460,7 @@ async fn nostr_server(
                             }
                         }
                     },
-                    Some(Ok(NostrMessage::SubMsg(s))) => {
+                    Ok(NostrMessage::SubMsg(s)) => {
                         debug!("client {} requesting a subscription", cid);
                         // subscription handling consists of:
                         // * registering the subscription so future events can be matched
@@ -485,7 +485,7 @@ async fn nostr_server(
                             }
                         }
                     },
-                    Some(Ok(NostrMessage::CloseMsg(cc))) => {
+                    Ok(NostrMessage::CloseMsg(cc)) => {
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
                         match parsed {
@@ -506,19 +506,15 @@ async fn nostr_server(
                             }
                         }
                     },
-                    None => {
-                        debug!("normal websocket close from client: {:?}",cid);
-                        break;
-                    },
-                    Some(Err(Error::ConnError)) => {
+                    Err(Error::ConnError) => {
                         debug!("got connection close/error, disconnecting client: {:?}",cid);
                         break;
                     }
-                    Some(Err(Error::EventMaxLengthError(s))) => {
+                    Err(Error::EventMaxLengthError(s)) => {
                         info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
                         ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event exceeded max size"))).await.ok();
                     },
-                    Some(Err(e)) => {
+                    Err(e) => {
                         info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
                     },
                 }
