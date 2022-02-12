@@ -25,6 +25,8 @@ use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::time::Duration;
+use std::time::Instant;
 use tokio::runtime::Builder;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc;
@@ -371,6 +373,19 @@ async fn nostr_server(
     // maintain a hashmap of a oneshot channel for active subscriptions.
     // when these subscriptions are cancelled, make a message
     // available to the executing query so it knows to stop.
+
+    // last time this client sent data
+    let mut last_message_time = Instant::now();
+
+    // ping interval (every 5 minutes)
+    let default_ping_dur = Duration::from_secs(300);
+
+    // disconnect after 20 minutes without a ping response or event.
+    let max_quiet_time = Duration::from_secs(60 * 20);
+
+    let start = tokio::time::Instant::now() + default_ping_dur;
+    let mut ping_interval = tokio::time::interval_at(start, default_ping_dur);
+
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
@@ -382,6 +397,16 @@ async fn nostr_server(
             _ = shutdown.recv() => {
                 // server shutting down, exit loop
                 break;
+            },
+            _ = ping_interval.tick() => {
+                // check how long since we talked to client
+                // if it has been too long, disconnect
+                if last_message_time.elapsed() > max_quiet_time {
+                    debug!("ending connection due to lack of client ping response");
+                    break;
+                }
+                // Send a ping
+                ws_stream.send(Message::Ping(Vec::new())).await.ok();
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
@@ -414,14 +439,19 @@ async fn nostr_server(
                 }
             },
             ws_next = ws_stream.next() => {
+                // update most recent message time for client
+                last_message_time = Instant::now();
                 // Consume text messages from the client, parse into Nostr messages.
                 let nostr_msg = match ws_next {
                     Some(Ok(Message::Text(m))) => {
-                        let msg_parse = convert_to_msg(m);
-                        msg_parse
+                        convert_to_msg(m)
                     },
                     Some(Ok(Message::Binary(_))) => {
                         ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "binary messages are not accepted"))).await.ok();
+                        continue;
+                    },
+                    Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
+                        // get a ping/pong, ignore
                         continue;
                     },
                     None | Some(Ok(Message::Close(_))) | Some(Err(WsError::AlreadyClosed)) | Some(Err(WsError::ConnectionClosed))  => {
