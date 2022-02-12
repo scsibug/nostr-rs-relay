@@ -530,8 +530,7 @@ async fn nostr_server(
                     }
                     Some(Err(Error::EventMaxLengthError(s))) => {
                         info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
-                        //TODO
-                        //nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
+                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event exceeded max size"))).await.ok();
                     },
                     Some(Err(e)) => {
                         info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
