@@ -1,3 +1,4 @@
+//! Configuration file and settings management
 use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};

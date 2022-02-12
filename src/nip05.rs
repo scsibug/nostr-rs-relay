@@ -1,4 +1,4 @@
-//! User Verification Through NIP-05
+//! User verification using NIP-05 names
 use crate::config::SETTINGS;
 use crate::db;
 use crate::error::{Error, Result};

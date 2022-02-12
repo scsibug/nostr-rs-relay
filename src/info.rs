@@ -1,5 +1,6 @@
-use crate::config;
+//! Relay metadata using NIP-11
 /// Relay Info
+use crate::config;
 use serde::{Deserialize, Serialize};
 
 pub const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
