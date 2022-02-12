@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
+use std::time::Duration;
 
 // initialize a singleton default configuration
 lazy_static! {
@@ -67,6 +68,60 @@ pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifiedUsersMode {
+    Enabled,
+    Passive,
+    Disabled,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(unused)]
+pub struct VerifiedUsers {
+    pub mode: VerifiedUsersMode, // Mode of operation: "enabled" (enforce) or "passive" (check only). If none, this is simply disabled.
+    pub domain_whitelist: Option<Vec<String>>, // If present, only allow verified users from these domains can publish events
+    pub domain_blacklist: Option<Vec<String>>, // If present, allow all verified users from any domain except these
+    pub verify_expiration: Option<String>, // how long a verification is cached for before no longer being used
+    pub verify_update_frequency: Option<String>, // how often to attempt to update verification
+    pub verify_expiration_duration: Option<Duration>, // internal result of parsing verify_expiration
+    pub verify_update_frequency_duration: Option<Duration>, // internal result of parsing verify_update_frequency
+    pub max_consecutive_failures: usize, // maximum number of verification failures in a row, before ceasing future checks
+}
+
+impl VerifiedUsers {
+    pub fn init(&mut self) {
+        self.verify_expiration_duration = self.verify_expiration_duration();
+        self.verify_update_frequency_duration = self.verify_update_duration();
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.mode == VerifiedUsersMode::Enabled
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.mode == VerifiedUsersMode::Enabled || self.mode == VerifiedUsersMode::Passive
+    }
+
+    pub fn is_passive(&self) -> bool {
+        self.mode == VerifiedUsersMode::Passive
+    }
+
+    pub fn verify_expiration_duration(&self) -> Option<Duration> {
+        self.verify_expiration
+            .as_ref()
+            .and_then(|x| parse_duration::parse(x).ok())
+    }
+    pub fn verify_update_duration(&self) -> Option<Duration> {
+        self.verify_update_frequency
+            .as_ref()
+            .and_then(|x| parse_duration::parse(x).ok())
+    }
+    pub fn is_valid(&self) -> bool {
+        self.verify_expiration_duration().is_some() && self.verify_update_duration().is_some()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
@@ -75,6 +130,7 @@ pub struct Settings {
     pub network: Network,
     pub limits: Limits,
     pub authorization: Authorization,
+    pub verified_users: VerifiedUsers,
     pub retention: Retention,
     pub options: Options,
 }
@@ -96,7 +152,7 @@ impl Settings {
 
     fn new_from_default(default: &Settings) -> Result<Self, config::ConfigError> {
         let config: config::Config = config::Config::new();
-        let settings: Settings = config
+        let mut settings: Settings = config
             // use defaults
             .with_merged(config::Config::try_from(default).unwrap())?
             // override with file contents
@@ -109,6 +165,12 @@ impl Settings {
                 settings.database.min_conn, settings.database.max_conn
             );
         }
+        // ensure durations parse
+        if !settings.verified_users.is_valid() {
+            panic!("VerifiedUsers time settings could not be parsed");
+        }
+        // initialize durations for verified users
+        settings.verified_users.init();
         Ok(settings)
     }
 }
@@ -137,11 +199,21 @@ impl Default for Settings {
                 max_event_bytes: Some(2 << 17),      // 128K
                 max_ws_message_bytes: Some(2 << 17), // 128K
                 max_ws_frame_bytes: Some(2 << 17),   // 128K
-                broadcast_buffer: 4096,
-                event_persist_buffer: 16,
+                broadcast_buffer: 16384,
+                event_persist_buffer: 4096,
             },
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish
+            },
+            verified_users: VerifiedUsers {
+                mode: VerifiedUsersMode::Disabled,
+                domain_whitelist: None,
+                domain_blacklist: None,
+                verify_expiration: Some("1 week".to_owned()),
+                verify_update_frequency: Some("1 day".to_owned()),
+                verify_expiration_duration: None,
+                verify_update_frequency_duration: None,
+                max_consecutive_failures: 20,
             },
             retention: Retention {
                 max_events: None,          // max events

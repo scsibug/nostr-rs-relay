@@ -1,4 +1,4 @@
-FROM rust:1.57 as builder
+FROM rust:1.58.1 as builder
 
 RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay
@@ -12,11 +12,11 @@ COPY ./src ./src
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo build --release
 
-FROM debian:buster-slim
+FROM debian:bullseye-20220125-slim
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata sqlite3 \
+    && apt-get install -y ca-certificates tzdata sqlite3 libc6 \
     && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8080

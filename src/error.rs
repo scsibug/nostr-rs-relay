@@ -40,8 +40,41 @@ pub enum Error {
     ConfigError(config::ConfigError),
     #[error("Data directory does not exist")]
     DatabaseDirError,
+    #[error("Database Connection Pool Error")]
+    DatabasePoolError(r2d2::Error),
     #[error("Custom Error : {0}")]
     CustomError(String),
+    #[error("Task join error")]
+    JoinError,
+    #[error("Hyper Client error")]
+    HyperError(hyper::Error),
+    #[error("Unknown/Undocumented")]
+    UnknownError,
+}
+
+//impl From<Box<dyn std::error::Error>> for Error {
+//    fn from(e: Box<dyn std::error::Error>) -> Self {
+//        Error::CustomError("error".to_owned())
+//    }
+//}
+
+impl From<hyper::Error> for Error {
+    fn from(h: hyper::Error) -> Self {
+        Error::HyperError(h)
+    }
+}
+
+impl From<r2d2::Error> for Error {
+    fn from(d: r2d2::Error) -> Self {
+        Error::DatabasePoolError(d)
+    }
+}
+
+impl From<tokio::task::JoinError> for Error {
+    /// Wrap SQL error
+    fn from(_j: tokio::task::JoinError) -> Self {
+        Error::JoinError
+    }
 }
 
 impl From<rusqlite::Error> for Error {

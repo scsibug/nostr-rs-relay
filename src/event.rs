@@ -2,6 +2,7 @@
 use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
+use crate::nip05;
 use bitcoin_hashes::{sha256, Hash};
 use lazy_static::lazy_static;
 use log::*;
@@ -71,7 +72,7 @@ impl From<EventCmd> for Result<Event> {
 }
 
 /// Seconds since 1970
-fn unix_time() -> u64 {
+pub fn unix_time() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|x| x.as_secs())
@@ -79,6 +80,25 @@ fn unix_time() -> u64 {
 }
 
 impl Event {
+    pub fn is_kind_metadata(&self) -> bool {
+        self.kind == 0
+    }
+
+    /// Pull a NIP-05 Name out of the event, if one exists
+    pub fn get_nip05_addr(&self) -> Option<nip05::Nip05Name> {
+        if self.is_kind_metadata() {
+            // very quick check if we should attempt to parse this json
+            if self.content.contains("\"nip05\"") {
+                // Parse into JSON
+                let md_parsed: Value = serde_json::from_str(&self.content).ok()?;
+                let md_map = md_parsed.as_object()?;
+                let nip05_str = md_map.get("nip05")?.as_str()?;
+                return nip05::Nip05Name::try_from(nip05_str).ok();
+            }
+        }
+        None
+    }
+
     /// Build an event tag index
     fn build_index(&mut self) {
         // if there are no tags; just leave the index as None
@@ -107,6 +127,9 @@ impl Event {
     pub fn get_event_id_prefix(&self) -> String {
         self.id.chars().take(8).collect()
     }
+    pub fn get_author_prefix(&self) -> String {
+        self.pubkey.chars().take(8).collect()
+    }
 
     /// Check if this event has a valid signature.
     fn is_valid(&self) -> bool {
@@ -133,7 +156,7 @@ impl Event {
         // * serialize with no spaces/newlines
         let c_opt = self.to_canonical();
         if c_opt.is_none() {
-            info!("event could not be canonicalized");
+            debug!("event could not be canonicalized");
             return false;
         }
         let c = c_opt.unwrap();
@@ -142,6 +165,7 @@ impl Event {
         let hex_digest = format!("{:x}", digest);
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
+            debug!("event id does not match digest");
             return false;
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
@@ -152,11 +176,11 @@ impl Event {
                 let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
                 matches!(verify, Ok(()))
             } else {
-                info!("Client sent malformed pubkey");
+                debug!("Client sent malformed pubkey");
                 false
             }
         } else {
-            warn!("Error converting digest to secp256k1 message");
+            info!("Error converting digest to secp256k1 message");
             false
         }
     }

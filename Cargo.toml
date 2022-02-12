@@ -25,4 +25,8 @@ r2d2_sqlite = "^0.19"
 lazy_static = "^1.4"
 governor = "^0.4"
 nonzero_ext = "^0.3"
-hyper={ version="0.14", features=["server","http1","http2","tcp"] }
+hyper = { version="0.14", features=["client", "server","http1","http2","tcp"] }
+hyper-tls = "^0.5"
+http = { version = "^0.2" }
+parse_duration = "^2"
+rand = "^0.8"

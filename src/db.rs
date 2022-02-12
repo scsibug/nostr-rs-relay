@@ -1,21 +1,21 @@
 //! Event persistence and querying
-use crate::config;
+use crate::config::SETTINGS;
+use crate::error::Error;
 use crate::error::Result;
 use crate::event::Event;
+use crate::nip05;
 use crate::subscription::Subscription;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
 use log::*;
-use rusqlite::params;
-use rusqlite::Connection;
-use rusqlite::OpenFlags;
-//use std::num::NonZeroU32;
-use crate::config::SETTINGS;
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::limits::Limit;
+use rusqlite::params;
 use rusqlite::types::ToSql;
+use rusqlite::Connection;
+use rusqlite::OpenFlags;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -23,9 +23,9 @@ use std::time::Instant;
 use tokio::task;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
-
+pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 /// Database file
-const DB_FILE: &str = "nostr.db";
+pub const DB_FILE: &str = "nostr.db";
 
 /// Startup DB Pragmas
 const STARTUP_SQL: &str = r##"
@@ -42,7 +42,7 @@ PRAGMA journal_mode=WAL;
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA application_id = 1654008667;
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 -- Event Table
 CREATE TABLE IF NOT EXISTS event (
@@ -98,37 +98,79 @@ FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE RESTRICT ON DELETE CASCADE
 
 -- Pubkey References Index
 CREATE INDEX IF NOT EXISTS pubkey_ref_index ON pubkey_ref(referenced_pubkey);
+
+-- NIP-05 User Validation.
+-- This represents the validation of  a user.
+-- cases;
+-- we query, and find a valid result.  update verified_at, and proceed.
+-- we query, and get a 404/503/host down.  update failed_at, and we are done.
+-- we query, and get a 200, but the local part is not present with the given address.  wipe out verified_at, update failed_at.
+-- we need to know how often to query failing validations.
+--   two cases, either we get a NIP-05 metadata event regularly that we can use to restart validation.
+--   or, we simply get lots of non-metadata events, but the user fixed their NIP-05 host.
+--   what should trigger a new attempt?  what should trigger cleaning?
+--   we will never write anything to the table if it is not valid at least once.
+-- we will keep trying at frequency X to re-validate the already-valid nip05s.
+
+-- incoming metadata events with nip05
+CREATE TABLE IF NOT EXISTS user_verification (
+id INTEGER PRIMARY KEY,
+metadata_event INTEGER NOT NULL, -- the metadata event used for this validation.
+name TEXT NOT NULL, -- the nip05 field value (user@domain).
+verified_at INTEGER, -- timestamp this author/nip05 was most recently verified.
+failed_at INTEGER, -- timestamp a verification attempt failed (host down).
+failure_count INTEGER DEFAULT 0, -- number of consecutive failures.
+FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
 "##;
 
-pub fn build_read_pool() -> SqlitePool {
-    let config = config::SETTINGS.read().unwrap();
-    let db_dir = &config.database.data_directory;
+// TODO: drop the pubkey_ref and event_ref tables
+
+pub fn build_pool(
+    name: &str,
+    flags: OpenFlags,
+    min_size: u32,
+    max_size: u32,
+    wait_for_db: bool,
+) -> SqlitePool {
+    let settings = SETTINGS.read().unwrap();
+
+    let db_dir = &settings.database.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
     // small hack; if the database doesn't exist yet, that means the
     // writer thread hasn't finished.  Give it a chance to work.  This
     // is only an issue with the first time we run.
-    while !full_path.exists() {
+    while !full_path.exists() && wait_for_db {
         debug!("Database reader pool is waiting on the database to be created...");
         thread::sleep(Duration::from_millis(500));
     }
     let manager = SqliteConnectionManager::file(&full_path)
-        .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_flags(flags)
         .with_init(|c| c.execute_batch(STARTUP_SQL));
     let pool: SqlitePool = r2d2::Pool::builder()
         .test_on_check_out(true) // no noticeable performance hit
-        .min_idle(Some(config.database.min_conn))
-        .max_size(config.database.max_conn)
+        .min_idle(Some(min_size))
+        .max_size(max_size)
         .build(manager)
         .unwrap();
     info!(
-        "Built a connection pool (min={}, max={})",
-        config.database.min_conn, config.database.max_conn
+        "Built a connection pool {:?} (min={}, max={})",
+        name, min_size, max_size
     );
-    return pool;
+    pool
+}
+
+/// Build a single database connection, with provided flags
+pub fn build_conn(flags: OpenFlags) -> Result<Connection> {
+    let settings = SETTINGS.read().unwrap();
+    let db_dir = &settings.database.data_directory;
+    let full_path = Path::new(db_dir).join(DB_FILE);
+    // create a connection
+    Ok(Connection::open_with_flags(&full_path, flags)?)
 }
 
 /// Upgrade DB to latest version, and execute pragma settings
-pub fn upgrade_db(conn: &mut Connection) -> Result<()> {
+pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     // check the version.
     let mut curr_version = db_version(conn)?;
     info!("DB version = {:?}", curr_version);
@@ -150,8 +192,7 @@ pub fn upgrade_db(conn: &mut Connection) -> Result<()> {
     if curr_version == 0 {
         match conn.execute_batch(INIT_SQL) {
             Ok(()) => {
-                info!("database pragma/schema initialized to v3, and ready");
-                //curr_version = 3;
+                info!("database pragma/schema initialized to v4, and ready");
             }
             Err(err) => {
                 error!("update failed: {}", err);
@@ -189,15 +230,13 @@ value TEXT, -- the tag value, if not hex.
 value_hex BLOB, -- the tag value, if it can be interpreted as a hex string.
 FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
-CREATE INDEX IF NOT EXISTS tag_val_hex_index ON tag(value_hex);
 PRAGMA user_version = 3;
 "##;
         // TODO: load existing refs into tag table
         match conn.execute_batch(upgrade_sql) {
             Ok(()) => {
                 info!("database schema upgraded v2 -> v3");
-                //curr_version = 3;
+                curr_version = 3;
             }
             Err(err) => {
                 error!("update failed: {}", err);
@@ -226,14 +265,43 @@ PRAGMA user_version = 3;
         }
         tx.commit()?;
         info!("Upgrade complete");
-    } else if curr_version == 3 {
+    }
+    if curr_version == 3 {
+        debug!("database schema needs update from 3->4");
+        let upgrade_sql = r##"
+-- incoming metadata events with nip05
+CREATE TABLE IF NOT EXISTS user_verification (
+id INTEGER PRIMARY KEY,
+metadata_event INTEGER NOT NULL, -- the metadata event used for this validation.
+name TEXT NOT NULL, -- the nip05 field value (user@domain).
+verified_at INTEGER, -- timestamp this author/nip05 was most recently verified.
+failed_at INTEGER, -- timestamp a verification attempt failed (host down).
+failure_count INTEGER DEFAULT 0, -- number of consecutive failures.
+FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS user_verification_author_index ON user_verification(author);
+CREATE INDEX IF NOT EXISTS user_verification_author_index ON user_verification(author);
+PRAGMA user_version = 4;
+"##;
+        // TODO: load existing refs into tag table
+        match conn.execute_batch(upgrade_sql) {
+            Ok(()) => {
+                info!("database schema upgraded v3 -> v4");
+                //curr_version = 4;
+            }
+            Err(err) => {
+                error!("update failed: {}", err);
+                panic!("database could not be upgraded");
+            }
+        }
+    } else if curr_version == 4 {
         debug!("Database version was already current");
     } else if curr_version > 3 {
         panic!("Database version is newer than supported by this executable");
     }
     // Setup PRAGMA
     conn.execute_batch(STARTUP_SQL)?;
-    info!("Finished pragma");
+    debug!("SQLite PRAGMA startup completed");
     Ok(())
 }
 
@@ -241,26 +309,37 @@ PRAGMA user_version = 3;
 pub async fn db_writer(
     mut event_rx: tokio::sync::mpsc::Receiver<Event>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
+    metadata_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> tokio::task::JoinHandle<Result<()>> {
+    let settings = SETTINGS.read().unwrap();
+
+    // are we performing NIP-05 checking?
+    let nip05_active = settings.verified_users.is_active();
+    // are we requriing NIP-05 user verification?
+    let nip05_enabled = settings.verified_users.is_enabled();
+
     task::spawn_blocking(move || {
         // get database configuration settings
-        let config = SETTINGS.read().unwrap();
-        let db_dir = &config.database.data_directory;
+        let settings = SETTINGS.read().unwrap();
+        let db_dir = &settings.database.data_directory;
         let full_path = Path::new(db_dir).join(DB_FILE);
-        // create a connection
-        let mut conn = Connection::open_with_flags(
-            &full_path,
+        // create a connection pool
+        let pool = build_pool(
+            "event writer",
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        )?;
+            1,
+            4,
+            false,
+        );
         info!("opened database {:?} for writing", full_path);
-        upgrade_db(&mut conn)?;
+        upgrade_db(&mut pool.get()?)?;
 
         // Make a copy of the whitelist
-        let whitelist = &config.authorization.pubkey_whitelist.clone();
+        let whitelist = &settings.authorization.pubkey_whitelist.clone();
 
         // get rate limit settings
-        let rps_setting = config.limits.messages_per_sec;
+        let rps_setting = settings.limits.messages_per_sec;
         let mut most_recent_rate_limit = Instant::now();
         let mut lim_opt = None;
         let clock = governor::clock::QuantaClock::default();
@@ -287,7 +366,7 @@ pub async fn db_writer(
 
             // check if this event is authorized.
             if let Some(allowed_addrs) = whitelist {
-                debug!("Checking against whitelist");
+                debug!("Checking against pubkey whitelist");
                 // if the event address is not in allowed_addrs.
                 if !allowed_addrs.contains(&event.pubkey) {
                     info!(
@@ -299,15 +378,57 @@ pub async fn db_writer(
                 }
             }
 
+            // send any metadata events to the NIP-05 verifier
+            if nip05_active && event.is_kind_metadata() {
+                // we are sending this prior to even deciding if we
+                // persist it.  this allows the nip05 module to
+                // inspect it, update if necessary, or persist a new
+                // event and broadcast it itself.
+                metadata_tx.send(event.clone()).ok();
+            }
+
+            // check for  NIP-05 verification
+            if nip05_enabled {
+                match nip05::query_latest_user_verification(pool.get()?, event.pubkey.to_owned()) {
+                    Ok(uv) => {
+                        if uv.is_valid() {
+                            info!(
+                                "new event from verified author ({:?},{:?})",
+                                uv.name.to_string(),
+                                event.get_author_prefix()
+                            );
+                        } else {
+                            info!("rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
+                                  uv.name.to_string(),
+                                  event.get_author_prefix()
+                            );
+                            continue;
+                        }
+                    }
+                    Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+                        debug!(
+                            "no verification records found for pubkey: {:?}",
+                            event.get_author_prefix()
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        warn!("checking nip05 verification status failed: {:?}", e);
+                        continue;
+                    }
+                }
+            }
+            // TODO: cache recent list of authors to remove a DB call.
             let start = Instant::now();
-            match write_event(&mut conn, &event) {
+            match write_event(&mut pool.get()?, &event) {
                 Ok(updated) => {
                     if updated == 0 {
-                        debug!("ignoring duplicate event");
+                        trace!("ignoring duplicate event");
                     } else {
                         info!(
-                            "persisted event: {} in {:?}",
+                            "persisted event {:?} from {:?} in {:?}",
                             event.get_event_id_prefix(),
+                            event.get_author_prefix(),
                             start.elapsed()
                         );
                         event_write = true;
@@ -316,9 +437,10 @@ pub async fn db_writer(
                     }
                 }
                 Err(err) => {
-                    warn!("event insert failed: {}", err);
+                    warn!("event insert failed: {:?}", err);
                 }
             }
+
             // use rate limit, if defined, and if an event was actually written.
             if event_write {
                 if let Some(ref lim) = lim_opt {
@@ -327,9 +449,9 @@ pub async fn db_writer(
                         // check if we have recently logged rate
                         // limits, but print out a message only once
                         // per second.
-                        if most_recent_rate_limit.elapsed().as_secs() > 1 {
+                        if most_recent_rate_limit.elapsed().as_secs() > 10 {
                             warn!(
-                                "rate limit reached for event creation (sleep for {:?})",
+                                "rate limit reached for event creation (sleep for {:?}) (suppressing future messages for 10 seconds)",
                                 wait_for
                             );
                             // reset last rate limit message
@@ -342,7 +464,6 @@ pub async fn db_writer(
                 }
             }
         }
-        conn.close().ok();
         info!("database connection closed");
         Ok(())
     })
@@ -355,7 +476,7 @@ pub fn db_version(conn: &mut Connection) -> Result<usize> {
 }
 
 /// Persist an event to the database.
-pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
+pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // start transaction
     let tx = conn.transaction()?;
     // get relevant fields from event and convert to blobs.
@@ -402,7 +523,11 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
             params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
         )?;
         if update_count > 0 {
-            info!("hid {} older metadata events", update_count);
+            info!(
+                "hid {} older metadata events for author {:?}",
+                update_count,
+                e.get_author_prefix()
+            );
         }
     }
     // if this event is for a contact update, hide every other kind=3
@@ -413,7 +538,11 @@ pub fn write_event(conn: &mut Connection, e: &Event) -> Result<usize> {
             params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
         )?;
         if update_count > 0 {
-            info!("hid {} older contact events", update_count);
+            info!(
+                "hid {} older contact events for author {:?}",
+                update_count,
+                e.get_author_prefix()
+            );
         }
     }
     tx.commit()?;
@@ -666,7 +795,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
 /// query is immediately aborted.
 pub async fn db_query(
     sub: Subscription,
-    conn: r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>,
+    conn: PooledConnection,
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {

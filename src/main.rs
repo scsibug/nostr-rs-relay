@@ -15,6 +15,7 @@ use nostr_rs_relay::db;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
 use nostr_rs_relay::info::RelayInfo;
+use nostr_rs_relay::nip05;
 use nostr_rs_relay::protostream;
 use nostr_rs_relay::protostream::NostrMessage::*;
 use nostr_rs_relay::protostream::NostrResponse::*;
@@ -24,8 +25,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
 use tokio::runtime::Builder;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::WebSocketStream;
@@ -171,20 +171,44 @@ fn main() -> Result<(), Error> {
         *settings = c;
     }
 
-    let config = config::SETTINGS.read().unwrap();
+    let settings = config::SETTINGS.read().unwrap();
+    trace!("Config: {:?}", settings);
     // do some config validation.
-    if !Path::new(&config.database.data_directory).is_dir() {
+    if !Path::new(&settings.database.data_directory).is_dir() {
         error!("Database directory does not exist");
         return Err(Error::DatabaseDirError);
     }
-    trace!("config: {:?}", config);
-    let addr = format!("{}:{}", config.network.address.trim(), config.network.port);
+    let addr = format!(
+        "{}:{}",
+        settings.network.address.trim(),
+        settings.network.port
+    );
     let socket_addr = addr.parse().expect("listening address not valid");
-    if let Some(addr_whitelist) = &config.authorization.pubkey_whitelist {
+    // address whitelisting settings
+    if let Some(addr_whitelist) = &settings.authorization.pubkey_whitelist {
         info!(
             "Event publishing restricted to {} pubkey(s)",
             addr_whitelist.len()
         );
+    }
+    // check if NIP-05 enforced user verification is on
+    if settings.verified_users.is_active() {
+        info!(
+            "NIP-05 user verification mode:{:?}",
+            settings.verified_users.mode
+        );
+        if let Some(d) = settings.verified_users.verify_update_duration() {
+            info!("NIP-05 check user verification every:   {:?}", d);
+        }
+        if let Some(d) = settings.verified_users.verify_expiration_duration() {
+            info!("NIP-05 user verification expires after: {:?}", d);
+        }
+        if let Some(wl) = &settings.verified_users.domain_whitelist {
+            info!("NIP-05 domain whitelist: {:?}", wl);
+        }
+        if let Some(bl) = &settings.verified_users.domain_blacklist {
+            info!("NIP-05 domain blacklist: {:?}", bl);
+        }
     }
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
@@ -206,12 +230,38 @@ fn main() -> Result<(), Error> {
         let (event_tx, event_rx) = mpsc::channel::<Event>(settings.limits.event_persist_buffer);
         // establish a channel for letting all threads now about a
         // requested server shutdown.
-        let (invoke_shutdown, _) = broadcast::channel::<()>(1);
+        let (invoke_shutdown, shutdown_listen) = broadcast::channel::<()>(1);
+        // create a channel for sending any new metadata event.  These
+        // will get processed relatively slowly (a potentially
+        // multi-second blocking HTTP call) on a single thread, so we
+        // buffer requests on the channel.  No harm in dropping events
+        // here, since we are protecting against DoS.  This can make
+        // it difficult to setup initial metadata in bulk, since
+        // overwhelming this will drop events and won't register
+        // metadata events.
+        let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
-        db::db_writer(event_rx, bcast_tx.clone(), invoke_shutdown.subscribe()).await;
+        db::db_writer(
+            event_rx,
+            bcast_tx.clone(),
+            metadata_tx.clone(),
+            shutdown_listen,
+        )
+        .await;
         info!("db writer created");
+
+        // create a nip-05 verifier thread
+        let verifier_opt = nip05::Verifier::new(metadata_rx, bcast_tx.clone());
+        if let Ok(mut v) = verifier_opt {
+            if settings.verified_users.is_active() {
+                tokio::task::spawn(async move {
+                    info!("starting up NIP-05 verifier...");
+                    v.run().await;
+                });
+            }
+        }
         // // listen for ctrl-c interruupts
         let ctrl_c_shutdown = invoke_shutdown.clone();
         tokio::spawn(async move {
@@ -220,7 +270,14 @@ fn main() -> Result<(), Error> {
             ctrl_c_shutdown.send(()).ok();
         });
         // build a connection pool for sqlite connections
-        let pool = db::build_read_pool();
+        let pool = db::build_pool(
+            "client query",
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
+            settings.database.min_conn,
+            settings.database.max_conn,
+            true,
+        );
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
@@ -285,7 +342,7 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
-    info!("new connection for client: {}", cid);
+    info!("new connection for client: {:?}", cid);
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
@@ -298,6 +355,7 @@ async fn nostr_server(
                 client_received_event_count += 1;
                 nostr_stream.send(res).await.ok();
             },
+            // TODO: consider logging the LaggedRecv error
             Ok(global_event) = bcast_rx.recv() => {
                 // an event has been broadcast to all clients
                 // first check if there is a subscription for this event.
@@ -306,14 +364,14 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        debug!("sub match: client: {}, sub: {}, event: {}",
+                        debug!("sub match: client: {:?}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
                         let res = EventRes(s.to_owned(),event_str);
                         nostr_stream.send(res).await.ok();
                     } else {
-                        warn!("could not convert event to string");
+                        warn!("could not serialize event {:?}", global_event.get_event_id_prefix());
                     }
                 }
             },
@@ -327,13 +385,19 @@ async fn nostr_server(
                         match parsed {
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
-                                debug!("successfully parsed/validated event: {} from client: {}", id_prefix, cid);
+                                debug!("successfully parsed/validated event: {:?} from client: {:?}", id_prefix, cid);
+                                // TODO: consider moving some/all
+                                // authorization checks here, instead
+                                // of the DB module, so we can send a
+                                // proper NOTICE back to the client if
+                                // they are unable to write.
+
                                 // Write this to the database
                                 event_tx.send(e.clone()).await.ok();
                                 client_published_event_count += 1;
                             },
                             Err(_) => {
-                                info!("client {} sent an invalid event", cid);
+                                info!("client {:?} sent an invalid event", cid);
                                 nostr_stream.send(NoticeRes("event was invalid".to_owned())).await.ok();
                             }
                         }
@@ -385,19 +449,19 @@ async fn nostr_server(
                         }
                     },
                     None => {
-                        debug!("normal websocket close from client: {}",cid);
+                        debug!("normal websocket close from client: {:?}",cid);
                         break;
                     },
                     Some(Err(Error::ConnError)) => {
-                        debug!("got connection close/error, disconnecting client: {}",cid);
+                        debug!("got connection close/error, disconnecting client: {:?}",cid);
                         break;
                     }
                     Some(Err(Error::EventMaxLengthError(s))) => {
-                        info!("client {} sent event larger ({} bytes) than max size", cid, s);
+                        info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
                         nostr_stream.send(NoticeRes("event exceeded max size".to_owned())).await.ok();
                     },
                     Some(Err(e)) => {
-                        info!("got non-fatal error from client: {}, error: {:?}", cid, e);
+                        info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
                     },
                 }
             },
@@ -408,7 +472,7 @@ async fn nostr_server(
         stop_tx.send(()).ok();
     }
     info!(
-        "stopping connection for client: {} (client sent {} event(s), received {})",
+        "stopping connection for client: {:?} (client sent {} event(s), received {})",
         cid, client_published_event_count, client_received_event_count
     );
 }

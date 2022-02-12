@@ -22,7 +22,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # line option.
 data_directory = "."
 
-# Database connection pool settings:
+# Database connection pool settings for subscribers:
 
 # Minimum number of SQLite reader connections
 #min_conn = 4
@@ -59,8 +59,8 @@ reject_future_seconds = 1800
 #max_ws_frame_bytes = 131072
 
 # Broadcast buffer size, in number of events.  This prevents slow
-# readers from consuming memory.  Defaults to 4096.
-#broadcast_buffer = 4096
+# readers from consuming memory.
+#broadcast_buffer = 16384
 
 # Event persistence buffer size, in number of events.  This provides
 # backpressure to senders if writes are slow.  Defaults to 16.
@@ -68,8 +68,35 @@ reject_future_seconds = 1800
 
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
-# Only valid events by these authors will be accepted.
+# Only valid events by these authors will be accepted, if the variable
+# is set.
 #pubkey_whitelist = [
 #  "35d26e4690cbe1a898af61cc3515661eb5fa763b57bd0b42e45099c8b32fd50f",
 #  "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
 #]
+
+[verified_users]
+# NIP-05 verification of users.  Can be "enabled" to require NIP-05
+# metadata for event authors, "passive" to perform validation but
+# never block publishing, or "disabled" to do nothing.
+#mode = "disabled"
+
+# Domain names that will be prevented from publishing events.
+#domain_blacklist = ["wellorder.net"]
+
+# Domain names that are allowed to publish events.  If defined, only
+# events NIP-05 verified authors at these domains are persisted.
+#domain_whitelist = ["example.com"]
+
+# Consider an pubkey "verified" if we have a successful validation
+# from the NIP-05 domain within this amount of time.  Note, if the
+# domain provides a successful response that omits the account,
+# verification is immediately revoked.
+#verify_expiration = "1 week"
+
+# How long to wait between verification attempts for a specific author.
+#verify_update_frequency = "24 hours"
+
+# How many consecutive failed checks before we give up on verifying
+# this author.
+#max_consecutive_failures = 20
