@@ -1,4 +1,9 @@
 //! User verification using NIP-05 names
+//!
+//! NIP-05 defines a mechanism for authors to associate an internet
+//! address with their public key, in metadata events.  This module
+//! consumes a stream of metadata events, and keeps a database table
+//! updated with the current NIP-05 verification status.
 use crate::config::SETTINGS;
 use crate::db;
 use crate::error::{Error, Result};
@@ -15,7 +20,7 @@ use std::time::Instant;
 use std::time::SystemTime;
 use tokio::time::Interval;
 
-/// NIP-05 verifier
+/// NIP-05 verifier state
 pub struct Verifier {
     /// Metadata events for us to inspect
     metadata_rx: tokio::sync::broadcast::Receiver<Event>,
@@ -649,8 +654,7 @@ pub async fn save_verification_record(
     }).await?
 }
 
-/// Retrieve the most recent verification record for a given pubkey
-// Important, this is the most recent verification /of the most recent metadata event/.
+/// Retrieve the most recent verification record for a given pubkey (async).
 pub async fn get_latest_user_verification(
     conn: db::PooledConnection,
     pubkey: &str,
@@ -659,6 +663,7 @@ pub async fn get_latest_user_verification(
     tokio::task::spawn_blocking(move || query_latest_user_verification(conn, p)).await?
 }
 
+/// Query database for the latest verification record for a given pubkey.
 pub fn query_latest_user_verification(
     mut conn: db::PooledConnection,
     pubkey: String,

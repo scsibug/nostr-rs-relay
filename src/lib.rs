@@ -8,4 +8,3 @@ pub mod info;
 pub mod nip05;
 pub mod protostream;
 pub mod subscription;
-pub mod tags;

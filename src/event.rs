@@ -16,17 +16,18 @@ use std::str::FromStr;
 use std::time::SystemTime;
 
 lazy_static! {
+    /// Secp256k1 verification instance.
     pub static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
 }
 
-/// Event command in network format
+/// Event command in network format.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct EventCmd {
     cmd: String, // expecting static "EVENT"
     event: Event,
 }
 
-/// Event parsed
+/// Parsed nostr event.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Event {
     pub id: String,
@@ -71,7 +72,7 @@ impl From<EventCmd> for Result<Event> {
     }
 }
 
-/// Seconds since 1970
+/// Seconds since 1970.
 pub fn unix_time() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

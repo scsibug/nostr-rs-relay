@@ -1,4 +1,6 @@
 //! Subscription close request parsing
+//!
+//! Representation and parsing of `CLOSE` messages sent from clients.
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +13,7 @@ pub struct CloseCmd {
     id: String,
 }
 
-/// Close command parsed
+/// Identifier of the subscription to be closed.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Close {
     /// The subscription identifier being closed.

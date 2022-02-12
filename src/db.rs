@@ -126,6 +126,7 @@ FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CAS
 
 // TODO: drop the pubkey_ref and event_ref tables
 
+/// Build a database connection pool.
 pub fn build_pool(
     name: &str,
     flags: OpenFlags,
@@ -469,13 +470,14 @@ pub async fn db_writer(
     })
 }
 
+/// Determine the current application database schema version.
 pub fn db_version(conn: &mut Connection) -> Result<usize> {
     let query = "PRAGMA user_version;";
     let curr_version = conn.query_row(query, [], |row| row.get(0))?;
     Ok(curr_version)
 }
 
-/// Persist an event to the database.
+/// Persist an event to the database, returning rows added.
 pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // start transaction
     let tx = conn.transaction()?;
@@ -549,7 +551,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     Ok(ins_count)
 }
 
-/// Event resulting from a specific subscription request
+/// Serialized event associated with a specific subscription request.
 #[derive(PartialEq, Debug, Clone)]
 pub struct QueryResult {
     /// Subscription identifier
@@ -568,6 +570,7 @@ fn is_all_fs(s: &str) -> bool {
     s.chars().all(|x| x == 'f' || x == 'F')
 }
 
+/// Types of hexadecimal queries.
 #[derive(PartialEq, Debug, Clone)]
 enum HexSearch {
     // when no range is needed, exact 32-byte
@@ -637,6 +640,7 @@ fn hex_range(s: &str) -> Option<HexSearch> {
     Some(HexSearch::Range(base, upper))
 }
 
+/// Produce a arbitrary list of '?' parameters.
 fn repeat_vars(count: usize) -> String {
     if count == 0 {
         return "".to_owned();
