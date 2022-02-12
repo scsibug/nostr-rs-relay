@@ -59,20 +59,7 @@ FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
 CREATE INDEX IF NOT EXISTS tag_val_hex_index ON tag(value_hex);
 
--- NIP-05 User Validation.
--- This represents the validation of  a user.
--- cases;
--- we query, and find a valid result.  update verified_at, and proceed.
--- we query, and get a 404/503/host down.  update failed_at, and we are done.
--- we query, and get a 200, but the local part is not present with the given address.  wipe out verified_at, update failed_at.
--- we need to know how often to query failing validations.
---   two cases, either we get a NIP-05 metadata event regularly that we can use to restart validation.
---   or, we simply get lots of non-metadata events, but the user fixed their NIP-05 host.
---   what should trigger a new attempt?  what should trigger cleaning?
---   we will never write anything to the table if it is not valid at least once.
--- we will keep trying at frequency X to re-validate the already-valid nip05s.
-
--- incoming metadata events with nip05
+-- NIP-05 User Validation
 CREATE TABLE IF NOT EXISTS user_verification (
 id INTEGER PRIMARY KEY,
 metadata_event INTEGER NOT NULL, -- the metadata event used for this validation.
