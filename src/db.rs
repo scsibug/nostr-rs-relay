@@ -27,6 +27,13 @@ use tokio::task;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
+
+/// Events submitted from a client, with a return channel for notices
+pub struct SubmittedEvent {
+    pub event: Event,
+    pub notice_tx: tokio::sync::mpsc::Sender<String>,
+}
+
 /// Database file
 pub const DB_FILE: &str = "nostr.db";
 
@@ -76,7 +83,7 @@ pub fn build_conn(flags: OpenFlags) -> Result<Connection> {
 
 /// Spawn a database writer that persists events to the SQLite store.
 pub async fn db_writer(
-    mut event_rx: tokio::sync::mpsc::Receiver<Event>,
+    mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
     metadata_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
@@ -131,18 +138,20 @@ pub async fn db_writer(
                 break;
             }
             let mut event_write = false;
-            let event = next_event.unwrap();
-
+            let subm_event = next_event.unwrap();
+            let event = subm_event.event;
+            let notice_tx = subm_event.notice_tx;
             // check if this event is authorized.
             if let Some(allowed_addrs) = whitelist {
-                debug!("Checking against pubkey whitelist");
                 // if the event address is not in allowed_addrs.
                 if !allowed_addrs.contains(&event.pubkey) {
                     info!(
                         "Rejecting event {}, unauthorized author",
                         event.get_event_id_prefix()
                     );
-                    // TODO: define a channel that can send NOTICEs back to the client.
+                    notice_tx
+                        .try_send("pubkey is not allowed to publish to this relay".to_owned())
+                        .ok();
                     continue;
                 }
             }
@@ -171,6 +180,12 @@ pub async fn db_writer(
                                   uv.name.to_string(),
                                   event.get_author_prefix()
                             );
+                            notice_tx
+                                .try_send(
+                                    "NIP-05 verification is no longer valid (expired/wrong domain)"
+                                        .to_owned(),
+                                )
+                                .ok();
                             continue;
                         }
                     }
@@ -179,6 +194,9 @@ pub async fn db_writer(
                             "no verification records found for pubkey: {:?}",
                             event.get_author_prefix()
                         );
+                        notice_tx
+                            .try_send("NIP-05 verification needed to publish events".to_owned())
+                            .ok();
                         continue;
                     }
                     Err(e) => {
@@ -207,6 +225,12 @@ pub async fn db_writer(
                 }
                 Err(err) => {
                     warn!("event insert failed: {:?}", err);
+                    notice_tx
+                        .try_send(
+                            "relay experienced an error trying to publish the latest event"
+                                .to_owned(),
+                        )
+                        .ok();
                 }
             }
 

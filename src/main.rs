@@ -13,6 +13,7 @@ use nostr_rs_relay::close::CloseCmd;
 use nostr_rs_relay::config;
 use nostr_rs_relay::conn;
 use nostr_rs_relay::db;
+use nostr_rs_relay::db::SubmittedEvent;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::event::Event;
 use nostr_rs_relay::event::EventCmd;
@@ -51,7 +52,7 @@ async fn handle_web_request(
     pool: db::SqlitePool,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
-    event_tx: tokio::sync::mpsc::Sender<Event>,
+    event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
 ) -> Result<Response<Body>, Infallible> {
     match (
@@ -232,7 +233,8 @@ fn main() -> Result<(), Error> {
         let (bcast_tx, _) = broadcast::channel::<Event>(settings.limits.broadcast_buffer);
         // validated events that need to be persisted are sent to the
         // database on via this channel.
-        let (event_tx, event_rx) = mpsc::channel::<Event>(settings.limits.event_persist_buffer);
+        let (event_tx, event_rx) =
+            mpsc::channel::<SubmittedEvent>(settings.limits.event_persist_buffer);
         // establish a channel for letting all threads now about a
         // requested server shutdown.
         let (invoke_shutdown, shutdown_listen) = broadcast::channel::<()>(1);
@@ -359,7 +361,7 @@ async fn nostr_server(
     pool: db::SqlitePool,
     mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
-    event_tx: tokio::sync::mpsc::Sender<Event>,
+    event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
 ) {
     // get a broadcast channel for clients to communicate on
@@ -370,6 +372,9 @@ async fn nostr_server(
     // Create a channel for receiving query results from the database.
     // we will send out the tx handle to any query we generate.
     let (query_tx, mut query_rx) = mpsc::channel::<db::QueryResult>(256);
+    // Create channel for receiving NOTICEs
+    let (notice_tx, mut notice_rx) = mpsc::channel::<String>(32);
+
     // maintain a hashmap of a oneshot channel for active subscriptions.
     // when these subscriptions are cancelled, make a message
     // available to the executing query so it knows to stop.
@@ -408,9 +413,12 @@ async fn nostr_server(
                 // Send a ping
                 ws_stream.send(Message::Ping(Vec::new())).await.ok();
             },
+            Some(notice_msg) = notice_rx.recv() => {
+                let n = notice_msg.to_string().replace("\"", "");
+                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", n))).await.ok();
+            },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
-                //let res = EventRes(query_result.sub_id,query_result.event);
                 client_received_event_count += 1;
                 // send a result
                 let subesc = query_result.sub_id.replace("\"", "");
@@ -474,14 +482,9 @@ async fn nostr_server(
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} from client: {:?}", id_prefix, cid);
-                                // TODO: consider moving some/all
-                                // authorization checks here, instead
-                                // of the DB module, so we can send a
-                                // proper NOTICE back to the client if
-                                // they are unable to write.
-
-                                // Write this to the database
-                                event_tx.send(e.clone()).await.ok();
+                                // Write this to the database.
+                                let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone() };
+                                event_tx.send(submit_event).await.ok();
                                 client_published_event_count += 1;
                             },
                             Err(_) => {
