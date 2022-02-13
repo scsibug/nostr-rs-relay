@@ -80,7 +80,6 @@ reject_future_seconds = 1800
 # metadata for event authors, "passive" to perform validation but
 # never block publishing, or "disabled" to do nothing.
 #mode = "disabled"
-mode = "passive"
 
 # Domain names that will be prevented from publishing events.
 #domain_blacklist = ["wellorder.net"]
