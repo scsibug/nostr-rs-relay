@@ -375,10 +375,6 @@ async fn nostr_server(
     // Create channel for receiving NOTICEs
     let (notice_tx, mut notice_rx) = mpsc::channel::<String>(32);
 
-    // maintain a hashmap of a oneshot channel for active subscriptions.
-    // when these subscriptions are cancelled, make a message
-    // available to the executing query so it knows to stop.
-
     // last time this client sent data
     let mut last_message_time = Instant::now();
 
@@ -391,7 +387,11 @@ async fn nostr_server(
     let start = tokio::time::Instant::now() + default_ping_dur;
     let mut ping_interval = tokio::time::interval_at(start, default_ping_dur);
 
+    // maintain a hashmap of a oneshot channel for active subscriptions.
+    // when these subscriptions are cancelled, make a message
+    // available to the executing query so it knows to stop.
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
+
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;

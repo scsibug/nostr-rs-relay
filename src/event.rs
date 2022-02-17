@@ -148,6 +148,8 @@ impl Event {
         // ** [0, pubkey-hex-string, created-at-num, kind-num, tags-array-of-arrays, content-string]
         // * serialize with no spaces/newlines
         let c_opt = self.to_canonical();
+        debug!("Canonical: {:?}", &c_opt);
+        debug!("Canonical: {}", c_opt.as_ref().unwrap());
         if c_opt.is_none() {
             debug!("event could not be canonicalized");
             return false;
@@ -156,6 +158,7 @@ impl Event {
         // * compute the sha256sum.
         let digest: sha256::Hash = sha256::Hash::hash(c.as_bytes());
         let hex_digest = format!("{:x}", digest);
+        debug!("hex is: {}", hex_digest);
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
             debug!("event id does not match digest");
