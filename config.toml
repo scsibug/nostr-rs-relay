@@ -63,8 +63,8 @@ reject_future_seconds = 1800
 #broadcast_buffer = 16384
 
 # Event persistence buffer size, in number of events.  This provides
-# backpressure to senders if writes are slow.  Defaults to 16.
-#event_persist_buffer = 16
+# backpressure to senders if writes are slow.
+#event_persist_buffer = 4096
 
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
