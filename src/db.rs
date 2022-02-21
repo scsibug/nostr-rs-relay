@@ -513,11 +513,19 @@ pub async fn db_query(
         let start = Instant::now();
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
+        debug!("SQL generated in {:?}", start.elapsed());
+        let start = Instant::now();
         // execute the query. Don't cache, since queries vary so much.
         let mut stmt = conn.prepare(&q)?;
         let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
+        let mut first_result = true;
         while let Some(row) = event_rows.next()? {
-            // check if this is still active (we could do this every N rows)
+            if first_result {
+                debug!("time to first result: {:?}", start.elapsed());
+                first_result = false;
+            }
+            // check if this is still active
+            // TODO:  check every N rows
             if abandon_query_rx.try_recv().is_ok() {
                 debug!("query aborted");
                 return Ok(());
