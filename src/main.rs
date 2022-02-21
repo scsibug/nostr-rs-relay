@@ -459,11 +459,17 @@ async fn nostr_server(
                         continue;
                     },
                     Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
-                        // get a ping/pong, ignore
+                        // get a ping/pong, ignore.  tungstenite will
+                        // send responses automatically.
                         continue;
                     },
-                    None | Some(Ok(Message::Close(_))) | Some(Err(WsError::AlreadyClosed)) | Some(Err(WsError::ConnectionClosed))  => {
-                        debug!("normal websocket close from client: {:?}",cid);
+                    None |
+                    Some(Ok(Message::Close(_))) |
+                    Some(Err(WsError::AlreadyClosed)) |
+                    Some(Err(WsError::ConnectionClosed)) |
+                    Some(Err(WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
+                        => {
+                        debug!("websocket close from client: {:?}",cid);
                         break;
                     },
                     Some(Err(WsError::Io(e))) => {
