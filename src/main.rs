@@ -375,7 +375,7 @@ async fn nostr_server(
     // Create channel for receiving NOTICEs
     let (notice_tx, mut notice_rx) = mpsc::channel::<String>(32);
 
-    // last time this client sent data
+    // last time this client sent data (message, ping, etc.)
     let mut last_message_time = Instant::now();
 
     // ping interval (every 5 minutes)
@@ -466,9 +466,15 @@ async fn nostr_server(
                         debug!("normal websocket close from client: {:?}",cid);
                         break;
                     },
+                    Some(Err(WsError::Io(e))) => {
+                        // IO errors are considered fatal
+                        warn!("IO error (client: {:?}): {:?}", cid, e);
+                        break;
+                    }
                     x => {
-                        info!("message was: {:?} (ignoring)", x);
-                        continue;
+                        // default condition on error is to close the client connection
+                        info!("unknown error (client: {:?}): {:?} (closing conn)", cid, x);
+                        break;
                     }
                 };
 
