@@ -519,9 +519,7 @@ async fn nostr_server(
                                     previous_query.send(()).ok();
                                 }
                                 // start a database query
-                                // show pool stats
-                                debug!("DB pool stats: {:?}", pool.state());
-                                db::db_query(s, pool.get().expect("could not get connection"), query_tx.clone(), abandon_query_rx).await;
+                                db::db_query(s, pool.clone(), query_tx.clone(), abandon_query_rx).await;
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);

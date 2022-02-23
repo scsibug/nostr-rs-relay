@@ -503,7 +503,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
 /// query is immediately aborted.
 pub async fn db_query(
     sub: Subscription,
-    conn: PooledConnection,
+    pool: SqlitePool,
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
@@ -514,36 +514,42 @@ pub async fn db_query(
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
         debug!("SQL generated in {:?}", start.elapsed());
+        // show pool stats
+        debug!("DB pool stats: {:?}", pool.state());
         let start = Instant::now();
-        // execute the query. Don't cache, since queries vary so much.
-        let mut stmt = conn.prepare(&q)?;
-        let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
-        let mut first_result = true;
-        while let Some(row) = event_rows.next()? {
-            if first_result {
-                debug!("time to first result: {:?}", start.elapsed());
-                first_result = false;
+        if let Ok(conn) = pool.get() {
+            // execute the query. Don't cache, since queries vary so much.
+            let mut stmt = conn.prepare(&q)?;
+            let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
+            let mut first_result = true;
+            while let Some(row) = event_rows.next()? {
+                if first_result {
+                    debug!("time to first result: {:?}", start.elapsed());
+                    first_result = false;
+                }
+                // check if this is still active
+                // TODO:  check every N rows
+                if abandon_query_rx.try_recv().is_ok() {
+                    debug!("query aborted");
+                    return Ok(());
+                }
+                row_count += 1;
+                let event_json = row.get(0)?;
+                query_tx
+                    .blocking_send(QueryResult {
+                        sub_id: sub.get_id(),
+                        event: event_json,
+                    })
+                    .ok();
             }
-            // check if this is still active
-            // TODO:  check every N rows
-            if abandon_query_rx.try_recv().is_ok() {
-                debug!("query aborted");
-                return Ok(());
-            }
-            row_count += 1;
-            let event_json = row.get(0)?;
-            query_tx
-                .blocking_send(QueryResult {
-                    sub_id: sub.get_id(),
-                    event: event_json,
-                })
-                .ok();
+            debug!(
+                "query completed ({} rows) in {:?}",
+                row_count,
+                start.elapsed()
+            );
+        } else {
+            warn!("Could not get a database connection for querying");
         }
-        debug!(
-            "query completed ({} rows) in {:?}",
-            row_count,
-            start.elapsed()
-        );
         let ok: Result<()> = Ok(());
         ok
     });
