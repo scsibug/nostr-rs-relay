@@ -214,6 +214,7 @@ impl ReqFilter {
         //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
         self.ids_match(event)
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
+            && self.until.map(|t| event.created_at < t).unwrap_or(true)
             && self.kind_match(event.kind)
             && self.authors_match(event)
             && self.tag_match(event)
@@ -318,6 +319,50 @@ mod tests {
             tagidx: None,
         };
         assert!(!s.interested_in_event(&e));
+        Ok(())
+    }
+
+    #[test]
+    fn interest_until() -> Result<()> {
+        // subscription with a filter for ID and time
+        let s: Subscription =
+            serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "until": 1000}]"#)?;
+        let e = Event {
+            id: "abc".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 50,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(s.interested_in_event(&e));
+        Ok(())
+    }
+
+    #[test]
+    fn interest_range() -> Result<()> {
+        // subscription with a filter for ID and time
+        let s_in: Subscription =
+            serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 100, "until": 200}]"#)?;
+        let s_before: Subscription =
+            serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 100, "until": 140}]"#)?;
+        let s_after: Subscription =
+            serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"], "since": 160, "until": 200}]"#)?;
+        let e = Event {
+            id: "abc".to_owned(),
+            pubkey: "".to_owned(),
+            created_at: 150,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(s_in.interested_in_event(&e));
+        assert!(!s_before.interested_in_event(&e));
+        assert!(!s_after.interested_in_event(&e));
         Ok(())
     }
 
