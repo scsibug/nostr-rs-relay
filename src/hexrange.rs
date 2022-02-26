@@ -80,6 +80,7 @@ pub fn hex_range(s: &str) -> Option<HexSearch> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Result;
 
     #[test]
     fn hex_range_exact() -> Result<()> {
