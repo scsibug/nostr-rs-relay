@@ -1,4 +1,4 @@
-FROM rust:1.58.1 as builder
+FROM rust:1.59.0 as builder
 
 RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay

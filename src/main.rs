@@ -21,6 +21,7 @@ use nostr_rs_relay::info::RelayInfo;
 use nostr_rs_relay::nip05;
 use nostr_rs_relay::subscription::Subscription;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
@@ -61,7 +62,7 @@ async fn handle_web_request(
     ) {
         // Request for / as websocket
         ("/", true) => {
-            debug!("websocket with upgrade request");
+            trace!("websocket with upgrade request");
             //assume request is a handshake, so create the handshake response
             let response = match handshake::server::create_response_with_body(&request, || {
                 Body::empty()
@@ -355,6 +356,11 @@ fn convert_to_msg(msg: String) -> Result<NostrMessage> {
     }
 }
 
+/// Turn a string into a NOTICE message ready to send over a WebSocket
+fn make_notice_message(msg: &str) -> Message {
+    Message::text(json!(["NOTICE", msg]).to_string())
+}
+
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
@@ -414,8 +420,7 @@ async fn nostr_server(
                 ws_stream.send(Message::Ping(Vec::new())).await.ok();
             },
             Some(notice_msg) = notice_rx.recv() => {
-                let n = notice_msg.to_string().replace("\"", "");
-                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", n))).await.ok();
+                ws_stream.send(make_notice_message(&notice_msg)).await.ok();
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
@@ -455,7 +460,7 @@ async fn nostr_server(
                         convert_to_msg(m)
                     },
                     Some(Ok(Message::Binary(_))) => {
-                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "binary messages are not accepted"))).await.ok();
+                        ws_stream.send(make_notice_message("binary messages are not accepted")).await.ok();
                         continue;
                     },
                     Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
@@ -501,7 +506,7 @@ async fn nostr_server(
                             },
                             Err(_) => {
                                 info!("client {:?} sent an invalid event", cid);
-                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event was invalid"))).await.ok();
+                                ws_stream.send(make_notice_message("event was invalid")).await.ok();
                             }
                         }
                     },
@@ -523,8 +528,7 @@ async fn nostr_server(
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);
-                                let s = e.to_string().replace("\"", "");
-                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", s))).await.ok();
+                                ws_stream.send(make_notice_message(&e.to_string())).await.ok();
                             }
                         }
                     },
@@ -545,7 +549,7 @@ async fn nostr_server(
                             },
                             Err(_) => {
                                 info!("invalid command ignored");
-                                ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "could not parse command"))).await.ok();
+                                ws_stream.send(make_notice_message("could not parse command")).await.ok();
                             }
                         }
                     },
@@ -555,11 +559,11 @@ async fn nostr_server(
                     }
                     Err(Error::EventMaxLengthError(s)) => {
                         info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
-                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "event exceeded max size"))).await.ok();
+                        ws_stream.send(make_notice_message("event exceeded max size")).await.ok();
                     },
                     Err(Error::ProtoParseError) => {
                         info!("client {:?} sent event that could not be parsed", cid);
-                        ws_stream.send(Message::Text(format!("[\"NOTICE\",\"{}\"]", "could not parse command"))).await.ok();
+                        ws_stream.send(make_notice_message("could not parse command")).await.ok();
                     },
                     Err(e) => {
                         info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
