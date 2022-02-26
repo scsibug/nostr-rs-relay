@@ -1,4 +1,5 @@
 //! Configuration file and settings management
+use config::{Config, ConfigError, File};
 use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -138,27 +139,25 @@ pub struct Settings {
 
 impl Settings {
     pub fn new() -> Self {
-        let d = Self::default();
+        let default_settings = Self::default();
         // attempt to construct settings with file
-        //        Self::new_from_default(&d).unwrap_or(d)
-        let from_file = Self::new_from_default(&d);
+        let from_file = Self::new_from_default(&default_settings);
         match from_file {
             Ok(f) => f,
             Err(e) => {
                 warn!("Error reading config file ({:?})", e);
-                d
+                default_settings
             }
         }
     }
 
-    fn new_from_default(default: &Settings) -> Result<Self, config::ConfigError> {
-        //        let config: config::Config = config::Config::new();
-        let builder = config::Config::builder();
-        let config: config::Config = builder
+    fn new_from_default(default: &Settings) -> Result<Self, ConfigError> {
+        let builder = Config::builder();
+        let config: Config = builder
             // use defaults
-            .add_source(config::Config::try_from(default)?)
+            .add_source(Config::try_from(default)?)
             // override with file contents
-            .add_source(config::File::with_name("config"))
+            .add_source(File::with_name("config"))
             .build()?
             .try_into()
             .unwrap();
