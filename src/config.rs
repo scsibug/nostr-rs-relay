@@ -152,13 +152,17 @@ impl Settings {
     }
 
     fn new_from_default(default: &Settings) -> Result<Self, config::ConfigError> {
-        let config: config::Config = config::Config::new();
-        let mut settings: Settings = config
+        //        let config: config::Config = config::Config::new();
+        let builder = config::Config::builder();
+        let config: config::Config = builder
             // use defaults
-            .with_merged(config::Config::try_from(default).unwrap())?
+            .add_source(config::Config::try_from(default)?)
             // override with file contents
-            .with_merged(config::File::with_name("config"))?
-            .try_into()?;
+            .add_source(config::File::with_name("config"))
+            .build()?
+            .try_into()
+            .unwrap();
+        let mut settings: Settings = config.try_deserialize()?;
         // ensure connection pool size is logical
         if settings.database.min_conn > settings.database.max_conn {
             panic!(
