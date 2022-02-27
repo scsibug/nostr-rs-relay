@@ -48,6 +48,8 @@ pub enum Error {
     JoinError,
     #[error("Hyper Client error")]
     HyperError(hyper::Error),
+    #[error("Hex encoding error")]
+    HexError(hex::FromHexError),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -57,6 +59,12 @@ pub enum Error {
 //        Error::CustomError("error".to_owned())
 //    }
 //}
+
+impl From<hex::FromHexError> for Error {
+    fn from(h: hex::FromHexError) -> Self {
+        Error::HexError(h)
+    }
+}
 
 impl From<hyper::Error> for Error {
     fn from(h: hyper::Error) -> Self {

@@ -332,6 +332,29 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             );
         }
     }
+    // if this event is a deletion, hide the referenced events from the same author.
+    if e.kind == 5 {
+        let event_candidates = e.tag_values_by_name("e");
+        let mut params: Vec<Box<dyn ToSql>> = vec![];
+        // first parameter will be author
+        params.push(Box::new(hex::decode(&e.pubkey)?));
+        event_candidates
+            .iter()
+            .filter(|x| is_hex(x) && x.len() == 64)
+            .filter_map(|x| hex::decode(x).ok())
+            .for_each(|x| params.push(Box::new(x)));
+        let query = format!(
+            "UPDATE event SET hidden=TRUE WHERE author=?, event_hash IN ({})",
+            repeat_vars(params.len() - 1)
+        );
+        let mut stmt = tx.prepare(&query)?;
+        let update_count = stmt.execute(rusqlite::params_from_iter(params))?;
+        info!(
+            "hid {} deleted events for author {:?}",
+            update_count,
+            e.get_author_prefix()
+        );
+    }
     tx.commit()?;
     Ok(ins_count)
 }

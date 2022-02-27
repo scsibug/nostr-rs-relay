@@ -124,6 +124,16 @@ impl Event {
         self.pubkey.chars().take(8).collect()
     }
 
+    /// Retrieve tag values
+    pub fn tag_values_by_name(&self, tag_name: &str) -> Vec<String> {
+        self.tags
+            .iter()
+            .filter(|x| x.len() > 1)
+            .filter(|x| x.get(0).unwrap() == tag_name)
+            .map(|x| x.get(1).unwrap().to_owned())
+            .collect()
+    }
+
     /// Check if this event has a valid signature.
     fn is_valid(&self) -> bool {
         // TODO: return a Result with a reason for invalid events
@@ -333,6 +343,32 @@ mod tests {
         let c = e.to_canonical();
         let expected = Some(r#"[0,"012345",501234,1,[],"this is a test"]"#.to_owned());
         assert_eq!(c, expected);
+    }
+
+    #[test]
+    fn event_tag_select() {
+        let e = Event {
+            id: "999".to_owned(),
+            pubkey: "012345".to_owned(),
+            created_at: 501234,
+            kind: 1,
+            tags: vec![
+                vec!["j".to_owned(), "abc".to_owned()],
+                vec!["e".to_owned(), "foo".to_owned()],
+                vec!["e".to_owned(), "bar".to_owned()],
+                vec!["e".to_owned(), "baz".to_owned()],
+                vec![
+                    "p".to_owned(),
+                    "aaaa".to_owned(),
+                    "ws://example.com".to_owned(),
+                ],
+            ],
+            content: "this is a test".to_owned(),
+            sig: "abcde".to_owned(),
+            tagidx: None,
+        };
+        let v = e.tag_values_by_name("e");
+        assert_eq!(v, vec!["foo", "bar", "baz"]);
     }
 
     #[test]
