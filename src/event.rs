@@ -146,7 +146,7 @@ impl Event {
             if curr_time + (allowable_future as u64) < self.created_at {
                 let delta = self.created_at - curr_time;
                 debug!(
-                    "Event is too far in the future ({} seconds), rejecting",
+                    "event is too far in the future ({} seconds), rejecting",
                     delta
                 );
                 return false;
@@ -158,8 +158,6 @@ impl Event {
         // ** [0, pubkey-hex-string, created-at-num, kind-num, tags-array-of-arrays, content-string]
         // * serialize with no spaces/newlines
         let c_opt = self.to_canonical();
-        debug!("Canonical: {:?}", &c_opt);
-        debug!("Canonical: {}", c_opt.as_ref().unwrap());
         if c_opt.is_none() {
             debug!("event could not be canonicalized");
             return false;
@@ -168,7 +166,6 @@ impl Event {
         // * compute the sha256sum.
         let digest: sha256::Hash = sha256::Hash::hash(c.as_bytes());
         let hex_digest = format!("{:x}", digest);
-        debug!("hex is: {}", hex_digest);
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
             debug!("event id does not match digest");
@@ -182,11 +179,11 @@ impl Event {
                 let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
                 matches!(verify, Ok(()))
             } else {
-                debug!("Client sent malformed pubkey");
+                debug!("client sent malformed pubkey");
                 false
             }
         } else {
-            info!("Error converting digest to secp256k1 message");
+            info!("error converting digest to secp256k1 message");
             false
         }
     }
