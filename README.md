@@ -79,8 +79,10 @@ termination, load balancing, and other features), see [Reverse
 Proxy](reverse-proxy.md).
 
 ## Dev Channel
-The current dev discussions for this project is happening at https://discord.gg/ufG6fH52Vk.
-Drop in to query any development related questions.
+
+For development discussions, please feel free to use the [sourcehut
+mailing list](https://lists.sr.ht/~gheartsfield/nostr-rs-relay-devel).
+Or, drop by the [Nostr Telegram Channel](https://t.me/nostr_protocol).
 
 License
 ---
