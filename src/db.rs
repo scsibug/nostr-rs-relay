@@ -385,6 +385,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     // (sqli-safe), or a string that is filtered to only contain
     // hexadecimal characters.  Strings that require escaping (tag
     // names/values) use parameters.
+    let mut limit: Option<u32> = None;
     let mut query =
         "SELECT DISTINCT(e.content) FROM event e LEFT JOIN tag t ON e.id=t.event_id ".to_owned();
     // parameters
@@ -421,6 +422,9 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
             }
             let authors_clause = format!("({})", auth_searches.join(" OR "));
             filter_components.push(authors_clause);
+        }
+        if let Some(lim) = f.limit {
+            limit = Some(lim)
         }
         // Query for Kind
         if let Some(ks) = &f.kinds {
@@ -513,7 +517,13 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
         query.push_str(") ");
     }
     // add order clause
-    query.push_str(" ORDER BY created_at ASC");
+    query.push_str(&format!(
+        " ORDER BY created_at {}",
+        limit.map_or("ASC", |_| "DESC")
+    ));
+    if let Some(lim) = limit {
+        query.push_str(&format!(" LIMIT {}", lim))
+    }
     debug!("query string: {}", query);
     (query, params)
 }

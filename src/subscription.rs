@@ -31,6 +31,8 @@ pub struct ReqFilter {
     pub until: Option<u64>,
     /// List of author public keys
     pub authors: Option<Vec<String>>,
+    /// Limit number of results
+    pub limit: Option<u32>,
     /// Set of tags
     #[serde(skip)]
     pub tags: Option<HashMap<String, HashSet<String>>>,
@@ -54,6 +56,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             since: None,
             until: None,
             authors: None,
+            limit: None,
             tags: None,
         };
         let mut ts = None;
@@ -68,6 +71,8 @@ impl<'de> Deserialize<'de> for ReqFilter {
                 rf.since = Deserialize::deserialize(val).ok();
             } else if key == "until" {
                 rf.until = Deserialize::deserialize(val).ok();
+            } else if key == "limit" {
+                rf.limit = Deserialize::deserialize(val).ok();
             } else if key == "authors" {
                 rf.authors = Deserialize::deserialize(val).ok();
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
