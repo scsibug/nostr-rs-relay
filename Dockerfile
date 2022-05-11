@@ -1,4 +1,4 @@
-FROM rust:1.59.0 as builder
+FROM rust:1.60.0 as builder
 
 RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay
@@ -12,7 +12,7 @@ COPY ./src ./src
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo build --release
 
-FROM debian:bullseye-20220125-slim
+FROM debian:bullseye-20220418-slim
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
 RUN apt-get update \
