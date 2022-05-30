@@ -575,6 +575,12 @@ pub async fn db_query(
                     })
                     .ok();
             }
+            query_tx
+                .blocking_send(QueryResult {
+                    sub_id: sub.get_id(),
+                    event: "EOSE".to_string(),
+                })
+                .ok();
             debug!(
                 "query completed ({} rows) in {:?}",
                 row_count,

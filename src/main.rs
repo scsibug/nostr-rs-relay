@@ -424,11 +424,16 @@ async fn nostr_server(
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
-                client_received_event_count += 1;
-                // send a result
                 let subesc = query_result.sub_id.replace("\"", "");
-                let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
-                ws_stream.send(Message::Text(send_str)).await.ok();
+                if query_result.event == "EOSE" {
+                    let send_str = format!("[\"EOSE\",\"{}\"]", subesc);
+                    ws_stream.send(Message::Text(send_str)).await.ok();
+                } else {
+                    client_received_event_count += 1;
+                    // send a result
+                    let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
+                    ws_stream.send(Message::Text(send_str)).await.ok();
+                }
             },
             // TODO: consider logging the LaggedRecv error
             Ok(global_event) = bcast_rx.recv() => {
