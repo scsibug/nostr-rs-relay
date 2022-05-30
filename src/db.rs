@@ -207,30 +207,41 @@ pub async fn db_writer(
             }
             // TODO: cache recent list of authors to remove a DB call.
             let start = Instant::now();
-            match write_event(&mut pool.get()?, &event) {
-                Ok(updated) => {
-                    if updated == 0 {
-                        trace!("ignoring duplicate event");
-                    } else {
-                        info!(
-                            "persisted event {:?} from {:?} in {:?}",
-                            event.get_event_id_prefix(),
-                            event.get_author_prefix(),
-                            start.elapsed()
-                        );
-                        event_write = true;
-                        // send this out to all clients
-                        bcast_tx.send(event.clone()).ok();
+            if event.kind >= 20000 && event.kind < 30000 {
+                info!(
+                    "published ephemeral event {:?} from {:?} in {:?}",
+                    event.get_event_id_prefix(),
+                    event.get_author_prefix(),
+                    start.elapsed()
+                );
+                bcast_tx.send(event.clone()).ok();
+                event_write = true
+            } else {
+                match write_event(&mut pool.get()?, &event) {
+                    Ok(updated) => {
+                        if updated == 0 {
+                            trace!("ignoring duplicate event");
+                        } else {
+                            info!(
+                                "persisted event {:?} from {:?} in {:?}",
+                                event.get_event_id_prefix(),
+                                event.get_author_prefix(),
+                                start.elapsed()
+                            );
+                            event_write = true;
+                            // send this out to all clients
+                            bcast_tx.send(event.clone()).ok();
+                        }
                     }
-                }
-                Err(err) => {
-                    warn!("event insert failed: {:?}", err);
-                    notice_tx
-                        .try_send(
-                            "relay experienced an error trying to publish the latest event"
-                                .to_owned(),
-                        )
-                        .ok();
+                    Err(err) => {
+                        warn!("event insert failed: {:?}", err);
+                        notice_tx
+                            .try_send(
+                                "relay experienced an error trying to publish the latest event"
+                                    .to_owned(),
+                            )
+                            .ok();
+                    }
                 }
             }
 
@@ -302,32 +313,19 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             }
         }
     }
-    // if this event is for a metadata update, hide every other kind=0
-    // event from the same author that was issued earlier than this.
-    if e.kind == 0 {
+    // if this event is replaceable update, hide every other replaceable
+    // event with the same kind from the same author that was issued
+    // earlier than this.
+    if e.kind == 0 || e.kind == 3 || (e.kind >= 10000 && e.kind < 20000) {
         let update_count = tx.execute(
-            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=0 AND author=? AND created_at <= ? and hidden!=TRUE",
-            params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
+            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=? AND author=? AND created_at <= ? and hidden!=TRUE",
+            params![ev_id, e.kind, hex::decode(&e.pubkey).ok(), e.created_at],
         )?;
         if update_count > 0 {
             info!(
-                "hid {} older metadata events for author {:?}",
+                "hid {} older replaceable kind {} events for author {:?}",
                 update_count,
-                e.get_author_prefix()
-            );
-        }
-    }
-    // if this event is for a contact update, hide every other kind=3
-    // event from the same author that was issued earlier than this.
-    if e.kind == 3 {
-        let update_count = tx.execute(
-            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=3 AND author=? AND created_at <= ? and hidden!=TRUE",
-            params![ev_id, hex::decode(&e.pubkey).ok(), e.created_at],
-        )?;
-        if update_count > 0 {
-            info!(
-                "hid {} older contact events for author {:?}",
-                update_count,
+                e.kind,
                 e.get_author_prefix()
             );
         }
