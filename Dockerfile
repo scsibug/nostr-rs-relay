@@ -12,7 +12,7 @@ COPY ./src ./src
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo build --release
 
-FROM debian:bullseye-20220418-slim
+FROM debian:bullseye-20220527-slim@sha256:89e9d812b34f393bddc3ff289f0036a3d9efc7e2f7289ec902c6427b69f39649
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
 RUN apt-get update \
