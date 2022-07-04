@@ -21,6 +21,8 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag search (_experimental_)
+- [x] NIP-15: End of stored events notice
+- [x] NIP-16: Replaceable and ephemeral events
 
 ## Quick Start
 
