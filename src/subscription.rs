@@ -32,7 +32,7 @@ pub struct ReqFilter {
     /// List of author public keys
     pub authors: Option<Vec<String>>,
     /// Limit number of results
-    pub limit: Option<u32>,
+    pub limit: Option<u64>,
     /// Set of tags
     #[serde(skip)]
     pub tags: Option<HashMap<String, HashSet<String>>>,
