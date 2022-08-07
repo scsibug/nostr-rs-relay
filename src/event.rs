@@ -39,9 +39,9 @@ pub struct Event {
     pub(crate) tags: Vec<Vec<String>>,
     pub(crate) content: String,
     pub(crate) sig: String,
-    // Optimization for tag search, built on demand
+    // Optimization for tag search, built on demand.
     #[serde(skip)]
-    pub(crate) tagidx: Option<HashMap<String, HashSet<String>>>,
+    pub(crate) tagidx: Option<HashMap<char, HashSet<String>>>,
 }
 
 /// Simple tag type for array of array of strings.
@@ -54,6 +54,25 @@ where
 {
     let opt = Option::deserialize(deserializer)?;
     Ok(opt.unwrap_or_else(Vec::new))
+}
+
+/// Attempt to form a single-char tag name.
+fn single_char_tagname(tagname: &str) -> Option<char> {
+    // We return the tag character if and only if the tagname consists
+    // of a single char.
+    let mut tagnamechars = tagname.chars();
+    let firstchar = tagnamechars.next();
+    return match firstchar {
+        Some(_) => {
+            // check second char
+            if tagnamechars.next().is_none() {
+                firstchar
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
 }
 
 /// Convert network event to parsed/validated event.
@@ -99,17 +118,22 @@ impl Event {
             return;
         }
         // otherwise, build an index
-        let mut idx: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut idx: HashMap<char, HashSet<String>> = HashMap::new();
         // iterate over tags that have at least 2 elements
         for t in self.tags.iter().filter(|x| x.len() > 1) {
             let tagname = t.get(0).unwrap();
+            let tagnamechar_opt = single_char_tagname(tagname);
+            if tagnamechar_opt.is_none() {
+                continue;
+            }
+            let tagnamechar = tagnamechar_opt.unwrap();
             let tagval = t.get(1).unwrap();
             // ensure a vector exists for this tag
-            if !idx.contains_key(tagname) {
-                idx.insert(tagname.clone(), HashSet::new());
+            if !idx.contains_key(&tagnamechar) {
+                idx.insert(tagnamechar.clone(), HashSet::new());
             }
             // get the tag vec and insert entry
-            let tidx = idx.get_mut(tagname).expect("could not get tag vector");
+            let tidx = idx.get_mut(&tagnamechar).expect("could not get tag vector");
             tidx.insert(tagval.clone());
         }
         // save the tag structure
@@ -226,9 +250,10 @@ impl Event {
     }
 
     /// Determine if the given tag and value set intersect with tags in this event.
-    pub fn generic_tag_val_intersect(&self, tagname: &str, check: &HashSet<String>) -> bool {
+    pub fn generic_tag_val_intersect(&self, tagname: char, check: &HashSet<String>) -> bool {
         match &self.tagidx {
-            Some(idx) => match idx.get(tagname) {
+            // check if this is indexable tagname
+            Some(idx) => match idx.get(&tagname) {
                 Some(valset) => {
                     let common = valset.intersection(check);
                     common.count() > 0

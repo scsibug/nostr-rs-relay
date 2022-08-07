@@ -1,6 +1,7 @@
 //! Subscription and filter parsing
 use crate::error::Result;
 use crate::event::Event;
+use log::*;
 use serde::de::Unexpected;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -35,7 +36,9 @@ pub struct ReqFilter {
     pub limit: Option<u64>,
     /// Set of tags
     #[serde(skip)]
-    pub tags: Option<HashMap<String, HashSet<String>>>,
+    pub tags: Option<HashMap<char, HashSet<String>>>,
+    /// Force no matches due to malformed data
+    pub force_no_match: bool,
 }
 
 impl<'de> Deserialize<'de> for ReqFilter {
@@ -58,6 +61,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             authors: None,
             limit: None,
             tags: None,
+            force_no_match: false,
         };
         let mut ts = None;
         // iterate through each key, and assign values that exist
@@ -76,24 +80,50 @@ impl<'de> Deserialize<'de> for ReqFilter {
             } else if key == "authors" {
                 rf.authors = Deserialize::deserialize(val).ok();
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
-                // remove the prefix
-                let tagname = &key[1..];
-                if ts.is_none() {
-                    // Initialize the tag if necessary
-                    ts = Some(HashMap::new());
-                }
-                if let Some(m) = ts.as_mut() {
-                    let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
-                    if let Some(v) = tag_vals {
-                        let hs = HashSet::from_iter(v.into_iter());
-                        m.insert(tagname.to_owned(), hs);
+                info!("testing tag search char: {}", key);
+                if let Some(tag_search) = tag_search_char_from_filter(key) {
+                    info!("found a character from the tag search: {}", tag_search);
+                    if ts.is_none() {
+                        // Initialize the tag if necessary
+                        ts = Some(HashMap::new());
                     }
-                };
+                    if let Some(m) = ts.as_mut() {
+                        let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
+                        if let Some(v) = tag_vals {
+                            let hs = HashSet::from_iter(v.into_iter());
+                            m.insert(tag_search.to_owned(), hs);
+                        }
+                    };
+                } else {
+                    // tag search that is multi-character, don't add to subscription
+                    rf.force_no_match = true;
+                    continue;
+                }
             }
         }
         rf.tags = ts;
         Ok(rf)
     }
+}
+
+/// Attempt to form a single-char identifier from a tag search filter
+fn tag_search_char_from_filter(tagname: &str) -> Option<char> {
+    let tagname_nohash = &tagname[1..];
+    // We return the tag character if and only if the tagname consists
+    // of a single char.
+    let mut tagnamechars = tagname_nohash.chars();
+    let firstchar = tagnamechars.next();
+    return match firstchar {
+        Some(_) => {
+            // check second char
+            if tagnamechars.next().is_none() {
+                firstchar
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
 }
 
 impl<'de> Deserialize<'de> for Subscription {
@@ -194,7 +224,7 @@ impl ReqFilter {
         // get the hashset from the filter.
         if let Some(map) = &self.tags {
             for (key, val) in map.iter() {
-                let tag_match = event.generic_tag_val_intersect(key, val);
+                let tag_match = event.generic_tag_val_intersect(*key, val);
                 // if there is no match for this tag, the match fails.
                 if !tag_match {
                     return false;
@@ -223,6 +253,7 @@ impl ReqFilter {
             && self.kind_match(event.kind)
             && self.authors_match(event)
             && self.tag_match(event)
+            && !self.force_no_match
     }
 }
 

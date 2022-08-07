@@ -384,11 +384,23 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // (sqli-safe), or a string that is filtered to only contain
     // hexadecimal characters.  Strings that require escaping (tag
     // names/values) use parameters.
+
+    // if the filter is malformed, don't return anything.
+    if f.force_no_match {
+        let empty_query =
+            "SELECT DISTINCT(e.content), e.created_at FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE 1=0"
+            .to_owned();
+        // query parameters for SQLite
+        let empty_params: Vec<Box<dyn ToSql>> = vec![];
+        return (empty_query, empty_params);
+    }
+
     let mut query =
         "SELECT DISTINCT(e.content), e.created_at FROM event e LEFT JOIN tag t ON e.id=t.event_id "
             .to_owned();
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
+
     // individual filter components (single conditions such as an author or event ID)
     let mut filter_components: Vec<String> = Vec::new();
     // Query for "authors", allowing prefix matches
@@ -471,7 +483,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
             let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
             let tag_clause = format!("(name=? AND ({} OR {}))", str_clause, blob_clause);
             // add the tag name as the first parameter
-            params.push(Box::new(key.to_owned()));
+            params.push(Box::new(key.to_string()));
             // add all tag values that are plain strings as params
             params.append(&mut str_vals);
             // add all tag values that are blobs as params
