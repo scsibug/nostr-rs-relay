@@ -1,3 +1,4 @@
+
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
@@ -132,16 +133,19 @@ async fn handle_web_request(
                         let rinfo = RelayInfo::from(config.info.clone());
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
-                            .status(200)
-                            .header("Content-Type", "application/nostr+json")
-                            .body(b)
-                            .unwrap());
+				  .status(200)
+				  .header("Content-Type", "application/nostr+json")
+				  .header("Access-Control-Allow-Origin", "*")
+				  .body(b)
+				  .unwrap());
                     }
                 }
             }
-            Ok(Response::new(Body::from(
-                "Please use a Nostr client to connect.",
-            )))
+	    Ok(Response::builder()
+	       .status(200)
+	       .header("Content-Type", "text/plain")
+	       .body(Body::from("Please use a Nostr client to connect.")).unwrap()
+            )
         }
         (_, _) => {
             //handle any other url
