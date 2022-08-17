@@ -57,7 +57,7 @@ where
 }
 
 /// Attempt to form a single-char tag name.
-fn single_char_tagname(tagname: &str) -> Option<char> {
+pub fn single_char_tagname(tagname: &str) -> Option<char> {
     // We return the tag character if and only if the tagname consists
     // of a single char.
     let mut tagnamechars = tagname.chars();
@@ -301,7 +301,7 @@ mod tests {
     fn empty_event_tag_match() -> Result<()> {
         let event = simple_event();
         assert!(!event
-            .generic_tag_val_intersect("e", &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
+            .generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
         Ok(())
     }
 
@@ -312,7 +312,7 @@ mod tests {
         event.build_index();
         assert_eq!(
             event.generic_tag_val_intersect(
-                "e",
+                'e',
                 &HashSet::from(["foo".to_owned(), "bar".to_owned()])
             ),
             true

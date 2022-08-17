@@ -1,4 +1,3 @@
-
 //! Server process
 use futures::SinkExt;
 use futures::StreamExt;
@@ -133,19 +132,19 @@ async fn handle_web_request(
                         let rinfo = RelayInfo::from(config.info.clone());
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
-				  .status(200)
-				  .header("Content-Type", "application/nostr+json")
-				  .header("Access-Control-Allow-Origin", "*")
-				  .body(b)
-				  .unwrap());
+                            .status(200)
+                            .header("Content-Type", "application/nostr+json")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(b)
+                            .unwrap());
                     }
                 }
             }
-	    Ok(Response::builder()
-	       .status(200)
-	       .header("Content-Type", "text/plain")
-	       .body(Body::from("Please use a Nostr client to connect.")).unwrap()
-            )
+            Ok(Response::builder()
+                .status(200)
+                .header("Content-Type", "text/plain")
+                .body(Body::from("Please use a Nostr client to connect."))
+                .unwrap())
         }
         (_, _) => {
             //handle any other url
@@ -533,7 +532,7 @@ async fn nostr_server(
                                     previous_query.send(()).ok();
                                 }
                                 // start a database query
-                                db::db_query(s, pool.clone(), query_tx.clone(), abandon_query_rx).await;
+                                db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
                             },
                             Err(e) => {
                                 info!("Subscription error: {}", e);

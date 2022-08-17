@@ -1,7 +1,6 @@
 //! Subscription and filter parsing
 use crate::error::Result;
 use crate::event::Event;
-use log::*;
 use serde::de::Unexpected;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -80,9 +79,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             } else if key == "authors" {
                 rf.authors = Deserialize::deserialize(val).ok();
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
-                info!("testing tag search char: {}", key);
                 if let Some(tag_search) = tag_search_char_from_filter(key) {
-                    info!("found a character from the tag search: {}", tag_search);
                     if ts.is_none() {
                         // Initialize the tag if necessary
                         ts = Some(HashMap::new());

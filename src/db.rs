@@ -2,14 +2,14 @@
 use crate::config::SETTINGS;
 use crate::error::Error;
 use crate::error::Result;
-use crate::event::Event;
+use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
 use crate::nip05;
 use crate::schema::{upgrade_db, STARTUP_SQL};
 use crate::subscription::ReqFilter;
 use crate::subscription::Subscription;
-use crate::utils::is_hex;
+use crate::utils::{is_hex, is_lower_hex};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
@@ -300,17 +300,24 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
         if tag.len() >= 2 {
             let tagname = &tag[0];
             let tagval = &tag[1];
-            // if tagvalue is hex;
-            if is_hex(tagval) {
-                tx.execute(
-                    "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
-                    params![ev_id, &tagname, hex::decode(&tagval).ok()],
-                )?;
-            } else {
-                tx.execute(
-                    "INSERT OR IGNORE INTO tag (event_id, name, value) VALUES (?1, ?2, ?3)",
-                    params![ev_id, &tagname, &tagval],
-                )?;
+            // only single-char tags are searchable
+            let tagchar_opt = single_char_tagname(tagname);
+            match &tagchar_opt {
+                Some(_) => {
+                    // if tagvalue is lowercase hex;
+                    if is_lower_hex(&tagval) && (tagval.len() % 2 == 0) {
+                        tx.execute(
+			    "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
+			    params![ev_id, &tagname, hex::decode(&tagval).ok()],
+			)?;
+                    } else {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO tag (event_id, name, value) VALUES (?1, ?2, ?3)",
+                            params![ev_id, &tagname, &tagval],
+                        )?;
+                    }
+                }
+                None => {}
             }
         }
     }
@@ -388,16 +395,13 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // if the filter is malformed, don't return anything.
     if f.force_no_match {
         let empty_query =
-            "SELECT DISTINCT(e.content), e.created_at FROM event e WHERE 1=0"
-            .to_owned();
+            "SELECT DISTINCT(e.content), e.created_at FROM event e WHERE 1=0".to_owned();
         // query parameters for SQLite
         let empty_params: Vec<Box<dyn ToSql>> = vec![];
         return (empty_query, empty_params);
     }
 
-    let mut query =
-        "SELECT DISTINCT(e.content), e.created_at FROM event e  "
-            .to_owned();
+    let mut query = "SELECT DISTINCT(e.content), e.created_at FROM event e  ".to_owned();
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
@@ -470,7 +474,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
             let mut str_vals: Vec<Box<dyn ToSql>> = vec![];
             let mut blob_vals: Vec<Box<dyn ToSql>> = vec![];
             for v in val {
-                if is_hex(v) {
+                if (v.len()%2==0) && is_lower_hex(v) {
                     if let Ok(h) = hex::decode(&v) {
                         blob_vals.push(Box::new(h));
                     }
@@ -481,7 +485,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
             // create clauses with "?" params for each tag value being searched
             let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
             let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
-	    // find evidence of the target tag name/value existing for this event.
+            // find evidence of the target tag name/value existing for this event.
             let tag_clause = format!("e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND ({} OR {})))", str_clause, blob_clause);
             // add the tag name as the first parameter
             params.push(Box::new(key.to_string()));
@@ -552,6 +556,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
 /// query is immediately aborted.
 pub async fn db_query(
     sub: Subscription,
+    client_id: String,
     pool: SqlitePool,
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
@@ -573,13 +578,18 @@ pub async fn db_query(
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
                 if first_result {
-                    debug!("time to first result: {:?}", start.elapsed());
+                    debug!(
+                        "time to first result: {:?} (cid={}, sub={:?})",
+                        start.elapsed(),
+                        client_id,
+                        sub.id
+                    );
                     first_result = false;
                 }
                 // check if this is still active
                 // TODO:  check every N rows
                 if abandon_query_rx.try_recv().is_ok() {
-                    debug!("query aborted");
+                    debug!("query aborted (sub={:?})", sub.id);
                     return Ok(());
                 }
                 row_count += 1;
@@ -598,9 +608,11 @@ pub async fn db_query(
                 })
                 .ok();
             debug!(
-                "query completed ({} rows) in {:?}",
+                "query completed ({} rows) in {:?} (cid={}, sub={:?})",
                 row_count,
-                start.elapsed()
+                start.elapsed(),
+		client_id,
+                sub.id
             );
         } else {
             warn!("Could not get a database connection for querying");
