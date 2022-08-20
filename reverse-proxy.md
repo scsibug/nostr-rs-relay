@@ -1,8 +1,8 @@
 # Reverse Proxy Setup Guide
 
 It is recommended to run `nostr-rs-relay` behind a reverse proxy such
-as `haproxy` or `nginx` to provide TLS termination.  A simple example
-of an `haproxy` configuration is documented here.
+as `haproxy` or `nginx` to provide TLS termination.  Simple examples
+of `haproxy` and `nginx` configurations are documented here.
 
 ## Minimal HAProxy Configuration
 
@@ -46,8 +46,47 @@ backend relay
     server relay 127.0.0.1:8080
 ```
 
-### Notes
+### HAProxy Notes
 
 You may experience WebSocket connection problems with Firefox if
 HTTP/2 is enabled, for older versions of HAProxy (2.3.x).  Either
 disable HTTP/2 (`h2`), or upgrade HAProxy.
+
+## Bare-bones Nginx Configuration
+
+Assumptions:
+
+* `Nginx` version is `1.18.0` (other versions not tested).
+* Hostname for the relay is `relay.example.com`.
+* SSL certificate and key are located at `/etc/letsencrypt/live/relay.example.com/`.
+* Relay is running on port `8080`.
+
+```
+http {
+    server {
+        listen 443 ssl;
+        server_name relay.example.com;
+        ssl_certificate /etc/letsencrypt/live/relay.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/relay.example.com/privkey.pem;
+        ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        keepalive_timeout 70;
+
+        location / {
+            proxy_pass http://localhost:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_set_header Host $host;
+        }
+    }
+}
+```
+
+### Nginx Notes
+
+The above configuration was tested on `nginx` `1.18.0` was tested on `Ubuntu 20.04`.
+
+For help installing `nginx` on `Ubuntu`, see [this guide](https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-20-04).
+
+For guidance on using `letsencrypt` to obtain a cert on `Ubuntu`, including an `nginx` plugin, see [this post](https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04).
