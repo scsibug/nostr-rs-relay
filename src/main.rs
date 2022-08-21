@@ -34,6 +34,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::WebSocketStream;
+use tungstenite::error::CapacityError::MessageTooLong;
 use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
@@ -476,6 +477,10 @@ async fn nostr_server(
                         // send responses automatically.
                         continue;
                     },
+		    Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
+			ws_stream.send(make_notice_message(&format!("message too large ({} > {})",size, max_size))).await.ok();
+                        continue;
+		    },
                     None |
                     Some(Ok(Message::Close(_))) |
                     Some(Err(WsError::AlreadyClosed)) |
