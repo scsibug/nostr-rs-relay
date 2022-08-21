@@ -468,8 +468,9 @@ async fn nostr_server(
                     Some(Ok(Message::Text(m))) => {
                         convert_to_msg(m)
                     },
-                    Some(Ok(Message::Binary(_))) => {
-                        ws_stream.send(make_notice_message("binary messages are not accepted")).await.ok();
+		    Some(Ok(Message::Binary(_))) => {
+			ws_stream.send(
+			    make_notice_message("binary messages are not accepted")).await.ok();
                         continue;
                     },
                     Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
@@ -477,8 +478,10 @@ async fn nostr_server(
                         // send responses automatically.
                         continue;
                     },
-		    Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
-			ws_stream.send(make_notice_message(&format!("message too large ({} > {})",size, max_size))).await.ok();
+		    Some(Err(WsError::Capacity(MessageTooLong(size, max_size)))) => {
+			ws_stream.send(
+			    make_notice_message(
+				&format!("message too large ({} > {})",size, max_size))).await.ok();
                         continue;
 		    },
                     None |
