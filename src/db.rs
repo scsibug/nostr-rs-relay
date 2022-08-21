@@ -474,7 +474,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
             let mut str_vals: Vec<Box<dyn ToSql>> = vec![];
             let mut blob_vals: Vec<Box<dyn ToSql>> = vec![];
             for v in val {
-                if (v.len()%2==0) && is_lower_hex(v) {
+                if (v.len() % 2 == 0) && is_lower_hex(v) {
                     if let Ok(h) = hex::decode(&v) {
                         blob_vals.push(Box::new(h));
                     }
@@ -611,7 +611,7 @@ pub async fn db_query(
                 "query completed ({} rows) in {:?} (cid={}, sub={:?})",
                 row_count,
                 start.elapsed(),
-		client_id,
+                client_id,
                 sub.id
             );
         } else {
