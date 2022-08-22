@@ -478,7 +478,7 @@ async fn nostr_server(
                         // send responses automatically.
                         continue;
                     },
-		    Some(Err(WsError::Capacity(MessageTooLong(size, max_size)))) => {
+		    Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
 			ws_stream.send(
 			    make_notice_message(
 				&format!("message too large ({} > {})",size, max_size))).await.ok();
