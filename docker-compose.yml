@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+
+  relay:
+    build: .
+    volumes:
+      - ./config.toml:/usr/src/app/config.toml
+    labels:
+      - traefik.http.routers.relay.entrypoints=websecure
+      - traefik.http.routers.relay.rule=Host(`relay.ono.re`)
+      - traefik.http.routers.relay.tls=true
+      - traefik.http.routers.relay.tls.certresolver=letsEncrypt
+      - traefik.enable=true
+    restart: unless-stopped
+    ports:
+      - 8080:8080
