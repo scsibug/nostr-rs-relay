@@ -22,6 +22,7 @@ use rusqlite::Connection;
 use rusqlite::OpenFlags;
 use std::path::Path;
 use std::thread;
+use std::fmt::Write as _;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::task;
@@ -305,7 +306,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             match &tagchar_opt {
                 Some(_) => {
                     // if tagvalue is lowercase hex;
-                    if is_lower_hex(&tagval) && (tagval.len() % 2 == 0) {
+                    if is_lower_hex(tagval) && (tagval.len() % 2 == 0) {
                         tx.execute(
 			    "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
 			    params![ev_id, &tagname, hex::decode(&tagval).ok()],
@@ -341,9 +342,8 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // if this event is a deletion, hide the referenced events from the same author.
     if e.kind == 5 {
         let event_candidates = e.tag_values_by_name("e");
-        let mut params: Vec<Box<dyn ToSql>> = vec![];
-        // first parameter will be author
-        params.push(Box::new(hex::decode(&e.pubkey)?));
+	// first parameter will be author
+        let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(hex::decode(&e.pubkey)?)];
         event_candidates
             .iter()
             .filter(|x| is_hex(x) && x.len() == 64)
@@ -516,7 +516,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // Apply per-filter limit to this subquery.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
-        query.push_str(&format!(" ORDER BY e.created_at DESC LIMIT {}", lim))
+	let _ = write!(query, " ORDER BY e.created_at DESC LIMIT {}", lim);
     } else {
         query.push_str(" ORDER BY e.created_at ASC")
     }
@@ -532,7 +532,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     let mut params: Vec<Box<dyn ToSql>> = vec![];
     // for every filter in the subscription, generate a subquery
     for f in sub.filters.iter() {
-        let (f_subquery, mut f_params) = query_from_filter(&f);
+        let (f_subquery, mut f_params) = query_from_filter(f);
         subqueries.push(f_subquery);
         params.append(&mut f_params);
     }
