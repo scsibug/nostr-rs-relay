@@ -20,9 +20,9 @@ use rusqlite::params;
 use rusqlite::types::ToSql;
 use rusqlite::Connection;
 use rusqlite::OpenFlags;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::thread;
-use std::fmt::Write as _;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::task;
@@ -342,7 +342,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // if this event is a deletion, hide the referenced events from the same author.
     if e.kind == 5 {
         let event_candidates = e.tag_values_by_name("e");
-	// first parameter will be author
+        // first parameter will be author
         let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(hex::decode(&e.pubkey)?)];
         event_candidates
             .iter()
@@ -516,7 +516,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // Apply per-filter limit to this subquery.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
-	let _ = write!(query, " ORDER BY e.created_at DESC LIMIT {}", lim);
+        let _ = write!(query, " ORDER BY e.created_at DESC LIMIT {}", lim);
     } else {
         query.push_str(" ORDER BY e.created_at ASC")
     }

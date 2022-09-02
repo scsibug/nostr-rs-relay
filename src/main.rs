@@ -229,21 +229,21 @@ fn main() -> Result<(), Error> {
         .unwrap();
     // start tokio
     rt.block_on(async {
-	let broadcast_buffer_limit;
-	let persist_buffer_limit;
-	let verified_users_active;
-	let db_min_conn;
+        let broadcast_buffer_limit;
+        let persist_buffer_limit;
+        let verified_users_active;
+        let db_min_conn;
         let db_max_conn;
-	// hack to prove we drop the mutexguard prior to any await points
-	// (https://github.com/rust-lang/rust-clippy/issues/6446)
-	{
+        // hack to prove we drop the mutexguard prior to any await points
+        // (https://github.com/rust-lang/rust-clippy/issues/6446)
+        {
             let settings = config::SETTINGS.read().unwrap();
-	    broadcast_buffer_limit = settings.limits.broadcast_buffer;
-	    persist_buffer_limit = settings.limits.event_persist_buffer;
-	    verified_users_active = settings.verified_users.is_active();
-	    db_min_conn = settings.database.min_conn;
+            broadcast_buffer_limit = settings.limits.broadcast_buffer;
+            persist_buffer_limit = settings.limits.event_persist_buffer;
+            verified_users_active = settings.verified_users.is_active();
+            db_min_conn = settings.database.min_conn;
             db_max_conn = settings.database.max_conn;
-	}
+        }
         info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
@@ -252,8 +252,7 @@ fn main() -> Result<(), Error> {
         let (bcast_tx, _) = broadcast::channel::<Event>(broadcast_buffer_limit);
         // validated events that need to be persisted are sent to the
         // database on via this channel.
-        let (event_tx, event_rx) =
-            mpsc::channel::<SubmittedEvent>(persist_buffer_limit);
+        let (event_tx, event_rx) = mpsc::channel::<SubmittedEvent>(persist_buffer_limit);
         // establish a channel for letting all threads now about a
         // requested server shutdown.
         let (invoke_shutdown, shutdown_listen) = broadcast::channel::<()>(1);
@@ -301,7 +300,7 @@ fn main() -> Result<(), Error> {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                 | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
             db_min_conn,
-	    db_max_conn,
+            db_max_conn,
             true,
         );
         // A `Service` is needed for every connection, so this
@@ -482,9 +481,9 @@ async fn nostr_server(
                     Some(Ok(Message::Text(m))) => {
                         convert_to_msg(m)
                     },
-		    Some(Ok(Message::Binary(_))) => {
-			ws_stream.send(
-			    make_notice_message("binary messages are not accepted")).await.ok();
+            Some(Ok(Message::Binary(_))) => {
+            ws_stream.send(
+                make_notice_message("binary messages are not accepted")).await.ok();
                         continue;
                     },
                     Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
@@ -492,12 +491,12 @@ async fn nostr_server(
                         // send responses automatically.
                         continue;
                     },
-		    Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
-			ws_stream.send(
-			    make_notice_message(
-				&format!("message too large ({} > {})",size, max_size))).await.ok();
+            Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
+            ws_stream.send(
+                make_notice_message(
+                &format!("message too large ({} > {})",size, max_size))).await.ok();
                         continue;
-		    },
+            },
                     None |
                     Some(Ok(Message::Close(_))) |
                     Some(Err(WsError::AlreadyClosed)) |

@@ -129,7 +129,7 @@ impl Event {
             let tagnamechar = tagnamechar_opt.unwrap();
             let tagval = t.get(1).unwrap();
             // ensure a vector exists for this tag
-	    idx.entry(tagnamechar).or_insert_with(HashSet::new);
+            idx.entry(tagnamechar).or_insert_with(HashSet::new);
             // get the tag vec and insert entry
             let tidx = idx.get_mut(&tagnamechar).expect("could not get tag vector");
             tidx.insert(tagval.clone());
