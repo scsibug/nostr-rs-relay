@@ -53,7 +53,7 @@ where
     D: Deserializer<'de>,
 {
     let opt = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_else(Vec::new))
+    Ok(opt.unwrap_or_default())
 }
 
 /// Attempt to form a single-char tag name.
@@ -62,7 +62,7 @@ pub fn single_char_tagname(tagname: &str) -> Option<char> {
     // of a single char.
     let mut tagnamechars = tagname.chars();
     let firstchar = tagnamechars.next();
-    return match firstchar {
+    match firstchar {
         Some(_) => {
             // check second char
             if tagnamechars.next().is_none() {
@@ -72,7 +72,7 @@ pub fn single_char_tagname(tagname: &str) -> Option<char> {
             }
         }
         None => None,
-    };
+    }
 }
 
 /// Convert network event to parsed/validated event.
@@ -129,9 +129,7 @@ impl Event {
             let tagnamechar = tagnamechar_opt.unwrap();
             let tagval = t.get(1).unwrap();
             // ensure a vector exists for this tag
-            if !idx.contains_key(&tagnamechar) {
-                idx.insert(tagnamechar.clone(), HashSet::new());
-            }
+	    idx.entry(tagnamechar).or_insert_with(HashSet::new);
             // get the tag vec and insert entry
             let tidx = idx.get_mut(&tagnamechar).expect("could not get tag vector");
             tidx.insert(tagval.clone());

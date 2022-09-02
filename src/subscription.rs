@@ -110,7 +110,7 @@ fn tag_search_char_from_filter(tagname: &str) -> Option<char> {
     // of a single char.
     let mut tagnamechars = tagname_nohash.chars();
     let firstchar = tagnamechars.next();
-    return match firstchar {
+    match firstchar {
         Some(_) => {
             // check second char
             if tagnamechars.next().is_none() {
@@ -120,7 +120,7 @@ fn tag_search_char_from_filter(tagname: &str) -> Option<char> {
             }
         }
         None => None,
-    };
+    }
 }
 
 impl<'de> Deserialize<'de> for Subscription {

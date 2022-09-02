@@ -252,7 +252,7 @@ PRAGMA user_version=5;
                     let tagval = t.get(1).unwrap();
                     // insert as BLOB if we can restore it losslessly.
                     // this means it needs to be even length and lowercase.
-                    if (tagval.len() % 2 == 0) && is_lower_hex(&tagval) {
+                    if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
                         tx.execute(
                             "INSERT INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3);",
                             params![event_id, tagname, hex::decode(&tagval).ok()],

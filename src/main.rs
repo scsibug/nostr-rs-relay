@@ -229,17 +229,31 @@ fn main() -> Result<(), Error> {
         .unwrap();
     // start tokio
     rt.block_on(async {
-        let settings = config::SETTINGS.read().unwrap();
+	let broadcast_buffer_limit;
+	let persist_buffer_limit;
+	let verified_users_active;
+	let db_min_conn;
+        let db_max_conn;
+	// hack to prove we drop the mutexguard prior to any await points
+	// (https://github.com/rust-lang/rust-clippy/issues/6446)
+	{
+            let settings = config::SETTINGS.read().unwrap();
+	    broadcast_buffer_limit = settings.limits.broadcast_buffer;
+	    persist_buffer_limit = settings.limits.event_persist_buffer;
+	    verified_users_active = settings.verified_users.is_active();
+	    db_min_conn = settings.database.min_conn;
+            db_max_conn = settings.database.max_conn;
+	}
         info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
         // clients can not keep up).
-        let (bcast_tx, _) = broadcast::channel::<Event>(settings.limits.broadcast_buffer);
+        let (bcast_tx, _) = broadcast::channel::<Event>(broadcast_buffer_limit);
         // validated events that need to be persisted are sent to the
         // database on via this channel.
         let (event_tx, event_rx) =
-            mpsc::channel::<SubmittedEvent>(settings.limits.event_persist_buffer);
+            mpsc::channel::<SubmittedEvent>(persist_buffer_limit);
         // establish a channel for letting all threads now about a
         // requested server shutdown.
         let (invoke_shutdown, shutdown_listen) = broadcast::channel::<()>(1);
@@ -267,7 +281,7 @@ fn main() -> Result<(), Error> {
         // create a nip-05 verifier thread
         let verifier_opt = nip05::Verifier::new(metadata_rx, bcast_tx.clone());
         if let Ok(mut v) = verifier_opt {
-            if settings.verified_users.is_active() {
+            if verified_users_active {
                 tokio::task::spawn(async move {
                     info!("starting up NIP-05 verifier...");
                     v.run().await;
@@ -286,8 +300,8 @@ fn main() -> Result<(), Error> {
             "client query",
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                 | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
-            settings.database.min_conn,
-            settings.database.max_conn,
+            db_min_conn,
+	    db_max_conn,
             true,
         );
         // A `Service` is needed for every connection, so this
@@ -428,7 +442,7 @@ async fn nostr_server(
             },
             Some(query_result) = query_rx.recv() => {
                 // database informed us of a query result we asked for
-                let subesc = query_result.sub_id.replace("\"", "");
+                let subesc = query_result.sub_id.replace('"', "");
                 if query_result.event == "EOSE" {
                     let send_str = format!("[\"EOSE\",\"{}\"]", subesc);
                     ws_stream.send(Message::Text(send_str)).await.ok();
@@ -452,7 +466,7 @@ async fn nostr_server(
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
-                        let subesc = s.replace("\"", "");
+                        let subesc = s.replace('"', "");
                         ws_stream.send(Message::Text(format!("[\"EVENT\",\"{}\",{}]", subesc, event_str))).await.ok();
                         //nostr_stream.send(res).await.ok();
                     } else {
