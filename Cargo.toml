@@ -4,29 +4,29 @@ version = "0.6.2"
 edition = "2021"
 
 [dependencies]
-log = "^0.4"
-env_logger = "^0.9"
-tokio = { version = "^1.16", features = ["full"] }
-futures = "^0.3"
-futures-util = "^0.3"
-tokio-tungstenite = "^0.17"
-tungstenite = "^0.17"
-thiserror = "^1"
-uuid = { version = "^0.8", features = ["v4"] }
-config = { version = "^0.12", features = ["toml"] }
-bitcoin_hashes = { version = "^0.10", features = ["serde"] }
-secp256k1 = {version = "^0.21", features = ["rand", "rand-std", "serde", "bitcoin_hashes"] }
-serde = { version = "^1.0", features = ["derive"] }
-serde_json = {version = "^1.0", features = ["preserve_order"]}
-hex = "^0.4"
-rusqlite = { version = "^0.26", features = ["limits","bundled"]}
-r2d2 = "^0.8"
-r2d2_sqlite = "^0.19"
-lazy_static = "^1.4"
-governor = "^0.4"
-nonzero_ext = "^0.3"
+log = "0.4"
+env_logger = "0.9"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+futures-util = "0.3"
+tokio-tungstenite = "0.17"
+tungstenite = "0.17"
+thiserror = "1"
+uuid = { version = "0.8", features = ["v4"] }
+config = { version = "0.12", features = ["toml"] }
+bitcoin_hashes = { version = "0.10", features = ["serde"] }
+secp256k1 = {version = "0.21", features = ["rand", "rand-std", "serde", "bitcoin_hashes"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = {version = "1.0", features = ["preserve_order"]}
+hex = "0.4"
+rusqlite = { version = "0.26", features = ["limits","bundled"]}
+r2d2 = "0.8"
+r2d2_sqlite = "0.19"
+lazy_static = "1.4"
+governor = "0.4"
+nonzero_ext = "0.3"
 hyper = { version="0.14", features=["client", "server","http1","http2","tcp"] }
-hyper-tls = "^0.5"
-http = { version = "^0.2" }
-parse_duration = "^2"
-rand = "^0.8"
+hyper-tls = "0.5"
+http = { version = "0.2" }
+parse_duration = "2"
+rand = "0.8"
