@@ -158,9 +158,7 @@ impl Settings {
             .add_source(Config::try_from(default)?)
             // override with file contents
             .add_source(File::with_name("config"))
-            .build()?
-            .try_into()
-            .unwrap();
+            .build()?;
         let mut settings: Settings = config.try_deserialize()?;
         // ensure connection pool size is logical
         if settings.database.min_conn > settings.database.max_conn {
