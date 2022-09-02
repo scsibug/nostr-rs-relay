@@ -12,7 +12,7 @@ futures-util = "0.3"
 tokio-tungstenite = "0.17"
 tungstenite = "0.17"
 thiserror = "1"
-uuid = { version = "0.8", features = ["v4"] }
+uuid = { version = "1.1.2", features = ["v4"] }
 config = { version = "0.12", features = ["toml"] }
 bitcoin_hashes = { version = "0.10", features = ["serde"] }
 secp256k1 = {version = "0.21", features = ["rand", "rand-std", "serde", "bitcoin_hashes"] }
