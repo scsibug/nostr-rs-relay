@@ -54,13 +54,20 @@ pub fn build_pool(
     // small hack; if the database doesn't exist yet, that means the
     // writer thread hasn't finished.  Give it a chance to work.  This
     // is only an issue with the first time we run.
-    while !full_path.exists() && wait_for_db {
-        debug!("Database reader pool is waiting on the database to be created...");
-        thread::sleep(Duration::from_millis(500));
+    if !settings.database.in_memory {
+        while !full_path.exists() && wait_for_db {
+            debug!("Database reader pool is waiting on the database to be created...");
+            thread::sleep(Duration::from_millis(500));
+        }
     }
-    let manager = SqliteConnectionManager::file(&full_path)
-        .with_flags(flags)
-        .with_init(|c| c.execute_batch(STARTUP_SQL));
+    let manager = match settings.database.in_memory {
+        true => SqliteConnectionManager::memory()
+            .with_flags(flags)
+            .with_init(|c| c.execute_batch(STARTUP_SQL)),
+        false => SqliteConnectionManager::file(&full_path)
+            .with_flags(flags)
+            .with_init(|c| c.execute_batch(STARTUP_SQL)),
+    };
     let pool: SqlitePool = r2d2::Pool::builder()
         .test_on_check_out(true) // no noticeable performance hit
         .min_idle(Some(min_size))

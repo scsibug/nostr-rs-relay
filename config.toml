@@ -22,6 +22,11 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # line option.
 data_directory = "."
 
+
+# Use an in-memory database instead of 'nostr.db'.
+# Caution; this will not survive a process restart!
+#in_memory = false
+
 # Database connection pool settings for subscribers:
 
 # Minimum number of SQLite reader connections
