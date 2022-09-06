@@ -8,5 +8,6 @@ pub mod hexrange;
 pub mod info;
 pub mod nip05;
 pub mod schema;
+pub mod server;
 pub mod subscription;
 pub mod utils;
