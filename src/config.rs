@@ -1,15 +1,8 @@
 //! Configuration file and settings management
 use config::{Config, ConfigError, File};
-use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
-use std::sync::RwLock;
 use std::time::Duration;
-
-// initialize a singleton default configuration
-lazy_static! {
-    pub static ref SETTINGS: RwLock<Settings> = RwLock::new(Settings::default());
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
@@ -21,7 +14,7 @@ pub struct Info {
     pub contact: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Database {
     pub data_directory: String,
@@ -30,7 +23,7 @@ pub struct Database {
     pub max_conn: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Network {
     pub port: u16,
@@ -38,13 +31,13 @@ pub struct Network {
 }
 
 //
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Options {
     pub reject_future_seconds: Option<usize>, // if defined, reject any events with a timestamp more than X seconds in the future
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Retention {
     // TODO: implement
@@ -54,7 +47,7 @@ pub struct Retention {
     pub whitelist_addresses: Option<Vec<String>>, // whitelisted addresses (never delete)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Limits {
     pub messages_per_sec: Option<u32>, // Artificially slow down event writing to limit disk consumption (averaged over 1 minute)
@@ -65,7 +58,7 @@ pub struct Limits {
     pub event_persist_buffer: usize, // events to buffer for database commits (block senders if database writes are too slow)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
@@ -79,7 +72,7 @@ pub enum VerifiedUsersMode {
     Disabled,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct VerifiedUsers {
     pub mode: VerifiedUsersMode, // Mode of operation: "enabled" (enforce) or "passive" (check only). If none, this is simply disabled.
@@ -125,7 +118,7 @@ impl VerifiedUsers {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
     pub info: Info,
@@ -158,7 +151,7 @@ impl Settings {
             // use defaults
             .add_source(Config::try_from(default)?)
             // override with file contents
-            .add_source(File::with_name("config"))
+            .add_source(File::with_name("config.toml"))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
         // ensure connection pool size is logical

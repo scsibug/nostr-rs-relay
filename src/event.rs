@@ -1,5 +1,4 @@
 //! Event parsing and validation
-use crate::config;
 use crate::error::Error::*;
 use crate::error::Result;
 use crate::nip05;
@@ -156,13 +155,8 @@ impl Event {
             .collect()
     }
 
-    /// Check if this event has a valid signature.
-    fn is_valid(&self) -> bool {
-        // TODO: return a Result with a reason for invalid events
-        // don't bother to validate an event with a timestamp in the distant future.
-        let config = config::SETTINGS.read().unwrap();
-        let max_future_sec = config.options.reject_future_seconds;
-        if let Some(allowable_future) = max_future_sec {
+    pub fn is_valid_timestamp(&self, reject_future_seconds: Option<usize>) -> bool {
+        if let Some(allowable_future) = reject_future_seconds {
             let curr_time = unix_time();
             // calculate difference, plus how far future we allow
             if curr_time + (allowable_future as u64) < self.created_at {
@@ -174,6 +168,12 @@ impl Event {
                 return false;
             }
         }
+        true
+    }
+
+    /// Check if this event has a valid signature.
+    fn is_valid(&self) -> bool {
+        // TODO: return a Result with a reason for invalid events
         // validation is performed by:
         // * parsing JSON string into event fields
         // * create an array:
@@ -194,7 +194,6 @@ impl Event {
             return false;
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
-
         let sig = schnorr::Signature::from_str(&self.sig).unwrap();
         if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
             if let Ok(pubkey) = XOnlyPublicKey::from_str(&self.pubkey) {

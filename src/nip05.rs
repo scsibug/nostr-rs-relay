@@ -4,7 +4,7 @@
 //! address with their public key, in metadata events.  This module
 //! consumes a stream of metadata events, and keeps a database table
 //! updated with the current NIP-05 verification status.
-use crate::config::SETTINGS;
+use crate::config::VerifiedUsers;
 use crate::db;
 use crate::error::{Error, Result};
 use crate::event::Event;
@@ -31,6 +31,8 @@ pub struct Verifier {
     read_pool: db::SqlitePool,
     /// SQLite write query pool
     write_pool: db::SqlitePool,
+    /// Settings
+    settings: crate::config::Settings,
     /// HTTP client
     client: hyper::Client<HttpsConnector<HttpConnector>, hyper::Body>,
     /// After all accounts are updated, wait this long before checking again.
@@ -138,11 +140,13 @@ impl Verifier {
     pub fn new(
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
+        settings: crate::config::Settings,
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
         // build a database connection for reading and writing.
         let write_pool = db::build_pool(
             "nip05 writer",
+            settings.clone(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
             1,    // min conns
             4,    // max conns
@@ -150,6 +154,7 @@ impl Verifier {
         );
         let read_pool = db::build_pool(
             "nip05 reader",
+            settings.clone(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
             1,    // min conns
             8,    // max conns
@@ -174,6 +179,7 @@ impl Verifier {
             event_tx,
             read_pool,
             write_pool,
+            settings,
             client,
             wait_after_finish,
             http_wait_duration,
@@ -214,7 +220,11 @@ impl Verifier {
         pubkey: &str,
     ) -> Result<UserWebVerificationStatus> {
         // determine if this domain should be checked
-        if !is_domain_allowed(&nip.domain) {
+        if !is_domain_allowed(
+            &nip.domain,
+            &self.settings.verified_users.domain_whitelist,
+            &self.settings.verified_users.domain_blacklist,
+        ) {
             return Ok(UserWebVerificationStatus::DomainNotAllowed);
         }
         let url = nip
@@ -347,15 +357,11 @@ impl Verifier {
 
     /// Reverify the oldest user verification record.
     async fn do_reverify(&mut self) -> Result<()> {
-        let reverify_setting;
-        let max_failures;
-        {
-            // this block prevents a read handle to settings being
-            // captured by the async DB call (guard is not Send)
-            let settings = SETTINGS.read().unwrap();
-            reverify_setting = settings.verified_users.verify_update_frequency_duration;
-            max_failures = settings.verified_users.max_consecutive_failures;
-        }
+        let reverify_setting = self
+            .settings
+            .verified_users
+            .verify_update_frequency_duration;
+        let max_failures = self.settings.verified_users.max_consecutive_failures;
         // get from settings, but default to 6hrs between re-checking an account
         let reverify_dur = reverify_setting.unwrap_or_else(|| Duration::from_secs(60 * 60 * 6));
         // find all verification records that have success or failure OLDER than the reverify_dur.
@@ -506,11 +512,7 @@ impl Verifier {
         let start = Instant::now();
         // we should only do this if we are enabled.  if we are
         // disabled/passive, the event has already been persisted.
-        let should_write_event;
-        {
-            let settings = SETTINGS.read().unwrap();
-            should_write_event = settings.verified_users.is_enabled()
-        }
+        let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
             match db::write_event(&mut self.write_pool.get()?, event) {
                 Ok(updated) => {
@@ -562,15 +564,18 @@ pub struct VerificationRecord {
 
 /// Check with settings to determine if a given domain is allowed to
 /// publish.
-pub fn is_domain_allowed(domain: &str) -> bool {
-    let settings = SETTINGS.read().unwrap();
+pub fn is_domain_allowed(
+    domain: &str,
+    whitelist: &Option<Vec<String>>,
+    blacklist: &Option<Vec<String>>,
+) -> bool {
     // if there is a whitelist, domain must be present in it.
-    if let Some(wl) = &settings.verified_users.domain_whitelist {
+    if let Some(wl) = whitelist {
         // workaround for Vec contains not accepting &str
         return wl.iter().any(|x| x == domain);
     }
     // otherwise, check that user is not in the blacklist
-    if let Some(bl) = &settings.verified_users.domain_blacklist {
+    if let Some(bl) = blacklist {
         return !bl.iter().any(|x| x == domain);
     }
     true
@@ -579,17 +584,21 @@ pub fn is_domain_allowed(domain: &str) -> bool {
 impl VerificationRecord {
     /// Check if the record is recent enough to be considered valid,
     /// and the domain is allowed.
-    pub fn is_valid(&self) -> bool {
-        let settings = SETTINGS.read().unwrap();
+    pub fn is_valid(&self, verified_users_settings: &VerifiedUsers) -> bool {
+        //let settings = SETTINGS.read().unwrap();
         // how long a verification record is good for
-        let nip05_expiration = &settings.verified_users.verify_expiration_duration;
+        let nip05_expiration = &verified_users_settings.verify_expiration_duration;
         if let Some(e) = nip05_expiration {
             if !self.is_current(e) {
                 return false;
             }
         }
         // check domains
-        is_domain_allowed(&self.name.domain)
+        is_domain_allowed(
+            &self.name.domain,
+            &verified_users_settings.domain_whitelist,
+            &verified_users_settings.domain_blacklist,
+        )
     }
 
     /// Check if this record has been validated since the given

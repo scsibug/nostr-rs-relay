@@ -4,6 +4,8 @@ use nostr_rs_relay::config;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::server::start_server;
 use std::env;
+use std::sync::mpsc as syncmpsc;
+use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 
 /// Return a requested DB name from command line arguments.
@@ -19,22 +21,23 @@ fn main() -> Result<(), Error> {
     // setup logger
     let _ = env_logger::try_init();
     info!("Starting up from main");
+
     // get database directory from args
     let args: Vec<String> = env::args().collect();
     let db_dir: Option<String> = db_from_args(args);
-    {
-        let mut settings = config::SETTINGS.write().unwrap();
-        // replace default settings with those read from config.toml
-        let mut c = config::Settings::new();
-        // update with database location
-        if let Some(db) = db_dir {
-            c.database.data_directory = db;
-        }
-        *settings = c;
+    // configure settings from config.toml
+    // replace default settings with those read from config.toml
+    let mut settings = config::Settings::new();
+    // update with database location
+    if let Some(db) = db_dir {
+        settings.database.data_directory = db;
     }
+    let (_, ctrl_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
     // run this in a new thread
     let handle = thread::spawn(|| {
-        let _ = start_server();
+        // we should have a 'control plane' channel to monitor and bump the server.
+        // this will let us do stuff like clear the database, shutdown, etc.
+        let _ = start_server(settings, ctrl_rx);
     });
     // block on nostr thread to finish.
     handle.join().unwrap();

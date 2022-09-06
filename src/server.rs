@@ -1,7 +1,7 @@
 //! Server process
 use crate::close::Close;
 use crate::close::CloseCmd;
-use crate::config;
+use crate::config::Settings;
 use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::mpsc::Receiver as MpscReceiver;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::runtime::Builder;
@@ -43,6 +44,7 @@ use tungstenite::protocol::WebSocketConfig;
 async fn handle_web_request(
     mut request: Request<Body>,
     pool: db::SqlitePool,
+    settings: Settings,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
@@ -68,12 +70,11 @@ async fn handle_web_request(
                             //if successfully upgraded
                             Ok(upgraded) => {
                                 // set WebSocket configuration options
-                                let mut config = WebSocketConfig::default();
-                                {
-                                    let settings = config::SETTINGS.read().unwrap();
-                                    config.max_message_size = settings.limits.max_ws_message_bytes;
-                                    config.max_frame_size = settings.limits.max_ws_frame_bytes;
-                                }
+                                let config = WebSocketConfig {
+                                    max_message_size: settings.limits.max_ws_message_bytes,
+                                    max_frame_size: settings.limits.max_ws_frame_bytes,
+                                    ..Default::default()
+                                };
                                 //create a websocket stream from the upgraded object
                                 let ws_stream = WebSocketStream::from_raw_socket(
                                     //pass the upgraded object
@@ -85,7 +86,7 @@ async fn handle_web_request(
                                 .await;
 
                                 tokio::spawn(nostr_server(
-                                    pool, ws_stream, broadcast, event_tx, shutdown,
+                                    pool, settings, ws_stream, broadcast, event_tx, shutdown,
                                 ));
                             }
                             Err(e) => println!(
@@ -118,10 +119,9 @@ async fn handle_web_request(
             if let Some(media_types) = accept_header {
                 if let Ok(mt_str) = media_types.to_str() {
                     if mt_str.contains("application/nostr+json") {
-                        let config = config::SETTINGS.read().unwrap();
                         // build a relay info response
                         debug!("Responding to server info request");
-                        let rinfo = RelayInfo::from(config.info.clone());
+                        let rinfo = RelayInfo::from(settings.info);
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
                             .status(200)
@@ -148,16 +148,25 @@ async fn handle_web_request(
     }
 }
 
-async fn shutdown_signal() {
-    // Wait for the CTRL+C signal
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install CTRL+C signal handler");
+// return on a control-c or internally requested shutdown signal
+async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
+    loop {
+        tokio::select! {
+                _ = shutdown_signal.recv() => {
+            info!("Shutting down webserver as requested");
+                    // server shutting down, exit loop
+                    break;
+                },
+            _ = tokio::signal::ctrl_c() => {
+            info!("Shutting down webserver due to SIGINT");
+                    break;
+                }
+        }
+    }
 }
 
 /// Start running a Nostr relay server.
-pub fn start_server() -> Result<(), Error> {
-    let settings = config::SETTINGS.read().unwrap();
+pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result<(), Error> {
     trace!("Config: {:?}", settings);
     // do some config validation.
     if !Path::new(&settings.database.data_directory).is_dir() {
@@ -204,21 +213,12 @@ pub fn start_server() -> Result<(), Error> {
         .unwrap();
     // start tokio
     rt.block_on(async {
-        let broadcast_buffer_limit;
-        let persist_buffer_limit;
-        let verified_users_active;
-        let db_min_conn;
-        let db_max_conn;
-        // hack to prove we drop the mutexguard prior to any await points
-        // (https://github.com/rust-lang/rust-clippy/issues/6446)
-        {
-            let settings = config::SETTINGS.read().unwrap();
-            broadcast_buffer_limit = settings.limits.broadcast_buffer;
-            persist_buffer_limit = settings.limits.event_persist_buffer;
-            verified_users_active = settings.verified_users.is_active();
-            db_min_conn = settings.database.min_conn;
-            db_max_conn = settings.database.max_conn;
-        }
+        let broadcast_buffer_limit = settings.limits.broadcast_buffer;
+        let persist_buffer_limit = settings.limits.event_persist_buffer;
+        let verified_users_active = settings.verified_users.is_active();
+        let db_min_conn = settings.database.min_conn;
+        let db_max_conn = settings.database.max_conn;
+        let settings = settings.clone();
         info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
@@ -244,6 +244,7 @@ pub fn start_server() -> Result<(), Error> {
         // writing events, and for publishing events that have been
         // written (to all connected clients).
         db::db_writer(
+            settings.clone(),
             event_rx,
             bcast_tx.clone(),
             metadata_tx.clone(),
@@ -253,7 +254,7 @@ pub fn start_server() -> Result<(), Error> {
         info!("db writer created");
 
         // create a nip-05 verifier thread
-        let verifier_opt = nip05::Verifier::new(metadata_rx, bcast_tx.clone());
+        let verifier_opt = nip05::Verifier::new(metadata_rx, bcast_tx.clone(), settings.clone());
         if let Ok(mut v) = verifier_opt {
             if verified_users_active {
                 tokio::task::spawn(async move {
@@ -262,16 +263,31 @@ pub fn start_server() -> Result<(), Error> {
                 });
             }
         }
-        // // listen for ctrl-c interruupts
+        // listen for (external to tokio) shutdown request
+        let controlled_shutdown = invoke_shutdown.clone();
+        tokio::spawn(async move {
+            info!("control message listener started");
+            match shutdown_rx.recv() {
+                Ok(()) => {
+                    info!("control message requesting shutdown");
+                    controlled_shutdown.send(()).ok();
+                }
+                Err(std::sync::mpsc::RecvError) => {
+                    debug!("shutdown requestor is disconnected");
+                }
+            };
+        });
+        // listen for ctrl-c interruupts
         let ctrl_c_shutdown = invoke_shutdown.clone();
         tokio::spawn(async move {
             tokio::signal::ctrl_c().await.unwrap();
-            info!("shutting down due to SIGINT");
+            info!("shutting down due to SIGINT (main)");
             ctrl_c_shutdown.send(()).ok();
         });
         // build a connection pool for sqlite connections
         let pool = db::build_pool(
             "client query",
+            settings.clone(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                 | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
             db_min_conn,
@@ -286,12 +302,14 @@ pub fn start_server() -> Result<(), Error> {
             let bcast = bcast_tx.clone();
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
+            let settings = settings.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
                     handle_web_request(
                         request,
                         svc_pool.clone(),
+                        settings.clone(),
                         remote_addr,
                         bcast.clone(),
                         event.clone(),
@@ -300,14 +318,14 @@ pub fn start_server() -> Result<(), Error> {
                 }))
             }
         });
+        let shutdown_listen = invoke_shutdown.subscribe();
         let server = Server::bind(&socket_addr)
             .serve(make_svc)
-            .with_graceful_shutdown(shutdown_signal());
+            .with_graceful_shutdown(ctrl_c_or_signal(shutdown_listen));
         // run hyper
         if let Err(e) = server.await {
             eprintln!("server error: {}", e);
         }
-        // our code
     });
     Ok(())
 }
@@ -325,13 +343,12 @@ pub enum NostrMessage {
 }
 
 /// Convert Message to NostrMessage
-fn convert_to_msg(msg: String) -> Result<NostrMessage> {
-    let config = config::SETTINGS.read().unwrap();
+fn convert_to_msg(msg: String, max_bytes: Option<usize>) -> Result<NostrMessage> {
     let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
     match parsed_res {
         Ok(m) => {
             if let NostrMessage::EventMsg(_) = m {
-                if let Some(max_size) = config.limits.max_event_bytes {
+                if let Some(max_size) = max_bytes {
                     // check length, ensure that some max size is set.
                     if msg.len() > max_size && max_size > 0 {
                         return Err(Error::EventMaxLengthError(msg.len()));
@@ -357,6 +374,7 @@ fn make_notice_message(msg: &str) -> Message {
 /// for all client communication.
 async fn nostr_server(
     pool: db::SqlitePool,
+    settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
     event_tx: mpsc::Sender<SubmittedEvent>,
@@ -398,6 +416,7 @@ async fn nostr_server(
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
+        info!("Shutting client connection down due to shutdown: {:?}", cid);
                 // server shutting down, exit loop
                 break;
             },
@@ -442,7 +461,6 @@ async fn nostr_server(
                         // create an event response and send it
                         let subesc = s.replace('"', "");
                         ws_stream.send(Message::Text(format!("[\"EVENT\",\"{}\",{}]", subesc, event_str))).await.ok();
-                        //nostr_stream.send(res).await.ok();
                     } else {
                         warn!("could not serialize event {:?}", global_event.get_event_id_prefix());
                     }
@@ -454,7 +472,7 @@ async fn nostr_server(
                 // Consume text messages from the client, parse into Nostr messages.
                 let nostr_msg = match ws_next {
                     Some(Ok(Message::Text(m))) => {
-                        convert_to_msg(m)
+                        convert_to_msg(m,settings.limits.max_event_bytes)
                     },
             Some(Ok(Message::Binary(_))) => {
             ws_stream.send(
@@ -503,10 +521,17 @@ async fn nostr_server(
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} from client: {:?}", id_prefix, cid);
-                                // Write this to the database.
-                                let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone() };
-                                event_tx.send(submit_event).await.ok();
-                                client_published_event_count += 1;
+                                // check if the event is too far in the future.
+                                if e.is_valid_timestamp(settings.options.reject_future_seconds) {
+                                    // Write this to the database.
+                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone() };
+                                    event_tx.send(submit_event).await.ok();
+                                    client_published_event_count += 1;
+                } else {
+                    info!("client {:?} sent a far future-dated event", cid);
+                    ws_stream.send(make_notice_message("event was too far in the future")).await.ok();
+
+                }
                             },
                             Err(_) => {
                                 info!("client {:?} sent an invalid event", cid);

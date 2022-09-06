@@ -1,7 +1,7 @@
 //! Event persistence and querying
-use crate::config::SETTINGS;
-use crate::error::Error;
-use crate::error::Result;
+//use crate::config::SETTINGS;
+use crate::config::Settings;
+use crate::error::{Error, Result};
 use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
@@ -18,7 +18,6 @@ use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use rusqlite::types::ToSql;
-use rusqlite::Connection;
 use rusqlite::OpenFlags;
 use std::fmt::Write as _;
 use std::path::Path;
@@ -42,13 +41,12 @@ pub const DB_FILE: &str = "nostr.db";
 /// Build a database connection pool.
 pub fn build_pool(
     name: &str,
+    settings: Settings,
     flags: OpenFlags,
     min_size: u32,
     max_size: u32,
     wait_for_db: bool,
 ) -> SqlitePool {
-    let settings = SETTINGS.read().unwrap();
-
     let db_dir = &settings.database.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
     // small hack; if the database doesn't exist yet, that means the
@@ -81,43 +79,36 @@ pub fn build_pool(
     pool
 }
 
-/// Build a single database connection, with provided flags
-pub fn build_conn(flags: OpenFlags) -> Result<Connection> {
-    let settings = SETTINGS.read().unwrap();
-    let db_dir = &settings.database.data_directory;
-    let full_path = Path::new(db_dir).join(DB_FILE);
-    // create a connection
-    Ok(Connection::open_with_flags(&full_path, flags)?)
-}
-
 /// Spawn a database writer that persists events to the SQLite store.
 pub async fn db_writer(
+    settings: Settings,
     mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
     metadata_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> tokio::task::JoinHandle<Result<()>> {
-    let settings = SETTINGS.read().unwrap();
-
     // are we performing NIP-05 checking?
     let nip05_active = settings.verified_users.is_active();
     // are we requriing NIP-05 user verification?
     let nip05_enabled = settings.verified_users.is_enabled();
 
     task::spawn_blocking(move || {
-        // get database configuration settings
-        let settings = SETTINGS.read().unwrap();
         let db_dir = &settings.database.data_directory;
         let full_path = Path::new(db_dir).join(DB_FILE);
         // create a connection pool
         let pool = build_pool(
             "event writer",
+            settings.clone(),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
             4,
             false,
         );
-        info!("opened database {:?} for writing", full_path);
+        if settings.database.in_memory {
+            info!("using in-memory database, this will not persist a restart!");
+        } else {
+            info!("opened database {:?} for writing", full_path);
+        }
         upgrade_db(&mut pool.get()?)?;
 
         // Make a copy of the whitelist
@@ -178,7 +169,7 @@ pub async fn db_writer(
             if nip05_enabled {
                 match nip05::query_latest_user_verification(pool.get()?, event.pubkey.to_owned()) {
                     Ok(uv) => {
-                        if uv.is_valid() {
+                        if uv.is_valid(&settings.verified_users) {
                             info!(
                                 "new event from verified author ({:?},{:?})",
                                 uv.name.to_string(),
