@@ -282,6 +282,9 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         });
         // listen for ctrl-c interruupts
         let ctrl_c_shutdown = invoke_shutdown.clone();
+        // listener for webserver shutdown
+        let webserver_shutdown_listen = invoke_shutdown.subscribe();
+
         tokio::spawn(async move {
             tokio::signal::ctrl_c().await.unwrap();
             info!("shutting down due to SIGINT (main)");
@@ -321,11 +324,10 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 }))
             }
         });
-        let shutdown_listen = invoke_shutdown.subscribe();
         let server = Server::bind(&socket_addr)
             .serve(make_svc)
-            .with_graceful_shutdown(ctrl_c_or_signal(shutdown_listen));
-        // run hyper
+            .with_graceful_shutdown(ctrl_c_or_signal(webserver_shutdown_listen));
+        // run hyper in this thread.  This is why the thread does not return.
         if let Err(e) = server.await {
             eprintln!("server error: {}", e);
         }

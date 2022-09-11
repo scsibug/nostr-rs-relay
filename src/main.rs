@@ -8,6 +8,8 @@ use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 
+use console_subscriber::ConsoleLayer;
+
 /// Return a requested DB name from command line arguments.
 fn db_from_args(args: Vec<String>) -> Option<String> {
     if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
@@ -28,6 +30,12 @@ fn main() -> Result<(), Error> {
     // configure settings from config.toml
     // replace default settings with those read from config.toml
     let mut settings = config::Settings::new();
+
+    if settings.diagnostics.tracing {
+        // enable tracing with tokio-console
+        ConsoleLayer::builder().with_default_env().init();
+    }
+
     // update with database location
     if let Some(db) = db_dir {
         settings.database.data_directory = db;

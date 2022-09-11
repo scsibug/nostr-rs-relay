@@ -16,6 +16,10 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Administrative contact URI
 #contact = "mailto:contact@example.com"
 
+[diagnostics]
+# Enable tokio tracing (for use with tokio-console)
+#tracing = true
+
 [database]
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command

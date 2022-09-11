@@ -64,6 +64,12 @@ pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(unused)]
+pub struct Diagnostics {
+    pub tracing: bool, // enables tokio console-subscriber
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifiedUsersMode {
@@ -122,6 +128,7 @@ impl VerifiedUsers {
 #[allow(unused)]
 pub struct Settings {
     pub info: Info,
+    pub diagnostics: Diagnostics,
     pub database: Database,
     pub network: Network,
     pub limits: Limits,
@@ -181,6 +188,7 @@ impl Default for Settings {
                 pubkey: None,
                 contact: None,
             },
+            diagnostics: Diagnostics { tracing: false },
             database: Database {
                 data_directory: ".".to_owned(),
                 in_memory: false,
