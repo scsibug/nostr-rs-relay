@@ -86,6 +86,9 @@ For development discussions, please feel free to use the [sourcehut
 mailing list](https://lists.sr.ht/~gheartsfield/nostr-rs-relay-devel).
 Or, drop by the [Nostr Telegram Channel](https://t.me/nostr_protocol).
 
+To chat about `nostr-rs-relay` on `nostr` itself; visit our channel on [anigma](https://anigma.io/) or another client that supports [NIP-28](https://github.com/nostr-protocol/nips/blob/master/28.md) chats:
+ * `2ad246a094fee48c6e455dd13d759d5f41b5a233120f5719d81ebc1935075194`
+
 License
 ---
 This project is MIT licensed.
