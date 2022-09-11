@@ -14,13 +14,13 @@ NIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Core event model
 - [x] NIP-01: Hide old metadata events
-- [x] NIP-01: Id/Author prefix search (_experimental_)
+- [x] NIP-01: Id/Author prefix search
 - [x] NIP-02: Hide old contact list events
 - [ ] NIP-03: OpenTimestamps
 - [x] NIP-05: Mapping Nostr keys to DNS identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
-- [x] NIP-12: Generic tag search (_experimental_)
+- [x] NIP-12: Generic tag search
 - [x] NIP-15: End of stored events notice
 - [x] NIP-16: Replaceable and ephemeral events
 - [x] NIP-22: Event `created_at` limits (_future-dated events only_)
