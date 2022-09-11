@@ -13,6 +13,7 @@ use std::time::Instant;
 pub const STARTUP_SQL: &str = r##"
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;
+PRAGMA journal_size_limit=32768;
 pragma mmap_size = 536870912; -- 512MB of mmap
 "##;
 
