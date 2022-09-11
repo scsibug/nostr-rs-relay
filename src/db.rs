@@ -542,7 +542,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
         })
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
-    info!("final query string: {}", query);
+    debug!("final query string: {}", query);
     (query, params)
 }
 

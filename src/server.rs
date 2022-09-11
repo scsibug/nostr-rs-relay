@@ -455,14 +455,14 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        debug!("sub match: client: {:?}, sub: {:?}, event: {:?}",
+                        debug!("sub match for client: {:?}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
                         let subesc = s.replace('"', "");
                         ws_stream.send(Message::Text(format!("[\"EVENT\",\"{}\",{}]", subesc, event_str))).await.ok();
                     } else {
-                        warn!("could not serialize event {:?}", global_event.get_event_id_prefix());
+                        warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
                     }
                 }
             },
