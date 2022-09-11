@@ -1,0 +1,13 @@
+image: fedora/latest
+packages:
+  - cargo
+  - sqlite-devel
+sources:
+  - https://git.sr.ht/~gheartsfield/nostr-rs-relay/
+tasks:
+  - build: |
+      cd nostr-rs-relay
+      cargo build
+  - test: |
+      cd nostr-rs-relay
+      cargo test
