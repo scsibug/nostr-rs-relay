@@ -1,13 +1,19 @@
 image: fedora/latest
+arch: x86_64
+artifacts:
+  - nostr-rs-relay/target/release/nostr-rs-relay
+environment:
+  RUST_LOG: debug
 packages:
   - cargo
   - sqlite-devel
 sources:
   - https://git.sr.ht/~gheartsfield/nostr-rs-relay/
+shell: false
 tasks:
   - build: |
       cd nostr-rs-relay
-      cargo build
+      cargo build --release
   - test: |
       cd nostr-rs-relay
-      cargo test
+      cargo test --release
