@@ -1,7 +1,7 @@
 //! Server process
 use crate::close::Close;
 use crate::close::CloseCmd;
-use crate::config::Settings;
+use crate::config::{Settings, VerifiedUsersMode};
 use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
@@ -253,14 +253,17 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         .await;
         info!("db writer created");
 
-        // create a nip-05 verifier thread
-        let verifier_opt = nip05::Verifier::new(metadata_rx, bcast_tx.clone(), settings.clone());
-        if let Ok(mut v) = verifier_opt {
-            if verified_users_active {
-                tokio::task::spawn(async move {
-                    info!("starting up NIP-05 verifier...");
-                    v.run().await;
-                });
+        // create a nip-05 verifier thread; if enabled.
+        if settings.verified_users.mode != VerifiedUsersMode::Disabled {
+            let verifier_opt =
+                nip05::Verifier::new(metadata_rx, bcast_tx.clone(), settings.clone());
+            if let Ok(mut v) = verifier_opt {
+                if verified_users_active {
+                    tokio::task::spawn(async move {
+                        info!("starting up NIP-05 verifier...");
+                        v.run().await;
+                    });
+                }
             }
         }
         // listen for (external to tokio) shutdown request

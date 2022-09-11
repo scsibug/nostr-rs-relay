@@ -64,7 +64,7 @@ pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifiedUsersMode {
     Enabled,
