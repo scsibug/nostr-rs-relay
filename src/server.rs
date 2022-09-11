@@ -529,8 +529,9 @@ async fn nostr_server(
                                     client_published_event_count += 1;
                 } else {
                     info!("client {:?} sent a far future-dated event", cid);
-                    ws_stream.send(make_notice_message("event was too far in the future")).await.ok();
-
+                    if let Some(fut_sec) = settings.options.reject_future_seconds {
+                    ws_stream.send(make_notice_message(&format!("The event created_at field is out of the acceptable range (+{}sec) for this relay and was not stored.",fut_sec))).await.ok();
+                    }
                 }
                             },
                             Err(_) => {

@@ -219,7 +219,7 @@ impl Default for Settings {
                 whitelist_addresses: None, // whitelisted addresses (never delete)
             },
             options: Options {
-                reject_future_seconds: Some(30 * 60), // Reject events 30min in the future or greater
+                reject_future_seconds: None, // Reject events in the future if defined
             },
         }
     }

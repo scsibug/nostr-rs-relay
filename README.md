@@ -23,6 +23,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-12: Generic tag search (_experimental_)
 - [x] NIP-15: End of stored events notice
 - [x] NIP-16: Replaceable and ephemeral events
+- [x] NIP-22: Event `created_at` limits (_future-dated events only_)
 
 ## Quick Start
 

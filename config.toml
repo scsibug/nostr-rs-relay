@@ -44,8 +44,8 @@ port = 8080
 
 [options]
 # Reject events that have timestamps greater than this many seconds in
-# the future.  Defaults to rejecting anything greater than 30 minutes
-# from the current time.
+# the future.  Recommended to reject anything greater than 30 minutes
+# from the current time, but the default is to allow any date.
 reject_future_seconds = 1800
 
 [limits]
