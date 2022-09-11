@@ -8,7 +8,7 @@ The project master repository is available on
 [sourcehut](https://sr.ht/~gheartsfield/nostr-rs-relay/), and is
 mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 
-[![builds.sr.ht status](https://builds.sr.ht/~gheartsfield/nostr-rs-relay.svg)](https://builds.sr.ht/~gheartsfield/nostr-rs-relay?)
+[![builds.sr.ht status](https://builds.sr.ht/~gheartsfield/nostr-rs-relay/commits/master.svg)](https://builds.sr.ht/~gheartsfield/nostr-rs-relay/commits/master?)
 
 ## Features
 
