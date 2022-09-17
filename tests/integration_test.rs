@@ -1,11 +1,12 @@
+use anyhow::Result;
 use std::thread;
 use std::time::Duration;
 
 mod common;
 
 #[test]
-fn startup() {
-    let relay = common::start_relay(8080);
+fn startup() -> Result<()> {
+    let relay = common::start_relay()?;
     // just make sure we can startup and shut down.
     // if we send a shutdown message before the server is listening,
     // we will get a SendError.  Keep sending until someone is
@@ -24,4 +25,5 @@ fn startup() {
     // wait for relay to shutdown
     let thread_join = relay.handle.join();
     assert!(thread_join.is_ok());
+    Ok(())
 }
