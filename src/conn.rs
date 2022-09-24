@@ -60,6 +60,10 @@ impl ClientConn {
     }
 
     /// Add a new subscription for this connection.
+    /// # Errors
+    ///
+    /// Will return `Err` if the client has too many subscriptions, or
+    /// if the provided name is excessively long.
     pub fn subscribe(&mut self, s: Subscription) -> Result<()> {
         let k = s.get_id();
         let sub_id_len = k.len();
@@ -94,7 +98,7 @@ impl ClientConn {
     }
 
     /// Remove the subscription for this connection.
-    pub fn unsubscribe(&mut self, c: Close) {
+    pub fn unsubscribe(&mut self, c: &Close) {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
         debug!(

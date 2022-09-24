@@ -146,7 +146,7 @@ impl Verifier {
         // build a database connection for reading and writing.
         let write_pool = db::build_pool(
             "nip05 writer",
-            settings.clone(),
+            &settings,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
             1,    // min conns
             4,    // max conns
@@ -154,7 +154,7 @@ impl Verifier {
         );
         let read_pool = db::build_pool(
             "nip05 reader",
-            settings.clone(),
+            &settings,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
             1,    // min conns
             8,    // max conns

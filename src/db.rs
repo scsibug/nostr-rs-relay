@@ -13,7 +13,7 @@ use crate::utils::{is_hex, is_lower_hex};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
-use log::*;
+use log::{debug, info, trace, warn};
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
@@ -39,9 +39,13 @@ pub struct SubmittedEvent {
 pub const DB_FILE: &str = "nostr.db";
 
 /// Build a database connection pool.
+/// # Panics
+///
+/// Will panic if the pool could not be created.
+#[must_use]
 pub fn build_pool(
     name: &str,
-    settings: Settings,
+    settings: &Settings,
     flags: OpenFlags,
     min_size: u32,
     max_size: u32,
@@ -98,7 +102,7 @@ pub async fn db_writer(
         // create a connection pool
         let pool = build_pool(
             "event writer",
-            settings.clone(),
+            &settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
             4,

@@ -293,7 +293,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // build a connection pool for sqlite connections
         let pool = db::build_pool(
             "client query",
-            settings.clone(),
+            &settings,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                 | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
             db_min_conn,
@@ -579,7 +579,7 @@ async fn nostr_server(
                                 }
                                 // stop checking new events against
                                 // the subscription
-                                conn.unsubscribe(c);
+                                conn.unsubscribe(&c);
                             },
                             Err(_) => {
                                 info!("invalid command ignored");
