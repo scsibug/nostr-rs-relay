@@ -1,5 +1,5 @@
 //! Server process
-use log::*;
+use log::info;
 use nostr_rs_relay::config;
 use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::server::start_server;
@@ -13,7 +13,7 @@ use console_subscriber::ConsoleLayer;
 /// Return a requested DB name from command line arguments.
 fn db_from_args(args: Vec<String>) -> Option<String> {
     if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
-        return args.get(2).map(|x| x.to_owned());
+        return args.get(2).map(std::clone::Clone::clone);
     }
     None
 }

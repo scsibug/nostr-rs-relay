@@ -364,7 +364,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
 }
 
 /// Serialized event associated with a specific subscription request.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct QueryResult {
     /// Subscription identifier
     pub sub_id: String,
@@ -537,9 +537,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     // encapsulate subqueries into select statements
     let subqueries_selects: Vec<String> = subqueries
         .iter()
-        .map(|s| {
-            return format!("SELECT content, created_at FROM ({})", s);
-        })
+        .map(|s| format!("SELECT content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
     debug!("final query string: {}", query);

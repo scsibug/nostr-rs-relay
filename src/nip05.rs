@@ -44,7 +44,7 @@ pub struct Verifier {
 }
 
 /// A NIP-05 identifier is a local part and domain.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Nip05Name {
     local: String,
     domain: String,
@@ -540,7 +540,7 @@ impl Verifier {
 }
 
 /// Result of checking user's verification status against DNS/HTTP.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum UserWebVerificationStatus {
     Verified,         // user is verified, as of now.
     DomainNotAllowed, // domain blacklist or whitelist denied us from attempting a verification
@@ -549,7 +549,7 @@ pub enum UserWebVerificationStatus {
 }
 
 /// A NIP-05 verification record.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 // Basic information for a verification event.  Gives us all we need to assert a NIP-05 address is good.
 pub struct VerificationRecord {
     pub rowid: u64,                // database row for this verification event
@@ -714,9 +714,7 @@ pub async fn get_oldest_user_verification(
     conn: db::PooledConnection,
     earliest: u64,
 ) -> Result<VerificationRecord> {
-    let res =
-        tokio::task::spawn_blocking(move || query_oldest_user_verification(conn, earliest)).await?;
-    res
+    tokio::task::spawn_blocking(move || query_oldest_user_verification(conn, earliest)).await?
 }
 
 pub fn query_oldest_user_verification(

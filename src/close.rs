@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 /// Close command in network format
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CloseCmd {
     /// Protocol command, expected to always be "CLOSE".
     cmd: String,
@@ -14,7 +14,7 @@ pub struct CloseCmd {
 }
 
 /// Identifier of the subscription to be closed.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Close {
     /// The subscription identifier being closed.
     pub id: String,

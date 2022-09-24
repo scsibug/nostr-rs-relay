@@ -336,7 +336,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
 }
 
 /// Nostr protocol messages from a client
-#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Clone, PartialEq, Eq, Debug)]
 #[serde(untagged)]
 pub enum NostrMessage {
     /// An `EVENT` message

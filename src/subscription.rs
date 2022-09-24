@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 /// Subscription identifier and set of request filters
-#[derive(Serialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
 pub struct Subscription {
     pub id: String,
     pub filters: Vec<ReqFilter>,
@@ -19,7 +19,7 @@ pub struct Subscription {
 /// Corresponds to client-provided subscription request elements.  Any
 /// element can be present if it should be used in filtering, or
 /// absent ([`None`]) if it should be ignored.
-#[derive(Serialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
 pub struct ReqFilter {
     /// Event hashes
     pub ids: Option<Vec<String>>,
@@ -471,8 +471,8 @@ mod tests {
         assert!(s.interested_in_event(&e));
         Ok(())
     }
-    #[test]
 
+    #[test]
     fn authors_multi_pubkey() -> Result<()> {
         // check for any of a set of authors, against the pubkey
         let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"authors":["abc", "bcd"]}]"#)?;

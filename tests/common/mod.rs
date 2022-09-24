@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use log::*;
+use log::{debug, info};
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
 //use http::{Request, Response};
@@ -39,16 +39,16 @@ pub fn start_relay() -> Result<Relay> {
         let _ = start_server(settings, shutdown_rx);
     });
     // how do we know the relay has finished starting up?
-    return Ok(Relay {
+    Ok(Relay {
         port,
         handle,
         shutdown_tx,
-    });
+    })
 }
 
 // check if the server is healthy via HTTP request
 async fn server_ready(relay: &Relay) -> Result<bool> {
-    let uri: String = format!("http://127.0.0.1:{}/", relay.port.to_string());
+    let uri: String = format!("http://127.0.0.1:{}/", relay.port);
     let client = Client::new();
     let uri: Uri = uri.parse().unwrap();
     let res = client.get(uri).await?;
@@ -60,7 +60,7 @@ pub async fn wait_for_healthy_relay(relay: &Relay) -> Result<()> {
     // give it a little time to start up before we start polling
     tokio::time::sleep(Duration::from_millis(10)).await;
     loop {
-        let server_check = server_ready(&relay).await;
+        let server_check = server_ready(relay).await;
         match server_check {
             Ok(true) => {
                 // server responded with 200-OK.

@@ -20,14 +20,14 @@ lazy_static! {
 }
 
 /// Event command in network format.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct EventCmd {
     cmd: String, // expecting static "EVENT"
     event: Event,
 }
 
 /// Parsed nostr event.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Event {
     pub id: String,
     pub(crate) pubkey: String,

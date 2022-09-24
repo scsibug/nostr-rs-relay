@@ -70,7 +70,7 @@ pub struct Diagnostics {
     pub tracing: bool, // enables tokio console-subscriber
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifiedUsersMode {
     Enabled,
