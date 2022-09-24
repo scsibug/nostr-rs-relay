@@ -295,15 +295,14 @@ mod tests {
     }
 
     #[test]
-    fn empty_event_tag_match() -> Result<()> {
+    fn empty_event_tag_match() {
         let event = simple_event();
         assert!(!event
             .generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
-        Ok(())
     }
 
     #[test]
-    fn single_event_tag_match() -> Result<()> {
+    fn single_event_tag_match() {
         let mut event = simple_event();
         event.tags = vec![vec!["e".to_owned(), "foo".to_owned()]];
         event.build_index();
@@ -314,7 +313,6 @@ mod tests {
             ),
             true
         );
-        Ok(())
     }
 
     #[test]

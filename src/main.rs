@@ -1,7 +1,6 @@
 //! Server process
 use log::info;
 use nostr_rs_relay::config;
-use nostr_rs_relay::error::{Error, Result};
 use nostr_rs_relay::server::start_server;
 use std::env;
 use std::sync::mpsc as syncmpsc;
@@ -19,7 +18,7 @@ fn db_from_args(args: Vec<String>) -> Option<String> {
 }
 
 /// Start running a Nostr relay server.
-fn main() -> Result<(), Error> {
+fn main() {
     // setup logger
     let _ = env_logger::try_init();
     info!("Starting up from main");
@@ -49,5 +48,4 @@ fn main() -> Result<(), Error> {
     });
     // block on nostr thread to finish.
     handle.join().unwrap();
-    Ok(())
 }
