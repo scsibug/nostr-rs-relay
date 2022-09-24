@@ -1,6 +1,6 @@
 //! Configuration file and settings management
 use config::{Config, ConfigError, File};
-use log::*;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -97,28 +97,36 @@ impl VerifiedUsers {
         self.verify_update_frequency_duration = self.verify_update_duration();
     }
 
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.mode == VerifiedUsersMode::Enabled
     }
 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.mode == VerifiedUsersMode::Enabled || self.mode == VerifiedUsersMode::Passive
     }
 
+    #[must_use]
     pub fn is_passive(&self) -> bool {
         self.mode == VerifiedUsersMode::Passive
     }
 
+    #[must_use]
     pub fn verify_expiration_duration(&self) -> Option<Duration> {
         self.verify_expiration
             .as_ref()
             .and_then(|x| parse_duration::parse(x).ok())
     }
+
+    #[must_use]
     pub fn verify_update_duration(&self) -> Option<Duration> {
         self.verify_update_frequency
             .as_ref()
             .and_then(|x| parse_duration::parse(x).ok())
     }
+
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.verify_expiration_duration().is_some() && self.verify_update_duration().is_some()
     }
@@ -139,6 +147,7 @@ pub struct Settings {
 }
 
 impl Settings {
+    #[must_use]
     pub fn new() -> Self {
         let default_settings = Self::default();
         // attempt to construct settings with file
@@ -162,16 +171,17 @@ impl Settings {
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
         // ensure connection pool size is logical
-        if settings.database.min_conn > settings.database.max_conn {
-            panic!(
-                "Database min_conn setting ({}) cannot exceed max_conn ({})",
-                settings.database.min_conn, settings.database.max_conn
-            );
-        }
+        assert!(
+            settings.database.min_conn <= settings.database.max_conn,
+            "Database min_conn setting ({}) cannot exceed max_conn ({})",
+            settings.database.min_conn,
+            settings.database.max_conn
+        );
         // ensure durations parse
-        if !settings.verified_users.is_valid() {
-            panic!("VerifiedUsers time settings could not be parsed");
-        }
+        assert!(
+            settings.verified_users.is_valid(),
+            "VerifiedUsers time settings could not be parsed"
+        );
         // initialize durations for verified users
         settings.verified_users.init();
         Ok(settings)

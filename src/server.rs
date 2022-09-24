@@ -484,7 +484,7 @@ async fn nostr_server(
                 make_notice_message("binary messages are not accepted")).await.ok();
                         continue;
                     },
-                    Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
+                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => {
                         // get a ping/pong, ignore.  tungstenite will
                         // send responses automatically.
                         continue;
@@ -496,10 +496,9 @@ async fn nostr_server(
                         continue;
             },
                     None |
-                    Some(Ok(Message::Close(_))) |
-                    Some(Err(WsError::AlreadyClosed)) |
-                    Some(Err(WsError::ConnectionClosed)) |
-                    Some(Err(WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
+            Some(Ok(Message::Close(_)) |
+             Err(WsError::AlreadyClosed | WsError::ConnectionClosed |
+                 WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
                         debug!("websocket close from client: {:?}",cid);
                         break;

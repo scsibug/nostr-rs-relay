@@ -60,11 +60,10 @@ pub fn hex_range(s: &str) -> Option<HexSearch> {
                 upper[byte_len] = b + 16; // bump up the first character in this byte
                                           // increment done, stop iterating through the vec
                 break;
-            } else {
-                // if it is 'f', reset the byte to 0 and do a carry
-                // reset and carry
-                upper[byte_len] = 0;
             }
+            // if it is 'f', reset the byte to 0 and do a carry
+            // reset and carry
+            upper[byte_len] = 0;
             // done with odd logic, so don't repeat this
             odd = false;
         } else {

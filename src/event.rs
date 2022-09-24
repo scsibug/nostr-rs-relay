@@ -130,8 +130,8 @@ impl Event {
             // ensure a vector exists for this tag
             idx.entry(tagnamechar).or_insert_with(HashSet::new);
             // get the tag vec and insert entry
-            let tidx = idx.get_mut(&tagnamechar).expect("could not get tag vector");
-            tidx.insert(tagval.clone());
+            let idx_tag_vec = idx.get_mut(&tagnamechar).expect("could not get tag vector");
+            idx_tag_vec.insert(tagval.clone());
         }
         // save the tag structure
         self.tagidx = Some(idx);

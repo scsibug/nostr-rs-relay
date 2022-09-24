@@ -23,10 +23,10 @@ pub struct Close {
 impl From<CloseCmd> for Result<Close> {
     fn from(cc: CloseCmd) -> Result<Close> {
         // ensure command is correct
-        if cc.cmd != "CLOSE" {
-            Err(Error::CommandUnknownError)
-        } else {
+        if cc.cmd == "CLOSE" {
             Ok(Close { id: cc.id })
+        } else {
+            Err(Error::CommandUnknownError)
         }
     }
 }

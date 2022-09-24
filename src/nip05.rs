@@ -249,9 +249,9 @@ impl Verifier {
         // HTTP request with timeout
         match tokio::time::timeout(Duration::from_secs(5), response_fut).await {
             Ok(response_res) => {
-                let response = response_res?;
                 // limit size of verification document to 1MB.
                 const MAX_ALLOWED_RESPONSE_SIZE: u64 = 1024 * 1024;
+                let response = response_res?;
                 // determine content length from response
                 let response_content_length = match response.body().size_hint().upper() {
                     Some(v) => v,
@@ -267,12 +267,11 @@ impl Verifier {
                         let body_matches = body_contains_user(&nip.local, pubkey, body_bytes)?;
                         if body_matches {
                             return Ok(UserWebVerificationStatus::Verified);
-                        } else {
-                            // successful response, parsed as a nip-05
-                            // document, but this name/pubkey was not
-                            // present.
-                            return Ok(UserWebVerificationStatus::Unverified);
                         }
+                        // successful response, parsed as a nip-05
+                        // document, but this name/pubkey was not
+                        // present.
+                        return Ok(UserWebVerificationStatus::Unverified);
                     }
                 } else {
                     info!(

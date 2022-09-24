@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::event::Event;
 
 use crate::subscription::Subscription;
-use log::*;
+use log::{debug, info};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -30,6 +30,7 @@ impl Default for ClientConn {
 
 impl ClientConn {
     /// Create a new, empty connection state.
+    #[must_use]
     pub fn new() -> Self {
         let client_id = Uuid::new_v4();
         ClientConn {
@@ -41,14 +42,16 @@ impl ClientConn {
 
     /// Get a short prefix of the client's unique identifier, suitable
     /// for logging.
+    #[must_use]
     pub fn get_client_prefix(&self) -> String {
         self.client_id.to_string().chars().take(8).collect()
     }
 
     /// Find all matching subscriptions.
+    #[must_use]
     pub fn get_matching_subscriptions(&self, e: &Event) -> Vec<&str> {
         let mut v: Vec<&str> = vec![];
-        for (id, sub) in self.subscriptions.iter() {
+        for (id, sub) in &self.subscriptions {
             if sub.interested_in_event(e) {
                 v.push(id);
             }
