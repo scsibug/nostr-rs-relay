@@ -62,13 +62,14 @@ pub fn build_pool(
             thread::sleep(Duration::from_millis(500));
         }
     }
-    let manager = match settings.database.in_memory {
-        true => SqliteConnectionManager::memory()
+    let manager = if settings.database.in_memory {
+        SqliteConnectionManager::memory()
             .with_flags(flags)
-            .with_init(|c| c.execute_batch(STARTUP_SQL)),
-        false => SqliteConnectionManager::file(&full_path)
+            .with_init(|c| c.execute_batch(STARTUP_SQL))
+    } else {
+        SqliteConnectionManager::file(&full_path)
             .with_flags(flags)
-            .with_init(|c| c.execute_batch(STARTUP_SQL)),
+            .with_init(|c| c.execute_batch(STARTUP_SQL))
     };
     let pool: SqlitePool = r2d2::Pool::builder()
         .test_on_check_out(true) // no noticeable performance hit

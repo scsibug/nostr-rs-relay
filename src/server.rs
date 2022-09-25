@@ -569,8 +569,7 @@ async fn nostr_server(
                     Ok(NostrMessage::CloseMsg(cc)) => {
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
-                        match parsed {
-                            Ok(c) => {
+            if let Ok(c) = parsed {
                                 // check if a query is currently
                                 // running, and remove it if so.
                                 let stop_tx = running_queries.remove(&c.id);
@@ -580,12 +579,10 @@ async fn nostr_server(
                                 // stop checking new events against
                                 // the subscription
                                 conn.unsubscribe(&c);
-                            },
-                            Err(_) => {
+                            } else {
                                 info!("invalid command ignored");
                                 ws_stream.send(make_notice_message("could not parse command")).await.ok();
                             }
-                        }
                     },
                     Err(Error::ConnError) => {
                         debug!("got connection close/error, disconnecting client: {:?}",cid);
@@ -607,7 +604,7 @@ async fn nostr_server(
         }
     }
     // connection cleanup - ensure any still running queries are terminated.
-    for (_, stop_tx) in running_queries.into_iter() {
+    for (_, stop_tx) in running_queries {
         stop_tx.send(()).ok();
     }
     info!(
