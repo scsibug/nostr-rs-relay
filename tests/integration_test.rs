@@ -12,8 +12,6 @@ async fn start_and_stop() -> Result<()> {
     let relay = common::start_relay()?;
     // wait for the relay's webserver to start up and deliver a page:
     common::wait_for_healthy_relay(&relay).await?;
-
-    let relay = common::start_relay()?;
     let port = relay.port;
     // just make sure we can startup and shut down.
     // if we send a shutdown message before the server is listening,
@@ -43,5 +41,7 @@ async fn relay_home_page() -> Result<()> {
     // get a relay and wait for startup...
     let relay = common::start_relay()?;
     common::wait_for_healthy_relay(&relay).await?;
+    // tell relay to shutdown
+    let _res = relay.shutdown_tx.send(());
     Ok(())
 }

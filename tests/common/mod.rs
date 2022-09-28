@@ -4,6 +4,7 @@ use nostr_rs_relay::server::start_server;
 //use http::{Request, Response};
 use hyper::{Client, StatusCode, Uri};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
@@ -20,7 +21,7 @@ pub struct Relay {
 pub fn start_relay() -> Result<Relay> {
     // setup tracing
     let _trace_sub = tracing_subscriber::fmt::try_init();
-    info!("Starting up from main");
+    info!("Starting a new relay");
     // replace default settings
     let mut settings = config::Settings::default();
     // identify open port
@@ -87,10 +88,21 @@ pub async fn wait_for_healthy_relay(relay: &Relay) -> Result<()> {
 }
 
 // from https://elliotekj.com/posts/2017/07/25/find-available-tcp-port-rust/
+// This needed some modification; if multiple tasks all ask for open ports, they will tend to get the same one.
+// instead we should try to try these incrementally/globally.
+
+static PORT_COUNTER: AtomicU16 = AtomicU16::new(4030);
+
 fn get_available_port() -> Option<u16> {
-    (4030..20000).find(|port| port_is_available(*port))
+    let startsearch = PORT_COUNTER.fetch_add(10, Ordering::SeqCst);
+    if startsearch >= 20000 {
+        // wrap around
+        PORT_COUNTER.store(4030, Ordering::Relaxed);
+    }
+    (startsearch..20000).find(|port| port_is_available(*port))
 }
 pub fn port_is_available(port: u16) -> bool {
+    info!("checking on port {}", port);
     match TcpListener::bind(("127.0.0.1", port)) {
         Ok(_) => true,
         Err(_) => false,
