@@ -13,7 +13,6 @@ use crate::utils::{is_hex, is_lower_hex};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use hex;
-use log::{debug, info, trace, warn};
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
@@ -25,6 +24,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::task;
+use tracing::{debug, info, trace, warn};
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;

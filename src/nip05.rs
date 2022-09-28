@@ -13,13 +13,13 @@ use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
-use log::*;
 use rand::Rng;
 use rusqlite::params;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 use tokio::time::Interval;
+use tracing::{debug, info, warn};
 
 /// NIP-05 verifier state
 pub struct Verifier {

@@ -5,8 +5,8 @@ use crate::error::Result;
 use crate::event::Event;
 
 use crate::subscription::Subscription;
-use log::{debug, info};
 use std::collections::HashMap;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 /// A subscription identifier has a maximum length

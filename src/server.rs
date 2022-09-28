@@ -19,7 +19,6 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
-use log::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -34,6 +33,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::WebSocketStream;
+use tracing::*;
 use tungstenite::error::CapacityError::MessageTooLong;
 use tungstenite::error::Error as WsError;
 use tungstenite::handshake;

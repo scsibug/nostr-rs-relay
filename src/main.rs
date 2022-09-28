@@ -1,11 +1,12 @@
 //! Server process
-use log::info;
+
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
 use std::env;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
+use tracing::info;
 
 use console_subscriber::ConsoleLayer;
 
@@ -19,10 +20,9 @@ fn db_from_args(args: &[String]) -> Option<String> {
 
 /// Start running a Nostr relay server.
 fn main() {
-    // setup logger
-    let _ = env_logger::try_init();
+    // setup tracing
+    let _trace_sub = tracing_subscriber::fmt::try_init();
     info!("Starting up from main");
-
     // get database directory from args
     let args: Vec<String> = env::args().collect();
     let db_dir: Option<String> = db_from_args(&args);

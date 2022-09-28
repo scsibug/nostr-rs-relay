@@ -3,11 +3,11 @@ use crate::db::PooledConnection;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::utils::is_lower_hex;
-use log::*;
 use rusqlite::limits::Limit;
 use rusqlite::params;
 use rusqlite::Connection;
 use std::time::Instant;
+use tracing::{debug, error, info};
 
 /// Startup DB Pragmas
 pub const STARTUP_SQL: &str = r##"

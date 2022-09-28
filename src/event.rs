@@ -5,7 +5,6 @@ use crate::nip05;
 use crate::utils::unix_time;
 use bitcoin_hashes::{sha256, Hash};
 use lazy_static::lazy_static;
-use log::*;
 use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
@@ -13,6 +12,7 @@ use serde_json::Number;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
+use tracing::{debug, info};
 
 lazy_static! {
     /// Secp256k1 verification instance.

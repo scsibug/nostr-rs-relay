@@ -1,8 +1,8 @@
 //! Configuration file and settings management
 use config::{Config, ConfigError, File};
-use log::warn;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tracing::warn;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use log::{debug, info};
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
 //use http::{Request, Response};
@@ -10,6 +9,7 @@ use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tracing::{debug, info};
 
 pub struct Relay {
     pub port: u16,
@@ -18,7 +18,8 @@ pub struct Relay {
 }
 
 pub fn start_relay() -> Result<Relay> {
-    let _ = env_logger::try_init();
+    // setup tracing
+    let _trace_sub = tracing_subscriber::fmt::try_init();
     info!("Starting up from main");
     // replace default settings
     let mut settings = config::Settings::default();
@@ -72,7 +73,7 @@ pub async fn wait_for_healthy_relay(relay: &Relay) -> Result<()> {
             }
             Err(_) => {
                 // server is not yet ready, probably connection refused...
-                debug!("Got ERR from Relay!");
+                debug!("Relay not ready, will try again...");
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
