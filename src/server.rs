@@ -150,9 +150,11 @@ async fn handle_web_request(
 
 // return on a control-c or internally requested shutdown signal
 async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
+    let mut term_signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("could not define signal");
     loop {
         tokio::select! {
-                _ = shutdown_signal.recv() => {
+            _ = shutdown_signal.recv() => {
             info!("Shutting down webserver as requested");
                     // server shutting down, exit loop
                     break;
@@ -160,7 +162,12 @@ async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
             _ = tokio::signal::ctrl_c() => {
             info!("Shutting down webserver due to SIGINT");
                     break;
-                }
+            },
+        _ = term_signal.recv() => {
+        info!("Shutting down webserver due to SIGTERM");
+        break;
+        },
+
         }
     }
 }
