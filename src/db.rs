@@ -353,7 +353,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             .filter_map(|x| hex::decode(x).ok())
             .for_each(|x| params.push(Box::new(x)));
         let query = format!(
-            "UPDATE event SET hidden=TRUE WHERE author=? AND event_hash IN ({})",
+            "UPDATE event SET hidden=TRUE WHERE kind!=5 AND author=? AND event_hash IN ({})",
             repeat_vars(params.len() - 1)
         );
         let mut stmt = tx.prepare(&query)?;
