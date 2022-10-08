@@ -225,7 +225,7 @@ pub async fn db_writer(
                 match write_event(&mut pool.get()?, &event) {
                     Ok(updated) => {
                         if updated == 0 {
-                            trace!("ignoring duplicate event");
+                            trace!("ignoring duplicate or deleted event");
                         } else {
                             info!(
                                 "persisted event {:?} from {:?} in {:?}",
@@ -287,13 +287,13 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     let pubkey_blob = hex::decode(&e.pubkey).ok();
     let event_str = serde_json::to_string(&e).ok();
     // ignore if the event hash is a duplicate.
-    let ins_count = tx.execute(
+    let mut ins_count = tx.execute(
         "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), FALSE);",
         params![id_blob, e.created_at, e.kind, pubkey_blob, event_str]
     )?;
     if ins_count == 0 {
         // if the event was a duplicate, no need to insert event or
-        // pubkey references.
+        // pubkey references.  This will abort the txn.
         return Ok(ins_count);
     }
     // remember primary key of the event most recently inserted.
@@ -335,7 +335,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
         )?;
         if update_count > 0 {
             info!(
-                "hid {} older replaceable kind {} events for author {:?}",
+                "hid {} older replaceable kind {} events for author: {:?}",
                 update_count,
                 e.kind,
                 e.get_author_prefix()
@@ -363,6 +363,28 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             update_count,
             e.get_author_prefix()
         );
+    } else {
+        // check if a deletion has already been recorded for this event.
+        // Only relevant for non-deletion events
+        let del_count = tx.query_row(
+	    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value_hex=? LIMIT 1;",
+	    params![pubkey_blob, id_blob], |row| row.get::<usize, usize>(0));
+        // check if a the query returned a result, meaning we should
+        // hid the current event
+        if del_count.ok().is_some() {
+            // a deletion already existed, mark original event as hidden.
+            info!(
+                "hid event: {:?} due to existing deletion by author: {:?}",
+                e.get_event_id_prefix(),
+                e.get_author_prefix()
+            );
+            let _update_count =
+                tx.execute("UPDATE event SET hidden=TRUE WHERE id=?", params![ev_id])?;
+            // event was deleted, so let caller know nothing new
+            // arrived, preventing this from being sent to active
+            // subscriptions
+            ins_count = 0;
+        }
     }
     tx.commit()?;
     Ok(ins_count)
