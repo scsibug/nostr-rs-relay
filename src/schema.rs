@@ -277,7 +277,7 @@ PRAGMA user_version=5;
         info!("vacuumed DB after tags rebuild in {:?}", start.elapsed());
     } else if curr_version == 6 {
         debug!("Database version was already current (v6)");
-    } else if curr_version > 7 {
+    } else if curr_version > 6 {
         panic!(
             "Database version is newer than supported by this executable (v{})",
             curr_version
