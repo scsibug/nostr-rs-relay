@@ -20,7 +20,7 @@ pragma mmap_size = 536870912; -- 512MB of mmap
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 6;
+pub const DB_VERSION: usize = 7;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -40,6 +40,7 @@ event_hash BLOB NOT NULL, -- 4-byte hash
 first_seen INTEGER NOT NULL, -- when the event was first seen (not authored!) (seconds since 1970)
 created_at INTEGER NOT NULL, -- when the event was authored
 author BLOB NOT NULL, -- author pubkey
+delegator BLOB, -- delegator pubkey (NIP-26)
 kind INTEGER NOT NULL, -- event kind
 hidden INTEGER, -- relevant for queries
 content TEXT NOT NULL -- serialized json of event object
@@ -151,6 +152,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
 
             if curr_version == 5 {
                 curr_version = mig_5_to_6(conn)?;
+            }
+            if curr_version == 6 {
+                curr_version = mig_6_to_7(conn)?;
             }
             if curr_version == DB_VERSION {
                 info!(
@@ -347,4 +351,23 @@ fn mig_5_to_6(conn: &mut PooledConnection) -> Result<usize> {
     conn.execute("VACUUM;", [])?;
     info!("vacuumed DB after tags rebuild in {:?}", start.elapsed());
     Ok(6)
+}
+
+fn mig_6_to_7(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 6->7");
+    // only change is adding a hidden column to events.
+    let upgrade_sql = r##"
+ALTER TABLE event ADD delegator BLOB;
+PRAGMA user_version = 7;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v6 -> v7");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(7)
 }

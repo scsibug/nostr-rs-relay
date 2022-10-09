@@ -110,6 +110,16 @@ impl Event {
         None
     }
 
+    // is this event delegated (properly)?
+    // does the signature match, and are conditions valid?
+    pub fn is_delegated(&self) -> bool {
+        // is there a delegation tag?
+        let _delegation_tag = self.tag_values_by_name("delegation");
+        // delegation tags should have exactly 3 elements after the name (pubkey, condition, sig)
+        // try to construct a delegation object (
+        todo!();
+    }
+
     /// Build an event tag index
     fn build_index(&mut self) {
         // if there are no tags; just leave the index as None
@@ -386,6 +396,32 @@ mod tests {
         };
         let v = e.tag_values_by_name("e");
         assert_eq!(v, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn event_no_tag_select() {
+        let e = Event {
+            id: "999".to_owned(),
+            pubkey: "012345".to_owned(),
+            created_at: 501234,
+            kind: 1,
+            tags: vec![
+                vec!["j".to_owned(), "abc".to_owned()],
+                vec!["e".to_owned(), "foo".to_owned()],
+                vec!["e".to_owned(), "baz".to_owned()],
+                vec![
+                    "p".to_owned(),
+                    "aaaa".to_owned(),
+                    "ws://example.com".to_owned(),
+                ],
+            ],
+            content: "this is a test".to_owned(),
+            sig: "abcde".to_owned(),
+            tagidx: None,
+        };
+        let v = e.tag_values_by_name("x");
+        // asking for tags that don't exist just returns zero-length vector
+        assert_eq!(v.len(), 0);
     }
 
     #[test]
