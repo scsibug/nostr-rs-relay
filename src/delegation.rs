@@ -5,7 +5,7 @@
 //use bitcoin_hashes::{sha256, Hash};
 //use lazy_static::lazy_static;
 //use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
-use serde::{Deserialize, Serialize};
+use serde::{Deserializer, Deserialize, Serialize};
 //use serde_json::value::Value;
 //use serde_json::Number;
 //use std::collections::HashMap;
@@ -33,6 +33,11 @@ use serde::{Deserialize, Serialize};
 // different condition strings, since we do not support grouping or
 // "OR" logic.
 
+// using serde_urldecode, we can get a serde data format from the
+// condition string.  We will then map that with a deserializer that
+// maps to a ConditionQuery.
+
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Field {
     Kind,
@@ -48,16 +53,45 @@ pub enum Operator {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+/// Values are the data associated with a restriction.  For now, these can only be a single numbers.
 pub enum Value {
     Number(u64),
-    List(Vec<Value>),
+}
+
+#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
+pub struct ConditionQuery {
+    pub(crate) conditions: Vec<Condition>,
+}
+
+impl <'de> Deserialize<'de> for ConditionQuery {
+    fn deserialize<D>(d: D) -> Result<ConditionQuery, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+	// recv'd is an array of pairs.
+	let _recvd: Value = d.deserialize_seq
+	let cond_list = recvd.as_object().ok_or_else(|| {
+            serde::de::Error::invalid_type(
+                Unexpected::Other("reqfilter is not an object"),
+                &"a json object",
+            )
+        })?;
+
+	// all valid conditions will be put into this vec
+	let conditions : Vec<Condition> = vec![];
+	// loop through the parsed value, and identify if they are
+	// known attributes.  unknown attributes will trigger failure,
+	// since we can't respect those restrictions.
+	Ok(ConditionQuery{conditions})
+    }
+
 }
 
 /// Parsed delegation statement
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Delegation {
     pub(crate) pubkey: String,
-    pub(crate) conditions: Vec<Condition>,
+    pub(crate) condition_query: ConditionQuery,
     pub(crate) signature: String,
 }
 
@@ -68,5 +102,18 @@ pub struct Delegation {
 pub struct Condition {
     pub(crate) field: Field,
     pub(crate) operator: Operator,
-    pub(crate) value: Value,
+    pub(crate) values: Vec<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // parse condition strings
+    #[test]
+    fn parse_empty() {
+	// given an empty condition query, produce an empty vector
+        assert_eq!(Delegation::from(""), vec![]);
+	assert_eq!(serde_urlencoded::from_str::<Vec<(String, String)>>(""), vec![]);
+    }
 }
