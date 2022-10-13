@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.63.0@sha256:d7e3f69edcdcd03b145d8d9361765b816656755e49c1c1fe28224a4505f91b0a as builder
+FROM docker.io/library/rust:1.64.0@sha256:5cf09a76cb9baf4990d121221bbad64927cc5690ee54f246487e302ddc2ba300 as builder
 
 RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay
@@ -12,7 +12,7 @@ COPY ./src ./src
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo build --release
 
-FROM docker.io/library/debian:bullseye-20220801-slim@sha256:139a42fa3bde3e5bad6ae912aaaf2103565558a7a73afe6ce6ceed6e46a6e519
+FROM docker.io/library/debian:bullseye-20221004-slim@sha256:8b702518a671c926b5ece4efe386a476eb4777646a36d996d4bd50944f2f11a2
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
 RUN apt-get update \
