@@ -1,11 +1,12 @@
 //! Event parsing and validation
-//use crate::error::Error::*;
-//use crate::error::Result;
+use crate::error::Error;
+use crate::error::Result;
 //use crate::utils::unix_time;
 //use bitcoin_hashes::{sha256, Hash};
-//use lazy_static::lazy_static;
+use lazy_static::lazy_static;
+use regex::Regex;
 //use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
-use serde::{Deserializer, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 //use serde_json::value::Value;
 //use serde_json::Number;
 //use std::collections::HashMap;
@@ -58,33 +59,9 @@ pub enum Value {
     Number(u64),
 }
 
-#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ConditionQuery {
     pub(crate) conditions: Vec<Condition>,
-}
-
-impl <'de> Deserialize<'de> for ConditionQuery {
-    fn deserialize<D>(d: D) -> Result<ConditionQuery, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-	// recv'd is an array of pairs.
-	let _recvd: Value = d.deserialize_seq
-	let cond_list = recvd.as_object().ok_or_else(|| {
-            serde::de::Error::invalid_type(
-                Unexpected::Other("reqfilter is not an object"),
-                &"a json object",
-            )
-        })?;
-
-	// all valid conditions will be put into this vec
-	let conditions : Vec<Condition> = vec![];
-	// loop through the parsed value, and identify if they are
-	// known attributes.  unknown attributes will trigger failure,
-	// since we can't respect those restrictions.
-	Ok(ConditionQuery{conditions})
-    }
-
 }
 
 /// Parsed delegation statement
@@ -94,6 +71,7 @@ pub struct Delegation {
     pub(crate) condition_query: ConditionQuery,
     pub(crate) signature: String,
 }
+
 
 /// Parsed delegation condition
 /// see https://github.com/nostr-protocol/nips/pull/28#pullrequestreview-1084903800
@@ -105,6 +83,36 @@ pub struct Condition {
     pub(crate) values: Vec<Value>,
 }
 
+fn str_to_condition(cs: &str) -> Option<Condition> {
+    // a condition is a string (alphanum+underscore), an operator (<>=!), and values (num+comma)
+    lazy_static! {
+        static ref RE: Regex = Regex::new("([[:word:]])([<>=!]+)([,[[:digit:]]]+))").unwrap();
+    }
+    // match against the regex
+    let caps = RE.captures(cs)?;
+    let _field =caps.get(0)?;
+    Some(Condition {field: Field::Kind, operator: Operator::LessThan, values: vec![]})
+}
+
+
+
+/// Parse a condition query from a string slice
+impl TryFrom<&str> for ConditionQuery {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+	// split the string with '&'
+	let conds = value.split('&');
+	// parse each individual condition
+	for c in conds.into_iter() {
+	    str_to_condition(c).ok_or(Error::DelegationParseError)?;
+	}
+	Ok(ConditionQuery{conditions: vec![]})
+
+    }
+
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +122,5 @@ mod tests {
     fn parse_empty() {
 	// given an empty condition query, produce an empty vector
         assert_eq!(Delegation::from(""), vec![]);
-	assert_eq!(serde_urlencoded::from_str::<Vec<(String, String)>>(""), vec![]);
     }
 }
