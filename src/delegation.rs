@@ -227,4 +227,37 @@ mod tests {
         assert_eq!(parsed, kind_cq);
         Ok(())
     }
+    // parse multiple conditions
+    #[test]
+    fn parse_multi_conditions() -> Result<()> {
+        // given an empty condition query, produce an empty vector
+        let kind_cq = ConditionQuery {
+            conditions: vec![
+                Condition {
+                    field: Field::Kind,
+                    operator: Operator::GreaterThan,
+                    values: vec![10000],
+                },
+                Condition {
+                    field: Field::Kind,
+                    operator: Operator::LessThan,
+                    values: vec![20000],
+                },
+                Condition {
+                    field: Field::Kind,
+                    operator: Operator::NotEquals,
+                    values: vec![10001],
+                },
+                Condition {
+                    field: Field::CreatedAt,
+                    operator: Operator::LessThan,
+                    values: vec![1665867123],
+                },
+            ],
+        };
+        let parsed =
+            "kind>10000&kind<20000&kind!10001&created_at<1665867123".parse::<ConditionQuery>()?;
+        assert_eq!(parsed, kind_cq);
+        Ok(())
+    }
 }
