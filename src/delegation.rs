@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 //use serde_json::Number;
 //use std::collections::HashMap;
 //use std::collections::HashSet;
-//use std::str::FromStr;
+use std::str::FromStr;
 //use tracing::{debug, info};
 
 // This handles everything related to delegation, in particular the
@@ -38,25 +38,23 @@ use serde::{Deserialize, Serialize};
 // condition string.  We will then map that with a deserializer that
 // maps to a ConditionQuery.
 
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Field {
     Kind,
     CreatedAt,
 }
-impl TryFrom<&str> for Field {
-    type Error = Error;
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-	if value=="kind" {
-	    Ok(Field::Kind)
-	} else if value=="created_at" {
-	    Ok(Field::CreatedAt)
-	} else {
-	    Err(Error::DelegationParseError)
-	}
+impl FromStr for Field {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value == "kind" {
+            Ok(Field::Kind)
+        } else if value == "created_at" {
+            Ok(Field::CreatedAt)
+        } else {
+            Err(Error::DelegationParseError)
+        }
     }
 }
-
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Operator {
@@ -85,7 +83,6 @@ pub struct Delegation {
     pub(crate) signature: String,
 }
 
-
 /// Parsed delegation condition
 /// see https://github.com/nostr-protocol/nips/pull/28#pullrequestreview-1084903800
 /// An example complex condition would be:  kind=1,2,3&created_at<1665265999
@@ -99,35 +96,34 @@ pub struct Condition {
 fn str_to_condition(cs: &str) -> Option<Condition> {
     // a condition is a string (alphanum+underscore), an operator (<>=!), and values (num+comma)
     lazy_static! {
-        static ref RE: Regex = Regex::new("([[:word:]])([<>=!]+)([,[[:digit:]]]+))").unwrap();
+        static ref RE: Regex = Regex::new("([[:word:]])([<>=!]+)([,[[:digit:]]]+)").unwrap();
     }
     // match against the regex
     let caps = RE.captures(cs)?;
-    let field = caps.get(1)?.as_str().try_into().ok()?;
+    let field = caps.get(1)?.as_str().parse::<Field>().ok()?;
     let _op = caps.get(2)?.as_str();
     let _vals = caps.get(3)?.as_str();
     // convert field string into Field
 
-    Some(Condition {field: field, operator: Operator::GreaterThan, values: vec![]})
+    Some(Condition {
+        field,
+        operator: Operator::GreaterThan,
+        values: vec![],
+    })
 }
 
-
-
 /// Parse a condition query from a string slice
-impl TryFrom<&str> for ConditionQuery {
-    type Error = Error;
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-	// split the string with '&'
-	let conds = value.split('&');
-	// parse each individual condition
-	for c in conds.into_iter() {
-	    str_to_condition(c).ok_or(Error::DelegationParseError)?;
-	}
-	Ok(ConditionQuery{conditions: vec![]})
-
+impl FromStr for ConditionQuery {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        // split the string with '&'
+        let conds = value.split_terminator('&');
+        // parse each individual condition
+        for c in conds {
+            str_to_condition(c).ok_or(Error::DelegationParseError)?;
+        }
+        Ok(ConditionQuery { conditions: vec![] })
     }
-
-
 }
 
 #[cfg(test)]
@@ -136,8 +132,11 @@ mod tests {
 
     // parse condition strings
     #[test]
-    fn parse_empty() {
-	// given an empty condition query, produce an empty vector
-        assert_eq!(Delegation::from(""), vec![]);
+    fn parse_empty() -> Result<()> {
+        // given an empty condition query, produce an empty vector
+        let empty_cq = ConditionQuery { conditions: vec![] };
+        let parsed = "".parse::<ConditionQuery>()?;
+        assert_eq!(parsed, empty_cq);
+        Ok(())
     }
 }
