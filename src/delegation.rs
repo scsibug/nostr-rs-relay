@@ -44,6 +44,19 @@ pub enum Field {
     Kind,
     CreatedAt,
 }
+impl TryFrom<&str> for Field {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+	if value=="kind" {
+	    Ok(Field::Kind)
+	} else if value=="created_at" {
+	    Ok(Field::CreatedAt)
+	} else {
+	    Err(Error::DelegationParseError)
+	}
+    }
+}
+
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Operator {
@@ -90,8 +103,12 @@ fn str_to_condition(cs: &str) -> Option<Condition> {
     }
     // match against the regex
     let caps = RE.captures(cs)?;
-    let _field =caps.get(0)?;
-    Some(Condition {field: Field::Kind, operator: Operator::LessThan, values: vec![]})
+    let field = caps.get(1)?.as_str().try_into().ok()?;
+    let _op = caps.get(2)?.as_str();
+    let _vals = caps.get(3)?.as_str();
+    // convert field string into Field
+
+    Some(Condition {field: field, operator: Operator::GreaterThan, values: vec![]})
 }
 
 
