@@ -117,12 +117,13 @@ impl FromStr for ConditionQuery {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         // split the string with '&'
-        let conds = value.split_terminator('&');
+        let mut conditions = vec![];
+        let condstrs = value.split_terminator('&');
         // parse each individual condition
-        for c in conds {
-            str_to_condition(c).ok_or(Error::DelegationParseError)?;
+        for c in condstrs {
+            conditions.push(str_to_condition(c).ok_or(Error::DelegationParseError)?);
         }
-        Ok(ConditionQuery { conditions: vec![] })
+        Ok(ConditionQuery { conditions })
     }
 }
 
@@ -137,6 +138,43 @@ mod tests {
         let empty_cq = ConditionQuery { conditions: vec![] };
         let parsed = "".parse::<ConditionQuery>()?;
         assert_eq!(parsed, empty_cq);
+        Ok(())
+    }
+
+    // parse field 'kind'
+    #[test]
+    fn test_kind_field_parse() -> Result<()> {
+        let field = "kind".parse::<Field>()?;
+        assert_eq!(field, Field::Kind);
+        Ok(())
+    }
+    // parse field 'created_at'
+    #[test]
+    fn test_created_at_field_parse() -> Result<()> {
+        let field = "created_at".parse::<Field>()?;
+        assert_eq!(field, Field::CreatedAt);
+        Ok(())
+    }
+    // parse unknown field
+    #[test]
+    fn unknown_field_parse() {
+        let field = "unk".parse::<Field>();
+        assert!(field.is_err());
+    }
+
+    // parse fields
+    #[test]
+    fn parse_kind_field() -> Result<()> {
+        // given an empty condition query, produce an empty vector
+        let _kind_cq = ConditionQuery {
+            conditions: vec![Condition {
+                field: Field::Kind,
+                operator: Operator::GreaterThan,
+                values: vec![],
+            }],
+        };
+        //let parsed = "kind=1".parse::<ConditionQuery>()?;
+        //assert_eq!(parsed, kind_cq);
         Ok(())
     }
 }
