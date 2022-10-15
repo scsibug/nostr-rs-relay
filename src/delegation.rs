@@ -102,7 +102,8 @@ pub fn validate_delegation(
         if let Ok(pubkey) = XOnlyPublicKey::from_str(delegator) {
             let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
             if verify.is_ok() {
-                Some(ConditionQuery { conditions: vec![] })
+                // return the parsed condition query
+                cond_query.parse::<ConditionQuery>().ok()
             } else {
                 None
             }
