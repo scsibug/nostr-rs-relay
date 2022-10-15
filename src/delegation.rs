@@ -43,6 +43,7 @@ pub enum Field {
     Kind,
     CreatedAt,
 }
+
 impl FromStr for Field {
     type Err = Error;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -79,12 +80,6 @@ impl FromStr for Operator {
         }
     }
 }
-
-//#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-/// Values are the data associated with a restriction.  For now, these can only be a single numbers.
-//pub enum Value {
-//    Number(u64),
-//}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ConditionQuery {
@@ -231,7 +226,7 @@ mod tests {
     #[test]
     fn parse_multi_conditions() -> Result<()> {
         // given an empty condition query, produce an empty vector
-        let kind_cq = ConditionQuery {
+        let cq = ConditionQuery {
             conditions: vec![
                 Condition {
                     field: Field::Kind,
@@ -257,7 +252,7 @@ mod tests {
         };
         let parsed =
             "kind>10000&kind<20000&kind!10001&created_at<1665867123".parse::<ConditionQuery>()?;
-        assert_eq!(parsed, kind_cq);
+        assert_eq!(parsed, cq);
         Ok(())
     }
 }
