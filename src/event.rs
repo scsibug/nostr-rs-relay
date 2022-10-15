@@ -1,4 +1,5 @@
 //! Event parsing and validation
+use crate::delegation::validate_delegation;
 use crate::error::Error::*;
 use crate::error::Result;
 use crate::nip05;
@@ -112,10 +113,19 @@ impl Event {
 
     // is this event delegated (properly)?
     // does the signature match, and are conditions valid?
-    pub fn is_delegated(&self) -> bool {
+    // if so, return an alternate author for the event
+    pub fn delegated_author(&self) -> Option<String> {
         // is there a delegation tag?
-        let _delegation_tag = self.tag_values_by_name("delegation");
+        let delegation_tag = self.tag_values_by_name("delegation");
         // delegation tags should have exactly 3 elements after the name (pubkey, condition, sig)
+        // the event is signed by the delagatee
+        let delegatee = &self.pubkey;
+        // the delegation tag references the claimed delagator
+        let delegator = delegation_tag.get(0)?;
+        let querystr = delegation_tag.get(1)?;
+        let sig = delegation_tag.get(2)?;
+        // pass into the validate_delegation
+        validate_delegation(delegator, delegatee, querystr, sig);
         // try to construct a delegation object (
         todo!();
     }

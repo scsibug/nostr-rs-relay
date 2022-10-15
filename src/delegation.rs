@@ -1,18 +1,13 @@
 //! Event parsing and validation
 use crate::error::Error;
 use crate::error::Result;
-//use crate::utils::unix_time;
-//use bitcoin_hashes::{sha256, Hash};
+use bitcoin_hashes::{sha256, Hash};
 use lazy_static::lazy_static;
 use regex::Regex;
-//use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
+use secp256k1::{schnorr, Secp256k1, VerifyOnly, XOnlyPublicKey};
 use serde::{Deserialize, Serialize};
-//use serde_json::value::Value;
-//use serde_json::Number;
-//use std::collections::HashMap;
-//use std::collections::HashSet;
 use std::str::FromStr;
-//use tracing::{debug, info};
+use tracing::{debug, info};
 
 // This handles everything related to delegation, in particular the
 // condition/rune parsing and logic.
@@ -37,6 +32,11 @@ use std::str::FromStr;
 // using serde_urldecode, we can get a serde data format from the
 // condition string.  We will then map that with a deserializer that
 // maps to a ConditionQuery.
+
+lazy_static! {
+    /// Secp256k1 verification instance.
+    pub static ref SECP: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Field {
@@ -86,12 +86,34 @@ pub struct ConditionQuery {
     pub(crate) conditions: Vec<Condition>,
 }
 
-/// Parsed delegation statement
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Delegation {
-    pub(crate) pubkey: String,
-    pub(crate) condition_query: ConditionQuery,
-    pub(crate) signature: String,
+// Verify that the delegator approved the delegation; return a ConditionQuery if so.
+pub fn validate_delegation(
+    delegator: &str,
+    delegatee: &str,
+    cond_query: &str,
+    sigstr: &str,
+) -> Option<ConditionQuery> {
+    // form the token
+    let tok = format!("nostr:delegation:{}:{}", delegatee, cond_query);
+    // form SHA256 hash
+    let digest: sha256::Hash = sha256::Hash::hash(tok.as_bytes());
+    let sig = schnorr::Signature::from_str(sigstr).unwrap();
+    if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
+        if let Ok(pubkey) = XOnlyPublicKey::from_str(delegator) {
+            let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
+            if verify.is_ok() {
+                Some(ConditionQuery { conditions: vec![] })
+            } else {
+                None
+            }
+        } else {
+            debug!("client sent malformed pubkey");
+            None
+        }
+    } else {
+        info!("error converting digest to secp256k1 message");
+        None
+    }
 }
 
 /// Parsed delegation condition
