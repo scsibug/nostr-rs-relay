@@ -80,11 +80,11 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+//#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 /// Values are the data associated with a restriction.  For now, these can only be a single numbers.
-pub enum Value {
-    Number(u64),
-}
+//pub enum Value {
+//    Number(u64),
+//}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ConditionQuery {
@@ -106,7 +106,7 @@ pub struct Delegation {
 pub struct Condition {
     pub(crate) field: Field,
     pub(crate) operator: Operator,
-    pub(crate) values: Vec<Value>,
+    pub(crate) values: Vec<usize>,
 }
 
 fn str_to_condition(cs: &str) -> Option<Condition> {
@@ -118,12 +118,17 @@ fn str_to_condition(cs: &str) -> Option<Condition> {
     let caps = RE.captures(cs)?;
     let field = caps.get(1)?.as_str().parse::<Field>().ok()?;
     let operator = caps.get(2)?.as_str().parse::<Operator>().ok()?;
-    let _vals = caps.get(3)?.as_str();
+    // values are just comma separated numbers, but all must be parsed
+    let rawvals = caps.get(3)?.as_str();
+    let values = rawvals
+        .split_terminator(',')
+        .map(|n| n.parse::<usize>().ok())
+        .collect::<Option<Vec<_>>>()?;
     // convert field string into Field
     Some(Condition {
         field,
         operator,
-        values: vec![],
+        values,
     })
 }
 
@@ -189,6 +194,36 @@ mod tests {
             }],
         };
         let parsed = "kind=".parse::<ConditionQuery>()?;
+        assert_eq!(parsed, kind_cq);
+        Ok(())
+    }
+    // parse a full conditional query with a single value
+    #[test]
+    fn parse_kind_equals_singleval() -> Result<()> {
+        // given an empty condition query, produce an empty vector
+        let kind_cq = ConditionQuery {
+            conditions: vec![Condition {
+                field: Field::Kind,
+                operator: Operator::Equals,
+                values: vec![1],
+            }],
+        };
+        let parsed = "kind=1".parse::<ConditionQuery>()?;
+        assert_eq!(parsed, kind_cq);
+        Ok(())
+    }
+    // parse a full conditional query with multiple values
+    #[test]
+    fn parse_kind_equals_multival() -> Result<()> {
+        // given an empty condition query, produce an empty vector
+        let kind_cq = ConditionQuery {
+            conditions: vec![Condition {
+                field: Field::Kind,
+                operator: Operator::Equals,
+                values: vec![1, 2, 4],
+            }],
+        };
+        let parsed = "kind=1,2,4".parse::<ConditionQuery>()?;
         assert_eq!(parsed, kind_cq);
         Ok(())
     }
