@@ -63,6 +63,22 @@ pub enum Operator {
     Equals,
     NotEquals,
 }
+impl FromStr for Operator {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value == "<" {
+            Ok(Operator::LessThan)
+        } else if value == ">" {
+            Ok(Operator::GreaterThan)
+        } else if value == "=" {
+            Ok(Operator::Equals)
+        } else if value == "!" {
+            Ok(Operator::NotEquals)
+        } else {
+            Err(Error::DelegationParseError)
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 /// Values are the data associated with a restriction.  For now, these can only be a single numbers.
@@ -96,18 +112,17 @@ pub struct Condition {
 fn str_to_condition(cs: &str) -> Option<Condition> {
     // a condition is a string (alphanum+underscore), an operator (<>=!), and values (num+comma)
     lazy_static! {
-        static ref RE: Regex = Regex::new("([[:word:]])([<>=!]+)([,[[:digit:]]]+)").unwrap();
+        static ref RE: Regex = Regex::new("([[:word:]]+)([<>=!]+)([,[[:digit:]]]*)").unwrap();
     }
     // match against the regex
     let caps = RE.captures(cs)?;
     let field = caps.get(1)?.as_str().parse::<Field>().ok()?;
-    let _op = caps.get(2)?.as_str();
+    let operator = caps.get(2)?.as_str().parse::<Operator>().ok()?;
     let _vals = caps.get(3)?.as_str();
     // convert field string into Field
-
     Some(Condition {
         field,
-        operator: Operator::GreaterThan,
+        operator,
         values: vec![],
     })
 }
@@ -162,19 +177,19 @@ mod tests {
         assert!(field.is_err());
     }
 
-    // parse fields
+    // parse a full conditional query with an empty array
     #[test]
-    fn parse_kind_field() -> Result<()> {
+    fn parse_kind_equals_empty() -> Result<()> {
         // given an empty condition query, produce an empty vector
-        let _kind_cq = ConditionQuery {
+        let kind_cq = ConditionQuery {
             conditions: vec![Condition {
                 field: Field::Kind,
-                operator: Operator::GreaterThan,
+                operator: Operator::Equals,
                 values: vec![],
             }],
         };
-        //let parsed = "kind=1".parse::<ConditionQuery>()?;
-        //assert_eq!(parsed, kind_cq);
+        let parsed = "kind=".parse::<ConditionQuery>()?;
+        assert_eq!(parsed, kind_cq);
         Ok(())
     }
 }
