@@ -1,6 +1,7 @@
 //! Event parsing and validation
 use crate::error::Error;
 use crate::error::Result;
+use crate::event::Event;
 use bitcoin_hashes::{sha256, Hash};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -86,6 +87,14 @@ pub struct ConditionQuery {
     pub(crate) conditions: Vec<Condition>,
 }
 
+impl ConditionQuery {
+    pub fn allows_event(&self, _event: &Event) -> bool {
+        // check each condition, to ensure that the event complies with the restriction.
+
+        false
+    }
+}
+
 // Verify that the delegator approved the delegation; return a ConditionQuery if so.
 pub fn validate_delegation(
     delegator: &str,
@@ -125,7 +134,46 @@ pub fn validate_delegation(
 pub struct Condition {
     pub(crate) field: Field,
     pub(crate) operator: Operator,
-    pub(crate) values: Vec<usize>,
+    pub(crate) values: Vec<u64>,
+}
+
+impl Condition {
+    /// Check if this condition allows the given event to be delegated
+    pub fn allows_event(&self, event: &Event) -> bool {
+        // determine what the right-hand side of the operator is
+        let resolved_field = match &self.field {
+            Field::Kind => event.kind,
+            Field::CreatedAt => event.created_at,
+        };
+        match &self.operator {
+            Operator::LessThan => {
+                // the less-than operator is only valid for single values.
+                if self.values.len() == 1 {
+                    if let Some(v) = self.values.first() {
+                        return resolved_field < *v;
+                    }
+                }
+            }
+            Operator::GreaterThan => {
+                // the greater-than operator is only valid for single values.
+                if self.values.len() == 1 {
+                    if let Some(v) = self.values.first() {
+                        return resolved_field > *v;
+                    }
+                }
+            }
+            Operator::Equals => {
+                // equals is interpreted as "must be equal to at least one provided value"
+                return self.values.iter().any(|&x| resolved_field == x);
+            }
+            Operator::NotEquals => {
+                // not-equals is interpreted as "must not be equal to any provided value"
+                // this is the one case where an empty list of values could be allowed; even though it is a pointless restriction.
+                return self.values.iter().all(|&x| resolved_field != x);
+            }
+        }
+        false
+    }
 }
 
 fn str_to_condition(cs: &str) -> Option<Condition> {
@@ -141,7 +189,7 @@ fn str_to_condition(cs: &str) -> Option<Condition> {
     let rawvals = caps.get(3)?.as_str();
     let values = rawvals
         .split_terminator(',')
-        .map(|n| n.parse::<usize>().ok())
+        .map(|n| n.parse::<u64>().ok())
         .collect::<Option<Vec<_>>>()?;
     // convert field string into Field
     Some(Condition {
@@ -278,5 +326,85 @@ mod tests {
             "kind>10000&kind<20000&kind!10001&created_at<1665867123".parse::<ConditionQuery>()?;
         assert_eq!(parsed, cq);
         Ok(())
+    }
+    fn simple_event() -> Event {
+        Event {
+            id: "0".to_owned(),
+            pubkey: "0".to_owned(),
+            created_at: 0,
+            kind: 0,
+            tags: vec![],
+            content: "".to_owned(),
+            sig: "0".to_owned(),
+            tagidx: None,
+        }
+    }
+    // Check for condition logic on event w/ empty values
+    #[test]
+    fn condition_with_empty_values() {
+        let mut c = Condition {
+            field: Field::Kind,
+            operator: Operator::GreaterThan,
+            values: vec![],
+        };
+        let e = simple_event();
+        assert!(!c.allows_event(&e));
+        c.operator = Operator::LessThan;
+        assert!(!c.allows_event(&e));
+        c.operator = Operator::Equals;
+        assert!(!c.allows_event(&e));
+        // Not Equals applied to an empty list *is* allowed
+        // (pointless, but logically valid).
+        c.operator = Operator::NotEquals;
+        assert!(c.allows_event(&e));
+    }
+
+    // Check for condition logic on event w/ single value
+    #[test]
+    fn condition_kind_gt_event_single() {
+        let c = Condition {
+            field: Field::Kind,
+            operator: Operator::GreaterThan,
+            values: vec![10],
+        };
+        let mut e = simple_event();
+        // kind is not greater than 10, not allowed
+        e.kind = 1;
+        assert!(!c.allows_event(&e));
+        // kind is greater than 10, allowed
+        e.kind = 100;
+        assert!(c.allows_event(&e));
+        // kind is 10, not allowed
+        e.kind = 10;
+        assert!(!c.allows_event(&e));
+    }
+    // Check for condition logic on event w/ multi values
+    #[test]
+    fn condition_with_multi_values() {
+        let mut c = Condition {
+            field: Field::Kind,
+            operator: Operator::Equals,
+            values: vec![0, 10, 20],
+        };
+        let mut e = simple_event();
+        // Allow if event kind is in list for Equals
+        e.kind = 10;
+        assert!(c.allows_event(&e));
+        // Deny if event kind is not in list for Equals
+        e.kind = 11;
+        assert!(!c.allows_event(&e));
+        // Deny if event kind is in list for NotEquals
+        e.kind = 10;
+        c.operator = Operator::NotEquals;
+        assert!(!c.allows_event(&e));
+        // Allow if event kind is not in list for NotEquals
+        e.kind = 99;
+        c.operator = Operator::NotEquals;
+        assert!(c.allows_event(&e));
+        // Always deny if GreaterThan/LessThan for a list
+        c.operator = Operator::LessThan;
+        assert!(!c.allows_event(&e));
+        c.operator = Operator::GreaterThan;
+        assert!(!c.allows_event(&e));
     }
 }

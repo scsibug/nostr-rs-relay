@@ -125,9 +125,16 @@ impl Event {
         let querystr = delegation_tag.get(1)?;
         let sig = delegation_tag.get(2)?;
         // pass into the validate_delegation
-        validate_delegation(delegator, delegatee, querystr, sig);
-        // try to construct a delegation object (
-        todo!();
+        if let Some(cond_query) = validate_delegation(delegator, delegatee, querystr, sig) {
+            // check if this condition query would allow this event.
+            if cond_query.allows_event(self) {
+                Some(delegator.into())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     /// Build an event tag index
