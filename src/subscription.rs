@@ -217,6 +217,17 @@ impl ReqFilter {
             .unwrap_or(true)
     }
 
+    fn delegated_authors_match(&self, event: &Event) -> bool {
+        if let Some(delegated_pubkey) = &event.delegated_by {
+            self.authors
+                .as_ref()
+                .map(|vs| prefix_match(vs, delegated_pubkey))
+                .unwrap_or(true)
+        } else {
+            false
+        }
+    }
+
     fn tag_match(&self, event: &Event) -> bool {
         // get the hashset from the filter.
         if let Some(map) = &self.tags {
@@ -248,7 +259,7 @@ impl ReqFilter {
             && self.since.map(|t| event.created_at > t).unwrap_or(true)
             && self.until.map(|t| event.created_at < t).unwrap_or(true)
             && self.kind_match(event.kind)
-            && self.authors_match(event)
+            && (self.authors_match(event) || self.delegated_authors_match(event))
             && self.tag_match(event)
             && !self.force_no_match
     }
@@ -308,6 +319,7 @@ mod tests {
         let e = Event {
             id: "foo".to_owned(),
             pubkey: "abcd".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -326,6 +338,7 @@ mod tests {
         let e = Event {
             id: "abcd".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -344,6 +357,7 @@ mod tests {
         let e = Event {
             id: "abcde".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -363,6 +377,7 @@ mod tests {
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 50,
             kind: 0,
             tags: Vec::new(),
@@ -386,6 +401,7 @@ mod tests {
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 150,
             kind: 0,
             tags: Vec::new(),
@@ -407,6 +423,7 @@ mod tests {
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 50,
             kind: 0,
             tags: Vec::new(),
@@ -425,6 +442,7 @@ mod tests {
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 1001,
             kind: 0,
             tags: Vec::new(),
@@ -443,6 +461,7 @@ mod tests {
         let e = Event {
             id: "abc".to_owned(),
             pubkey: "".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -461,6 +480,7 @@ mod tests {
         let e = Event {
             id: "123".to_owned(),
             pubkey: "abc".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -479,6 +499,7 @@ mod tests {
         let e = Event {
             id: "123".to_owned(),
             pubkey: "bcd".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),
@@ -497,6 +518,7 @@ mod tests {
         let e = Event {
             id: "123".to_owned(),
             pubkey: "xyz".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: Vec::new(),

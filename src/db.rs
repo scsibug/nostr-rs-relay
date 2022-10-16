@@ -142,12 +142,15 @@ pub async fn db_writer(
             if next_event.is_none() {
                 break;
             }
+            // track if an event write occurred; this is used to
+            // update the rate limiter
             let mut event_write = false;
             let subm_event = next_event.unwrap();
             let event = subm_event.event;
             let notice_tx = subm_event.notice_tx;
             // check if this event is authorized.
             if let Some(allowed_addrs) = whitelist {
+                // TODO: incorporate delegated pubkeys
                 // if the event address is not in allowed_addrs.
                 if !allowed_addrs.contains(&event.pubkey) {
                     info!(
@@ -284,12 +287,13 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     let tx = conn.transaction()?;
     // get relevant fields from event and convert to blobs.
     let id_blob = hex::decode(&e.id).ok();
-    let pubkey_blob = hex::decode(&e.pubkey).ok();
+    let pubkey_blob: Option<Vec<u8>> = hex::decode(&e.pubkey).ok();
+    let delegator_blob: Option<Vec<u8>> = e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
     let event_str = serde_json::to_string(&e).ok();
     // ignore if the event hash is a duplicate.
     let mut ins_count = tx.execute(
-        "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), FALSE);",
-        params![id_blob, e.created_at, e.kind, pubkey_blob, event_str]
+        "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
+        params![id_blob, e.created_at, e.kind, pubkey_blob, delegator_blob, event_str]
     )?;
     if ins_count == 0 {
         // if the event was a duplicate, no need to insert event or
@@ -439,16 +443,22 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
         for auth in authvec {
             match hex_range(auth) {
                 Some(HexSearch::Exact(ex)) => {
-                    auth_searches.push("author=?".to_owned());
+                    auth_searches.push("author=? OR delegated_by=?".to_owned());
+                    params.push(Box::new(ex.clone()));
                     params.push(Box::new(ex));
                 }
                 Some(HexSearch::Range(lower, upper)) => {
-                    auth_searches.push("(author>? AND author<?)".to_owned());
+                    auth_searches.push(
+                        "(author>? AND author<?) OR (delegated_by>? AND delegated_by<?)".to_owned(),
+                    );
+                    params.push(Box::new(lower.clone()));
+                    params.push(Box::new(upper.clone()));
                     params.push(Box::new(lower));
                     params.push(Box::new(upper));
                 }
                 Some(HexSearch::LowerOnly(lower)) => {
-                    auth_searches.push("author>?".to_owned());
+                    auth_searches.push("author>? OR delegated_by>?".to_owned());
+                    params.push(Box::new(lower.clone()));
                     params.push(Box::new(lower));
                 }
                 None => {

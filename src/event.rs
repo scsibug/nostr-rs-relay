@@ -1,4 +1,5 @@
 //! Event parsing and validation
+use crate::delegation::validate_delegation;
 use crate::error::Error::*;
 use crate::error::Result;
 use crate::nip05;
@@ -31,6 +32,8 @@ pub struct EventCmd {
 pub struct Event {
     pub id: String,
     pub(crate) pubkey: String,
+    #[serde(skip)]
+    pub(crate) delegated_by: Option<String>,
     pub(crate) created_at: u64,
     pub(crate) kind: u64,
     #[serde(deserialize_with = "tag_from_string")]
@@ -83,6 +86,7 @@ impl From<EventCmd> for Result<Event> {
         } else if ec.event.is_valid() {
             let mut e = ec.event;
             e.build_index();
+            e.update_delegation();
             Ok(e)
         } else {
             Err(EventInvalid)
@@ -110,6 +114,50 @@ impl Event {
         None
     }
 
+    // is this event delegated (properly)?
+    // does the signature match, and are conditions valid?
+    // if so, return an alternate author for the event
+    pub fn delegated_author(&self) -> Option<String> {
+        // is there a delegation tag?
+        let delegation_tag: Vec<String> = self
+            .tags
+            .iter()
+            .filter(|x| x.len() == 4)
+            .filter(|x| x.get(0).unwrap() == "delegation")
+            .take(1)
+            .next()?
+            .to_vec(); // get first tag
+
+        //let delegation_tag = self.tag_values_by_name("delegation");
+        // delegation tags should have exactly 3 elements after the name (pubkey, condition, sig)
+        // the event is signed by the delagatee
+        let delegatee = &self.pubkey;
+        // the delegation tag references the claimed delagator
+        let delegator: &str = delegation_tag.get(1)?;
+        let querystr: &str = delegation_tag.get(2)?;
+        let sig: &str = delegation_tag.get(3)?;
+
+        // attempt to get a condition query; this requires the delegation to have a valid signature.
+        if let Some(cond_query) = validate_delegation(delegator, delegatee, querystr, sig) {
+            // The signature was valid, now we ensure the delegation
+            // condition is valid for this event:
+            if cond_query.allows_event(self) {
+                // since this is allowed, we will provide the delegatee
+                Some(delegator.into())
+            } else {
+                debug!("an event failed to satisfy delegation conditions");
+                None
+            }
+        } else {
+            debug!("event had had invalid delegation signature");
+            None
+        }
+    }
+
+    /// Update delegation status
+    fn update_delegation(&mut self) {
+        self.delegated_by = self.delegated_author();
+    }
     /// Build an event tag index
     fn build_index(&mut self) {
         // if there are no tags; just leave the index as None
@@ -145,7 +193,7 @@ impl Event {
         self.pubkey.chars().take(8).collect()
     }
 
-    /// Retrieve tag values
+    /// Retrieve tag initial values across all tags matching the name
     pub fn tag_values_by_name(&self, tag_name: &str) -> Vec<String> {
         self.tags
             .iter()
@@ -269,6 +317,7 @@ mod tests {
         Event {
             id: "0".to_owned(),
             pubkey: "0".to_owned(),
+            delegated_by: None,
             created_at: 0,
             kind: 0,
             tags: vec![],
@@ -350,6 +399,7 @@ mod tests {
         let e = Event {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
+            delegated_by: None,
             created_at: 501234,
             kind: 1,
             tags: vec![],
@@ -367,6 +417,7 @@ mod tests {
         let e = Event {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
+            delegated_by: None,
             created_at: 501234,
             kind: 1,
             tags: vec![
@@ -389,10 +440,38 @@ mod tests {
     }
 
     #[test]
+    fn event_no_tag_select() {
+        let e = Event {
+            id: "999".to_owned(),
+            pubkey: "012345".to_owned(),
+            delegated_by: None,
+            created_at: 501234,
+            kind: 1,
+            tags: vec![
+                vec!["j".to_owned(), "abc".to_owned()],
+                vec!["e".to_owned(), "foo".to_owned()],
+                vec!["e".to_owned(), "baz".to_owned()],
+                vec![
+                    "p".to_owned(),
+                    "aaaa".to_owned(),
+                    "ws://example.com".to_owned(),
+                ],
+            ],
+            content: "this is a test".to_owned(),
+            sig: "abcde".to_owned(),
+            tagidx: None,
+        };
+        let v = e.tag_values_by_name("x");
+        // asking for tags that don't exist just returns zero-length vector
+        assert_eq!(v.len(), 0);
+    }
+
+    #[test]
     fn event_canonical_with_tags() {
         let e = Event {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
+            delegated_by: None,
             created_at: 501234,
             kind: 1,
             tags: vec![

@@ -50,6 +50,8 @@ pub enum Error {
     HyperError(hyper::Error),
     #[error("Hex encoding error")]
     HexError(hex::FromHexError),
+    #[error("Delegation parse error")]
+    DelegationParseError,
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
