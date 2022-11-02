@@ -84,11 +84,14 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
-
+                                // spawn server with info... but include IP here.
+                                let remote_ip = remote_addr.ip().to_string();
                                 tokio::spawn(nostr_server(
-                                    pool, settings, ws_stream, broadcast, event_tx, shutdown,
+                                    pool, remote_ip, settings, ws_stream, broadcast, event_tx,
+                                    shutdown,
                                 ));
                             }
+                            // todo: trace, don't print...
                             Err(e) => println!(
                                 "error when trying to upgrade connection \
                                  from address {} to websocket connection. \
@@ -167,7 +170,6 @@ async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
         info!("Shutting down webserver due to SIGTERM");
         break;
         },
-
         }
     }
 }
@@ -386,6 +388,7 @@ fn make_notice_message(msg: &str) -> Message {
 /// for all client communication.
 async fn nostr_server(
     pool: db::SqlitePool,
+    remote_ip: String,
     settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
@@ -395,7 +398,8 @@ async fn nostr_server(
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
     // Track internal client state
-    let mut conn = conn::ClientConn::new();
+    let mut conn = conn::ClientConn::new(remote_ip);
+    // Use the remote IP as the client identifier
     let cid = conn.get_client_prefix();
     // Create a channel for receiving query results from the database.
     // we will send out the tx handle to any query we generate.
@@ -424,11 +428,11 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
-    info!("new connection for client: {:?}", cid);
+    info!("new connection for client: {:?}, ip: {:?}", cid, conn.ip());
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-        info!("Shutting client connection down due to shutdown: {:?}", cid);
+        info!("Shutting client connection down due to shutdown: {:?}, ip: {:?}", cid, conn.ip());
                 // server shutting down, exit loop
                 break;
             },
@@ -507,17 +511,17 @@ async fn nostr_server(
              Err(WsError::AlreadyClosed | WsError::ConnectionClosed |
                  WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
-                        debug!("websocket close from client: {:?}",cid);
+                            debug!("websocket close from client: {:?}, ip: {:?}",cid, conn.ip());
                         break;
                     },
                     Some(Err(WsError::Io(e))) => {
                         // IO errors are considered fatal
-                        warn!("IO error (client: {:?}): {:?}", cid, e);
+                        warn!("IO error (client: {:?}, ip: {:?}): {:?}", cid, conn.ip(), e);
                         break;
                     }
                     x => {
                         // default condition on error is to close the client connection
-                        info!("unknown error (client: {:?}): {:?} (closing conn)", cid, x);
+                        info!("unknown error (client: {:?}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
                         break;
                     }
                 };
@@ -546,7 +550,7 @@ async fn nostr_server(
                 }
                             },
                             Err(_) => {
-                                info!("client {:?} sent an invalid event", cid);
+                                info!("client: {:?} sent an invalid event", cid);
                                 ws_stream.send(make_notice_message("event was invalid")).await.ok();
                             }
                         }
@@ -592,7 +596,7 @@ async fn nostr_server(
                             }
                     },
                     Err(Error::ConnError) => {
-                        debug!("got connection close/error, disconnecting client: {:?}",cid);
+                        debug!("got connection close/error, disconnecting client: {:?}, ip: {:?}",cid, conn.ip());
                         break;
                     }
                     Err(Error::EventMaxLengthError(s)) => {
@@ -615,7 +619,10 @@ async fn nostr_server(
         stop_tx.send(()).ok();
     }
     info!(
-        "stopping connection for client: {:?} (client sent {} event(s), received {})",
-        cid, client_published_event_count, client_received_event_count
+        "stopping connection for client: {:?}, ip: {:?} (client sent {} event(s), received {})",
+        cid,
+        conn.ip(),
+        client_published_event_count,
+        client_received_event_count
     );
 }

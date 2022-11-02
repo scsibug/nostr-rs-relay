@@ -332,7 +332,7 @@ fn mig_5_to_6(conn: &mut PooledConnection) -> Result<usize> {
                 if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
                     tx.execute(
                         "INSERT INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3);",
-                        params![event_id, tagname, hex::decode(&tagval).ok()],
+                        params![event_id, tagname, hex::decode(tagval).ok()],
                     )?;
                 } else {
                     // otherwise, insert as text

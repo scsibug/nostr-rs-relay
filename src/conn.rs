@@ -14,6 +14,8 @@ const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
 
 /// State for a client connection
 pub struct ClientConn {
+    /// Client IP (either from socket, or configured proxy header
+    client_ip: String,
     /// Unique client identifier generated at connection time
     client_id: Uuid,
     /// The current set of active client subscriptions
@@ -24,16 +26,17 @@ pub struct ClientConn {
 
 impl Default for ClientConn {
     fn default() -> Self {
-        Self::new()
+        Self::new("unknown".to_owned())
     }
 }
 
 impl ClientConn {
     /// Create a new, empty connection state.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(client_ip: String) -> Self {
         let client_id = Uuid::new_v4();
         ClientConn {
+            client_ip,
             client_id,
             subscriptions: HashMap::new(),
             max_subs: 32,
@@ -45,6 +48,11 @@ impl ClientConn {
     #[must_use]
     pub fn get_client_prefix(&self) -> String {
         self.client_id.to_string().chars().take(8).collect()
+    }
+
+    #[must_use]
+    pub fn ip(&self) -> &str {
+        &self.client_ip
     }
 
     /// Find all matching subscriptions.
@@ -102,7 +110,7 @@ impl ClientConn {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
         debug!(
-            "removed subscription, currently have {} active subs (cid={})",
+            "removed subscription, currently have {} active subs (cid={:?})",
             self.subscriptions.len(),
             self.client_id
         );

@@ -34,11 +34,11 @@ fn main() {
         // enable tracing with tokio-console
         ConsoleLayer::builder().with_default_env().init();
     }
-
     // update with database location
     if let Some(db) = db_dir {
         settings.database.data_directory = db;
     }
+
     let (_, ctrl_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
     // run this in a new thread
     let handle = thread::spawn(|| {

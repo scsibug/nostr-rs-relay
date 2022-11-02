@@ -316,7 +316,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
                     if is_lower_hex(tagval) && (tagval.len() % 2 == 0) {
                         tx.execute(
 			    "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
-			    params![ev_id, &tagname, hex::decode(&tagval).ok()],
+			    params![ev_id, &tagname, hex::decode(tagval).ok()],
 			)?;
                     } else {
                         tx.execute(
@@ -510,7 +510,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
             let mut blob_vals: Vec<Box<dyn ToSql>> = vec![];
             for v in val {
                 if (v.len() % 2 == 0) && is_lower_hex(v) {
-                    if let Ok(h) = hex::decode(&v) {
+                    if let Ok(h) = hex::decode(v) {
                         blob_vals.push(Box::new(h));
                     }
                 } else {
