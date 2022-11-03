@@ -428,7 +428,7 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
-    info!("new connection for client: {:?}, ip: {:?}", cid, conn.ip());
+    debug!("new connection for client: {:?}, ip: {:?}", cid, conn.ip());
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
