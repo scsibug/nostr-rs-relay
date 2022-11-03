@@ -13,6 +13,7 @@ use crate::nip05;
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
+use http::header::HeaderMap;
 use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::upgrade::Upgraded;
@@ -85,7 +86,8 @@ async fn handle_web_request(
                                 )
                                 .await;
                                 // spawn server with info... but include IP here.
-                                let remote_ip = remote_addr.ip().to_string();
+                                let remote_ip =
+                                    get_remote_ip_string(&remote_addr, request.headers());
                                 tokio::spawn(nostr_server(
                                     pool, remote_ip, settings, ws_stream, broadcast, event_tx,
                                     shutdown,
@@ -149,6 +151,23 @@ async fn handle_web_request(
                 .unwrap())
         }
     }
+}
+
+fn get_remote_ip_string(remote_addr: &SocketAddr, headers: &HeaderMap) -> String {
+    if let Some(ip) = get_cloudflare_remote_ip(headers) {
+        return ip;
+    }
+
+    return remote_addr.ip().to_string();
+}
+
+fn get_cloudflare_remote_ip(headers: &HeaderMap) -> Option<String> {
+    if let Some(val) = headers.get("CF-Connecting-IP") {
+        if let Ok(s) = val.to_str() {
+            return Some(s.to_string());
+        }
+    }
+    return None;
 }
 
 // return on a control-c or internally requested shutdown signal
