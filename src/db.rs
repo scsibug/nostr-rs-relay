@@ -216,13 +216,13 @@ pub async fn db_writer(
             // TODO: cache recent list of authors to remove a DB call.
             let start = Instant::now();
             if event.kind >= 20000 && event.kind < 30000 {
+                bcast_tx.send(event.clone()).ok();
                 info!(
                     "published ephemeral event {:?} from {:?} in {:?}",
                     event.get_event_id_prefix(),
                     event.get_author_prefix(),
                     start.elapsed()
                 );
-                bcast_tx.send(event.clone()).ok();
                 event_write = true
             } else {
                 match write_event(&mut pool.get()?, &event) {
