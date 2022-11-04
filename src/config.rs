@@ -28,9 +28,9 @@ pub struct Database {
 pub struct Network {
     pub port: u16,
     pub address: String,
+    pub remote_ip_header: Option<String>, // retrieve client IP from this HTTP header if present
 }
 
-//
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Options {
@@ -208,6 +208,7 @@ impl Default for Settings {
             network: Network {
                 port: 8080,
                 address: "0.0.0.0".to_owned(),
+                remote_ip_header: None,
             },
             limits: Limits {
                 messages_per_sec: None,

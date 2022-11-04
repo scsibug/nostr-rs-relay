@@ -46,6 +46,11 @@ address = "0.0.0.0"
 # Listen on this port
 port = 8080
 
+# If present, read this HTTP header for logging client IP addresses.
+# Examples for common proxies, cloudflare:
+#remote_ip_header = "x-forwarded-for"
+#remote_ip_header = "cf-connecting-ip"
+
 [options]
 # Reject events that have timestamps greater than this many seconds in
 # the future.  Recommended to reject anything greater than 30 minutes

@@ -85,9 +85,17 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
-                                // spawn server with info... but include IP here.
+
+                                // determine the remote IP from headers if the exist
+                                let header_ip = settings
+                                    .network
+                                    .remote_ip_header
+                                    .as_ref()
+                                    .and_then(|x| get_header_remote_ip(x, request.headers()));
+                                // use the socket addr as a backup
                                 let remote_ip =
-                                    get_remote_ip_string(&remote_addr, request.headers());
+                                    header_ip.unwrap_or_else(|| remote_addr.ip().to_string());
+                                // spawn a nostr server with our websocket
                                 tokio::spawn(nostr_server(
                                     pool, remote_ip, settings, ws_stream, broadcast, event_tx,
                                     shutdown,
@@ -153,21 +161,10 @@ async fn handle_web_request(
     }
 }
 
-fn get_remote_ip_string(remote_addr: &SocketAddr, headers: &HeaderMap) -> String {
-    if let Some(ip) = get_cloudflare_remote_ip(headers) {
-        return ip;
-    }
-
-    return remote_addr.ip().to_string();
-}
-
-fn get_cloudflare_remote_ip(headers: &HeaderMap) -> Option<String> {
-    if let Some(val) = headers.get("CF-Connecting-IP") {
-        if let Ok(s) = val.to_str() {
-            return Some(s.to_string());
-        }
-    }
-    return None;
+fn get_header_remote_ip(header: &str, headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header)
+        .and_then(|x| x.to_str().ok().map(|x| x.to_string()))
 }
 
 // return on a control-c or internally requested shutdown signal
