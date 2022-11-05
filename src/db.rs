@@ -218,7 +218,7 @@ pub async fn db_writer(
             if event.kind >= 20000 && event.kind < 30000 {
                 bcast_tx.send(event.clone()).ok();
                 info!(
-                    "published ephemeral event {:?} from {:?} in {:?}",
+                    "published ephemeral event: {:?} from: {:?} in: {:?}",
                     event.get_event_id_prefix(),
                     event.get_author_prefix(),
                     start.elapsed()
@@ -231,7 +231,7 @@ pub async fn db_writer(
                             trace!("ignoring duplicate or deleted event");
                         } else {
                             info!(
-                                "persisted event {:?} from {:?} in {:?}",
+                                "persisted event: {:?} from: {:?} in: {:?}",
                                 event.get_event_id_prefix(),
                                 event.get_author_prefix(),
                                 start.elapsed()
