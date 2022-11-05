@@ -51,6 +51,9 @@ port = 8080
 #remote_ip_header = "x-forwarded-for"
 #remote_ip_header = "cf-connecting-ip"
 
+# Websocket ping interval in seconds, defaults to 5 minutes
+#ping_interval = 300
+
 [options]
 # Reject events that have timestamps greater than this many seconds in
 # the future.  Recommended to reject anything greater than 30 minutes
