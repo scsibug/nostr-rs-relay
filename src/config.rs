@@ -29,7 +29,7 @@ pub struct Network {
     pub port: u16,
     pub address: String,
     pub remote_ip_header: Option<String>, // retrieve client IP from this HTTP header if present
-    pub ping_interval: u32,
+    pub ping_interval_seconds: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,7 +208,7 @@ impl Default for Settings {
             },
             network: Network {
                 port: 8080,
-                ping_interval: 300,
+                ping_interval_seconds: 300,
                 address: "0.0.0.0".to_owned(),
                 remote_ip_header: None,
             },

@@ -427,7 +427,7 @@ async fn nostr_server(
     let mut last_message_time = Instant::now();
 
     // ping interval (every 5 minutes)
-    let default_ping_dur = Duration::from_secs(settings.network.ping_interval.into());
+    let default_ping_dur = Duration::from_secs(settings.network.ping_interval_seconds.into());
 
     // disconnect after 20 minutes without a ping response or event.
     let max_quiet_time = Duration::from_secs(60 * 20);
