@@ -91,7 +91,7 @@ async fn handle_web_request(
                                     .network
                                     .remote_ip_header
                                     .as_ref()
-                                    .and_then(|x| get_header_remote_ip(x, request.headers()));
+                                    .and_then(|x| get_header_string(x, request.headers()));
                                 // use the socket addr as a backup
                                 let remote_ip =
                                     header_ip.unwrap_or_else(|| remote_addr.ip().to_string());
@@ -161,7 +161,7 @@ async fn handle_web_request(
     }
 }
 
-fn get_header_remote_ip(header: &str, headers: &HeaderMap) -> Option<String> {
+fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
     headers
         .get(header)
         .and_then(|x| x.to_str().ok().map(|x| x.to_string()))
