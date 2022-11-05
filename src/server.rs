@@ -458,14 +458,14 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
-    debug!("new connection for client: {:?}, ip: {:?}", cid, conn.ip());
+    debug!("new connection for client: {}, ip: {:?}", cid, conn.ip());
     if let Some(ua) = client_info.user_agent {
-        debug!("client: {:?} has user-agent: {:?}", cid, ua);
+        debug!("client: {} has user-agent: {:?}", cid, ua);
     }
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-        info!("Shutting client connection down due to shutdown: {:?}, ip: {:?}", cid, conn.ip());
+        info!("Close connection down due to shutdown, client: {}, ip: {:?}", cid, conn.ip());
                 // server shutting down, exit loop
                 break;
             },
@@ -504,7 +504,7 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        debug!("sub match for client: {:?}, sub: {:?}, event: {:?}",
+                        debug!("sub match for client: {}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it
@@ -544,17 +544,17 @@ async fn nostr_server(
              Err(WsError::AlreadyClosed | WsError::ConnectionClosed |
                  WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
-                            debug!("websocket close from client: {:?}, ip: {:?}",cid, conn.ip());
+                            debug!("websocket close from client: {}, ip: {:?}",cid, conn.ip());
                         break;
                     },
                     Some(Err(WsError::Io(e))) => {
                         // IO errors are considered fatal
-                        warn!("IO error (client: {:?}, ip: {:?}): {:?}", cid, conn.ip(), e);
+                        warn!("IO error (client: {}, ip: {:?}): {:?}", cid, conn.ip(), e);
                         break;
                     }
                     x => {
                         // default condition on error is to close the client connection
-                        info!("unknown error (client: {:?}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
+                        info!("unknown error (client: {}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
                         break;
                     }
                 };
@@ -568,7 +568,7 @@ async fn nostr_server(
                         match parsed {
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
-                                debug!("successfully parsed/validated event: {:?} from client: {:?}", id_prefix, cid);
+                                debug!("successfully parsed/validated event: {:?} from client: {}", id_prefix, cid);
                                 // check if the event is too far in the future.
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
@@ -576,20 +576,20 @@ async fn nostr_server(
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                 } else {
-                    info!("client {:?} sent a far future-dated event", cid);
+                    info!("client: {} sent a far future-dated event", cid);
                     if let Some(fut_sec) = settings.options.reject_future_seconds {
                     ws_stream.send(make_notice_message(&format!("The event created_at field is out of the acceptable range (+{}sec) for this relay and was not stored.",fut_sec))).await.ok();
                     }
                 }
                             },
                             Err(_) => {
-                                info!("client: {:?} sent an invalid event", cid);
+                                info!("client: {} sent an invalid event", cid);
                                 ws_stream.send(make_notice_message("event was invalid")).await.ok();
                             }
                         }
                     },
                     Ok(NostrMessage::SubMsg(s)) => {
-                        debug!("client {} requesting a subscription", cid);
+                        debug!("client: {} requesting a subscription", cid);
                         // subscription handling consists of:
                         // * registering the subscription so future events can be matched
                         // * making a channel to cancel to request later
@@ -629,19 +629,19 @@ async fn nostr_server(
                             }
                     },
                     Err(Error::ConnError) => {
-                        debug!("got connection close/error, disconnecting client: {:?}, ip: {:?}",cid, conn.ip());
+                        debug!("got connection close/error, disconnecting client: {}, ip: {:?}",cid, conn.ip());
                         break;
                     }
                     Err(Error::EventMaxLengthError(s)) => {
-                        info!("client {:?} sent event larger ({} bytes) than max size", cid, s);
+                        info!("client: {} sent event larger ({} bytes) than max size", cid, s);
                         ws_stream.send(make_notice_message("event exceeded max size")).await.ok();
                     },
                     Err(Error::ProtoParseError) => {
-                        info!("client {:?} sent event that could not be parsed", cid);
+                        info!("client {} sent event that could not be parsed", cid);
                         ws_stream.send(make_notice_message("could not parse command")).await.ok();
                     },
                     Err(e) => {
-                        info!("got non-fatal error from client: {:?}, error: {:?}", cid, e);
+                        info!("got non-fatal error from client: {}, error: {:?}", cid, e);
                     },
                 }
             },
@@ -652,7 +652,7 @@ async fn nostr_server(
         stop_tx.send(()).ok();
     }
     info!(
-        "stopping connection for client: {:?}, ip: {:?} (client sent {} event(s), received {})",
+        "stopping connection for client: {}, ip: {:?} (client sent {} event(s), received {})",
         cid,
         conn.ip(),
         client_published_event_count,

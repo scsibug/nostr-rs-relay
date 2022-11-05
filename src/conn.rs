@@ -110,9 +110,9 @@ impl ClientConn {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
         debug!(
-            "removed subscription, currently have {} active subs (cid={:?})",
+            "removed subscription, currently have {} active subs (cid={})",
             self.subscriptions.len(),
-            self.client_id
+            self.get_client_prefix(),
         );
     }
 }
