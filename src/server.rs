@@ -85,7 +85,7 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
-
+                                let user_agent = get_header_string("user-agent", request.headers());
                                 // determine the remote IP from headers if the exist
                                 let header_ip = settings
                                     .network
@@ -95,9 +95,18 @@ async fn handle_web_request(
                                 // use the socket addr as a backup
                                 let remote_ip =
                                     header_ip.unwrap_or_else(|| remote_addr.ip().to_string());
+                                let client_info = ClientInfo {
+                                    remote_ip,
+                                    user_agent,
+                                };
                                 // spawn a nostr server with our websocket
                                 tokio::spawn(nostr_server(
-                                    pool, remote_ip, settings, ws_stream, broadcast, event_tx,
+                                    pool,
+                                    client_info,
+                                    settings,
+                                    ws_stream,
+                                    broadcast,
+                                    event_tx,
                                     shutdown,
                                 ));
                             }
@@ -400,11 +409,16 @@ fn make_notice_message(msg: &str) -> Message {
     Message::text(json!(["NOTICE", msg]).to_string())
 }
 
+struct ClientInfo {
+    remote_ip: String,
+    user_agent: Option<String>,
+}
+
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
     pool: db::SqlitePool,
-    remote_ip: String,
+    client_info: ClientInfo,
     settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
@@ -414,7 +428,7 @@ async fn nostr_server(
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
     // Track internal client state
-    let mut conn = conn::ClientConn::new(remote_ip);
+    let mut conn = conn::ClientConn::new(client_info.remote_ip);
     // Use the remote IP as the client identifier
     let cid = conn.get_client_prefix();
     // Create a channel for receiving query results from the database.
@@ -445,6 +459,9 @@ async fn nostr_server(
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
     debug!("new connection for client: {:?}, ip: {:?}", cid, conn.ip());
+    if let Some(ua) = client_info.user_agent {
+        debug!("client: {:?} has user-agent: {:?}", cid, ua);
+    }
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
