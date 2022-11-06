@@ -577,7 +577,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
         .map(|s| format!("SELECT content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
-    debug!("final query string: {}", query);
+    trace!("final query string: {}", query);
     (query, params)
 }
 
@@ -595,12 +595,12 @@ pub async fn db_query(
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     task::spawn_blocking(move || {
-        debug!("going to query for: {:?}", sub);
+        trace!("going to query for: {:?}", sub);
         let mut row_count: usize = 0;
         let start = Instant::now();
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
-        debug!("SQL generated in {:?}", start.elapsed());
+        trace!("SQL generated in {:?}", start.elapsed());
         // show pool stats
         debug!("DB pool stats: {:?}", pool.state());
         let start = Instant::now();
