@@ -499,8 +499,11 @@ async fn nostr_server(
             Ok(global_event) = bcast_rx.recv() => {
                 // an event has been broadcast to all clients
                 // first check if there is a subscription for this event.
-                let matching_subs = conn.get_matching_subscriptions(&global_event);
-                for s in matching_subs {
+                for (s, sub) in conn.subscriptions() {
+                    if !sub.interested_in_event(&global_event) {
+                        continue;
+                    }
+
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {

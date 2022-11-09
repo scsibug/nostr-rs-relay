@@ -2,7 +2,6 @@
 use crate::close::Close;
 use crate::error::Error;
 use crate::error::Result;
-use crate::event::Event;
 
 use crate::subscription::Subscription;
 use std::collections::HashMap;
@@ -43,6 +42,10 @@ impl ClientConn {
         }
     }
 
+    pub fn subscriptions(&self) -> &HashMap<String, Subscription> {
+        &self.subscriptions
+    }
+
     /// Get a short prefix of the client's unique identifier, suitable
     /// for logging.
     #[must_use]
@@ -53,18 +56,6 @@ impl ClientConn {
     #[must_use]
     pub fn ip(&self) -> &str {
         &self.client_ip
-    }
-
-    /// Find all matching subscriptions.
-    #[must_use]
-    pub fn get_matching_subscriptions(&self, e: &Event) -> Vec<&str> {
-        let mut v: Vec<&str> = vec![];
-        for (id, sub) in &self.subscriptions {
-            if sub.interested_in_event(e) {
-                v.push(id);
-            }
-        }
-        v
     }
 
     /// Add a new subscription for this connection.
