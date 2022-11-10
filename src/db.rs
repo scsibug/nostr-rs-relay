@@ -6,6 +6,7 @@ use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
 use crate::nip05;
+use crate::notice::Notice;
 use crate::schema::{upgrade_db, STARTUP_SQL};
 use crate::subscription::ReqFilter;
 use crate::subscription::Subscription;
@@ -32,7 +33,7 @@ pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnection
 /// Events submitted from a client, with a return channel for notices
 pub struct SubmittedEvent {
     pub event: Event,
-    pub notice_tx: tokio::sync::mpsc::Sender<String>,
+    pub notice_tx: tokio::sync::mpsc::Sender<Notice>,
 }
 
 /// Database file
@@ -158,7 +159,10 @@ pub async fn db_writer(
                         event.get_event_id_prefix()
                     );
                     notice_tx
-                        .try_send("pubkey is not allowed to publish to this relay".to_owned())
+                        .try_send(Notice::blocked(
+                            event.id,
+                            "pubkey is not allowed to publish to this relay",
+                        ))
                         .ok();
                     continue;
                 }
@@ -189,10 +193,10 @@ pub async fn db_writer(
                                   event.get_author_prefix()
                             );
                             notice_tx
-                                .try_send(
-                                    "NIP-05 verification is no longer valid (expired/wrong domain)"
-                                        .to_owned(),
-                                )
+                                .try_send(Notice::blocked(
+                                    event.id,
+                                    "NIP-05 verification is no longer valid (expired/wrong domain)",
+                                ))
                                 .ok();
                             continue;
                         }
@@ -203,7 +207,10 @@ pub async fn db_writer(
                             event.get_author_prefix()
                         );
                         notice_tx
-                            .try_send("NIP-05 verification needed to publish events".to_owned())
+                            .try_send(Notice::blocked(
+                                event.id,
+                                "NIP-05 verification needed to publish events",
+                            ))
                             .ok();
                         continue;
                     }
@@ -229,6 +236,7 @@ pub async fn db_writer(
                     Ok(updated) => {
                         if updated == 0 {
                             trace!("ignoring duplicate or deleted event");
+                            notice_tx.try_send(Notice::duplicate(event.id)).ok();
                         } else {
                             info!(
                                 "persisted event: {:?} from: {:?} in: {:?}",
@@ -239,16 +247,13 @@ pub async fn db_writer(
                             event_write = true;
                             // send this out to all clients
                             bcast_tx.send(event.clone()).ok();
+                            notice_tx.try_send(Notice::saved(event.id)).ok();
                         }
                     }
                     Err(err) => {
                         warn!("event insert failed: {:?}", err);
-                        notice_tx
-                            .try_send(
-                                "relay experienced an error trying to publish the latest event"
-                                    .to_owned(),
-                            )
-                            .ok();
+                        let msg = "relay experienced an error trying to publish the latest event";
+                        notice_tx.try_send(Notice::error(event.id, msg)).ok();
                     }
                 }
             }
