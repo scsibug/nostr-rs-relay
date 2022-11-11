@@ -17,10 +17,16 @@ pub enum Error {
     ConnWriteError,
     #[error("EVENT parse failed")]
     EventParseFailed,
-    #[error("ClOSE message parse failed")]
+    #[error("CLOSE message parse failed")]
     CloseParseFailed,
-    #[error("Event validation failed")]
-    EventInvalid,
+    #[error("Event invalid signature")]
+    EventInvalidSignature,
+    #[error("Event invalid id")]
+    EventInvalidId,
+    #[error("Event malformed pubkey")]
+    EventMalformedPubkey,
+    #[error("Event could not canonicalize")]
+    EventCouldNotCanonicalize,
     #[error("Event too large")]
     EventMaxLengthError(usize),
     #[error("Subscription identifier max length exceeded")]

@@ -27,6 +27,12 @@ pub struct EventCmd {
     event: Event,
 }
 
+impl EventCmd {
+    pub fn event_id(&self) -> &str {
+        return &self.event.id;
+    }
+}
+
 /// Parsed nostr event.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Event {
@@ -83,13 +89,13 @@ impl From<EventCmd> for Result<Event> {
         // ensure command is correct
         if ec.cmd != "EVENT" {
             Err(CommandUnknownError)
-        } else if ec.event.is_valid() {
-            let mut e = ec.event;
-            e.build_index();
-            e.update_delegation();
-            Ok(e)
         } else {
-            Err(EventInvalid)
+            ec.event.validate().map(|_| {
+                let mut e = ec.event;
+                e.build_index();
+                e.update_delegation();
+                e
+            })
         }
     }
 }
@@ -220,7 +226,7 @@ impl Event {
     }
 
     /// Check if this event has a valid signature.
-    fn is_valid(&self) -> bool {
+    fn validate(&self) -> Result<()> {
         // TODO: return a Result with a reason for invalid events
         // validation is performed by:
         // * parsing JSON string into event fields
@@ -229,8 +235,8 @@ impl Event {
         // * serialize with no spaces/newlines
         let c_opt = self.to_canonical();
         if c_opt.is_none() {
-            debug!("event could not be canonicalized");
-            return false;
+            debug!("could not canonicalize");
+            return Err(EventCouldNotCanonicalize);
         }
         let c = c_opt.unwrap();
         // * compute the sha256sum.
@@ -239,21 +245,21 @@ impl Event {
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
             debug!("event id does not match digest");
-            return false;
+            return Err(EventInvalidId);
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
         let sig = schnorr::Signature::from_str(&self.sig).unwrap();
         if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
             if let Ok(pubkey) = XOnlyPublicKey::from_str(&self.pubkey) {
-                let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
-                matches!(verify, Ok(()))
+                SECP.verify_schnorr(&sig, &msg, &pubkey)
+                    .map_err(|_| EventInvalidSignature)
             } else {
                 debug!("client sent malformed pubkey");
-                false
+                Err(EventMalformedPubkey)
             }
         } else {
             info!("error converting digest to secp256k1 message");
-            false
+            Err(EventInvalidSignature)
         }
     }
 

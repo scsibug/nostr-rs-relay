@@ -572,6 +572,7 @@ async fn nostr_server(
                     Ok(NostrMessage::EventMsg(ec)) => {
                         // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
+                        let evid = ec.event_id().to_owned();
                         let parsed : Result<Event> = Result::<Event>::from(ec);
                         match parsed {
                             Ok(e) => {
@@ -592,9 +593,9 @@ async fn nostr_server(
                     }
                 }
                             },
-                            Err(_) => {
+                            Err(e) => {
                                 info!("client: {} sent an invalid event", cid);
-                                ws_stream.send(make_notice_message(Notice::message("event was invalid".into()))).await.ok();
+                                ws_stream.send(make_notice_message(Notice::invalid(evid, &format!("{}", e)))).await.ok();
                             }
                         }
                     },
