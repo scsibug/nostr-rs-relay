@@ -29,7 +29,7 @@ pub struct EventCmd {
 
 impl EventCmd {
     pub fn event_id(&self) -> &str {
-        return &self.event.id;
+        &self.event.id
     }
 }
 
