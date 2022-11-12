@@ -26,6 +26,7 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 - [x] NIP-12: [Generic Tag Queries](https://github.com/nostr-protocol/nips/blob/master/12.md)
 - [x] NIP-15: [End of Stored Events Notice](https://github.com/nostr-protocol/nips/blob/master/15.md)
 - [x] NIP-16: [Event Treatment](https://github.com/nostr-protocol/nips/blob/master/16.md)
+- [x] NIP-20: [Command Results](https://github.com/nostr-protocol/nips/blob/master/20.md)
 - [x] NIP-22: [Event `created_at` limits](https://github.com/nostr-protocol/nips/blob/master/22.md) (_future-dated events only_)
 - [x] NIP-26: [Event Delegation](https://github.com/nostr-protocol/nips/blob/master/26.md)
 
