@@ -2,6 +2,14 @@
 name = "nostr-rs-relay"
 version = "0.7.1"
 edition = "2021"
+authors = ["Greg Heartsfield <scsibug@imap.cc>"]
+description = "A relay implementation for the Nostr protocol"
+readme = "README.md"
+homepage = "https://sr.ht/~gheartsfield/nostr-rs-relay/"
+repository = "https://git.sr.ht/~gheartsfield/nostr-rs-relay"
+license = "MIT"
+keywords = ["nostr", "server"]
+categories = ["network-programming", "web-programming"]
 
 [dependencies]
 tracing = "0.1.36"
