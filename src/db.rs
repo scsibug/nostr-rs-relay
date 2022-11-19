@@ -435,7 +435,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
         return (empty_query, empty_params);
     }
 
-    let mut query = "SELECT DISTINCT(e.content), e.created_at FROM event e  ".to_owned();
+    let mut query = "SELECT DISTINCT(e.content), e.created_at FROM event e".to_owned();
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
@@ -511,8 +511,14 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        let id_clause = format!("({})", id_searches.join(" OR "));
-        filter_components.push(id_clause);
+        if idvec.len() > 0 {
+            let id_clause = format!("({})", id_searches.join(" OR "));
+            filter_components.push(id_clause);
+        } else {
+            // if the ids list was empty, we should never return
+            // any results.
+            filter_components.push("false".to_owned());
+        }
     }
     // Query for tags
     if let Some(map) = &f.tags {
