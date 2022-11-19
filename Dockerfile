@@ -4,13 +4,13 @@ RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./Cargo.lock ./Cargo.lock
-RUN cargo build --release
+RUN cargo build --release --locked
 RUN rm src/*.rs
 
 COPY ./src ./src
 
 RUN rm ./target/release/deps/nostr*relay*
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM docker.io/library/debian:bullseye-20221024-slim@sha256:76cdda8fe5eb597ef5e712e4c9a9f5f1fb119e69f353daaa7bd6d0f6e66e541d
 
