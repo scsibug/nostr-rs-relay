@@ -1,8 +1,8 @@
 # [nostr-rs-relay](https://git.sr.ht/~gheartsfield/nostr-rs-relay)
 
-This is a [nostr](https://github.com/nostr-protocol/nostr) relay, written in
-Rust.  It currently supports the entire relay protocol, and has a
-SQLite persistence layer.
+This is a [nostr](https://github.com/nostr-protocol/nostr) relay,
+written in Rust.  It currently supports the entire relay protocol, and
+persists data with SQLite.
 
 The project master repository is available on
 [sourcehut](https://sr.ht/~gheartsfield/nostr-rs-relay/), and is
@@ -37,15 +37,32 @@ application.  Use a bind mount to store the SQLite database outside of
 the container image, and map the container's 8080 port to a host port
 (7000 in the example below).
 
+The examples below start a rootless podman container, mapping a local
+data directory and config file.
+
 ```console
-$ docker build -t nostr-rs-relay .
+$ podman build -t nostr-rs-relay .
 
-$ docker run -it -p 7000:8080 \
-  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind nostr-rs-relay
+$ mkdir data
 
-[2021-12-31T19:58:31Z INFO  nostr_rs_relay] listening on: 0.0.0.0:8080
-[2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] opened database "/usr/src/app/db/nostr.db" for writing
-[2021-12-31T19:58:31Z INFO  nostr_rs_relay::db] DB version = 2
+$ podman unshare chown 100:100 data
+
+$ podman run -it --rm -p 7000:8080 \
+  --user=100:100 \
+  -v $(pwd)/data:/usr/src/app/db:Z \
+  -v $(pwd)/config.toml:/usr/src/app/config.toml:ro,Z \
+  --name nostr-relay nostr-rs-relay:latest
+
+Nov 19 15:31:15.013  INFO nostr_rs_relay: Starting up from main
+Nov 19 15:31:15.017  INFO nostr_rs_relay::server: listening on: 0.0.0.0:8080
+Nov 19 15:31:15.019  INFO nostr_rs_relay::server: db writer created
+Nov 19 15:31:15.019  INFO nostr_rs_relay::server: control message listener started
+Nov 19 15:31:15.019  INFO nostr_rs_relay::db: Built a connection pool "event writer" (min=1, max=4)
+Nov 19 15:31:15.019  INFO nostr_rs_relay::db: opened database "/usr/src/app/db/nostr.db" for writing
+Nov 19 15:31:15.019  INFO nostr_rs_relay::schema: DB version = 0
+Nov 19 15:31:15.054  INFO nostr_rs_relay::schema: database pragma/schema initialized to v7, and ready
+Nov 19 15:31:15.054  INFO nostr_rs_relay::schema: All migration scripts completed successfully.  Welcome to v7.
+Nov 19 15:31:15.521  INFO nostr_rs_relay::db: Built a connection pool "client query" (min=4, max=128)
 ```
 
 Use a `nostr` client such as
