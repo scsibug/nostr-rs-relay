@@ -471,8 +471,14 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        let authors_clause = format!("({})", auth_searches.join(" OR "));
-        filter_components.push(authors_clause);
+        if authvec.len() > 0 {
+            let authors_clause = format!("({})", auth_searches.join(" OR "));
+            filter_components.push(authors_clause);
+        } else {
+            // if the authors list was empty, we should never return
+            // any results.
+            filter_components.push("false".to_owned());
+        }
     }
     // Query for Kind
     if let Some(ks) = &f.kinds {
