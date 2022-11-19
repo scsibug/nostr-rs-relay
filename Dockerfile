@@ -1,16 +1,21 @@
 FROM docker.io/library/rust:1.65.0@sha256:1bca14676a365d0ed37a1e2a1da86c2bcf883fdf6e6886469434763d94d4afd5 as builder
 
+RUN USER=root cargo install cargo-auditable
 RUN USER=root cargo new --bin nostr-rs-relay
 WORKDIR ./nostr-rs-relay
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./Cargo.lock ./Cargo.lock
-RUN cargo build --release --locked
+# build dependencies only (caching)
+RUN cargo auditable build --release --locked
+# get rid of starter project code
 RUN rm src/*.rs
 
+# copy project source code
 COPY ./src ./src
 
+# build auditable release using locked deps
 RUN rm ./target/release/deps/nostr*relay*
-RUN cargo build --release --locked
+RUN cargo auditable build --release --locked
 
 FROM docker.io/library/debian:bullseye-20221024-slim@sha256:76cdda8fe5eb597ef5e712e4c9a9f5f1fb119e69f353daaa7bd6d0f6e66e541d
 
