@@ -471,7 +471,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        if authvec.len() > 0 {
+        if !authvec.is_empty() {
             let authors_clause = format!("({})", auth_searches.join(" OR "));
             filter_components.push(authors_clause);
         } else {
@@ -511,7 +511,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        if idvec.len() > 0 {
+        if !idvec.is_empty() {
             let id_clause = format!("({})", id_searches.join(" OR "));
             filter_components.push(id_clause);
         } else {
