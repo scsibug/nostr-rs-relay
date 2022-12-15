@@ -52,6 +52,7 @@ CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
 CREATE INDEX IF NOT EXISTS author_index ON event(author);
 CREATE INDEX IF NOT EXISTS delegated_by_index ON event(delegated_by);
 CREATE INDEX IF NOT EXISTS kind_index ON event(kind);
+CREATE INDEX IF NOT EXISTS kind_created_index ON event(kind,created_at);
 
 -- Tag Table
 -- Tag values are stored as either a BLOB (if they come in as a
