@@ -611,7 +611,6 @@ pub async fn db_query(
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     task::spawn_blocking(move || {
-        trace!("going to query for: {:?}", sub);
         let mut row_count: usize = 0;
         let start = Instant::now();
         // generate SQL query
@@ -620,7 +619,7 @@ pub async fn db_query(
         // show pool stats
         debug!("DB pool stats: {:?}", pool.state());
         // cutoff for displaying slow queries
-        let slow_cutoff = Duration::from_millis(200);
+        let slow_cutoff = Duration::from_millis(1000);
         let start = Instant::now();
         if let Ok(conn) = pool.get() {
             // execute the query. Don't cache, since queries vary so much.
@@ -630,10 +629,23 @@ pub async fn db_query(
             while let Some(row) = event_rows.next()? {
                 if first_result {
                     let first_result_elapsed = start.elapsed();
-                    // logging for slow queries
+                    // logging for slow queries; show sub and SQL
                     if first_result_elapsed >= slow_cutoff {
-                        info!("final query string (slow): {}", q);
+                        info!(
+                            "going to query for: {:?} (cid={}, sub={:?})",
+                            sub, client_id, sub.id
+                        );
+                        info!(
+                            "final query string (slow): {} (cid={}, sub={:?})",
+                            q, client_id, sub.id
+                        );
                     } else {
+                        trace!(
+                            "going to query for: {:?} (cid={}, sub={:?})",
+                            sub,
+                            client_id,
+                            sub.id
+                        );
                         trace!("final query string: {}", q);
                     }
                     debug!(
