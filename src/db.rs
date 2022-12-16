@@ -594,7 +594,6 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
         .map(|s| format!("SELECT content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
-    trace!("final query string: {}", query);
     (query, params)
 }
 
@@ -620,6 +619,8 @@ pub async fn db_query(
         trace!("SQL generated in {:?}", start.elapsed());
         // show pool stats
         debug!("DB pool stats: {:?}", pool.state());
+        // cutoff for displaying slow queries
+        let slow_cutoff = Duration::from_millis(200);
         let start = Instant::now();
         if let Ok(conn) = pool.get() {
             // execute the query. Don't cache, since queries vary so much.
@@ -628,11 +629,16 @@ pub async fn db_query(
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
                 if first_result {
+                    let first_result_elapsed = start.elapsed();
+                    // logging for slow queries
+                    if first_result_elapsed >= slow_cutoff {
+                        info!("final query string (slow): {}", q);
+                    } else {
+                        trace!("final query string: {}", q);
+                    }
                     debug!(
                         "time to first result: {:?} (cid={}, sub={:?})",
-                        start.elapsed(),
-                        client_id,
-                        sub.id
+                        first_result_elapsed, client_id, sub.id
                     );
                     first_result = false;
                 }
