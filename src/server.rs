@@ -459,6 +459,8 @@ async fn nostr_server(
     // when these subscriptions are cancelled, make a message
     // available to the executing query so it knows to stop.
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
+    // keep track of the subscriptions we have
+    let mut current_subs: Vec<Subscription> = Vec::new();
 
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
@@ -605,26 +607,37 @@ async fn nostr_server(
                         // * registering the subscription so future events can be matched
                         // * making a channel to cancel to request later
                         // * sending a request for a SQL query
-                        let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
-                        match conn.subscribe(s.clone()) {
-                            Ok(()) => {
-                                // when we insert, if there was a previous query running with the same name, cancel it.
-                                if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
-                                    previous_query.send(()).ok();
-                                }
-                                // start a database query
-                                db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
-                            },
-                            Err(e) => {
-                                info!("Subscription error: {}", e);
-                                ws_stream.send(make_notice_message(Notice::message(format!("Subscription error: {}", e)))).await.ok();
+            // Do nothing if the sub already exists.
+            if !current_subs.contains(&s) {
+                current_subs.push(s.clone());
+                            let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
+                            match conn.subscribe(s.clone()) {
+                Ok(()) => {
+                                    // when we insert, if there was a previous query running with the same name, cancel it.
+                                    if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
+                    previous_query.send(()).ok();
+                                    }
+                                    // start a database query
+                                    db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+                },
+                Err(e) => {
+                                    info!("Subscription error: {}", e);
+                                    ws_stream.send(make_notice_message(Notice::message(format!("Subscription error: {}", e)))).await.ok();
+                }
                             }
-                        }
+            } else {
+        info!("client send duplicate subscription, ignoring");
+        }
                     },
                     Ok(NostrMessage::CloseMsg(cc)) => {
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
             if let Ok(c) = parsed {
+                                // remove from the list of known subs
+                if let Some(pos) = current_subs.iter().position(|s| *s.id == c.id) {
+                current_subs.remove(pos);
+                }
+
                                 // check if a query is currently
                                 // running, and remove it if so.
                                 let stop_tx = running_queries.remove(&c.id);
