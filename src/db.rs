@@ -632,16 +632,16 @@ pub async fn db_query(
                     // logging for slow queries; show sub and SQL
                     if first_result_elapsed >= slow_cutoff {
                         info!(
-                            "going to query for: {:?} (cid={}, sub={:?})",
+                            "going to query for: {:?} (cid: {}, sub: {:?})",
                             sub, client_id, sub.id
                         );
                         info!(
-                            "final query string (slow): {} (cid={}, sub={:?})",
+                            "final query string (slow): {} (cid: {}, sub: {:?})",
                             q, client_id, sub.id
                         );
                     } else {
                         trace!(
-                            "going to query for: {:?} (cid={}, sub={:?})",
+                            "going to query for: {:?} (cid: {}, sub: {:?})",
                             sub,
                             client_id,
                             sub.id
@@ -649,7 +649,7 @@ pub async fn db_query(
                         trace!("final query string: {}", q);
                     }
                     debug!(
-                        "time to first result: {:?} (cid={}, sub={:?})",
+                        "first result in {:?} (cid: {}, sub: {:?})",
                         first_result_elapsed, client_id, sub.id
                     );
                     first_result = false;
@@ -657,7 +657,7 @@ pub async fn db_query(
                 // check if this is still active
                 // TODO:  check every N rows
                 if abandon_query_rx.try_recv().is_ok() {
-                    debug!("query aborted (sub={:?})", sub.id);
+                    debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
                     return Ok(());
                 }
                 row_count += 1;
@@ -676,11 +676,11 @@ pub async fn db_query(
                 })
                 .ok();
             debug!(
-                "query completed ({} rows) in {:?} (cid={}, sub={:?})",
-                row_count,
+                "query completed in {:?} (cid: {}, sub: {:?}, rows: {})",
                 start.elapsed(),
                 client_id,
-                sub.id
+                sub.id,
+                row_count
             );
         } else {
             warn!("Could not get a database connection for querying");

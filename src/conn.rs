@@ -78,8 +78,12 @@ impl ClientConn {
         // check if an existing subscription exists, and replace if so
         if self.subscriptions.contains_key(&k) {
             self.subscriptions.remove(&k);
-            self.subscriptions.insert(k, s);
-            debug!("replaced existing subscription");
+            self.subscriptions.insert(k, s.clone());
+            debug!(
+                "replaced existing subscription (cid: {}, sub: {:?})",
+                self.get_client_prefix(),
+                s.get_id()
+            );
             return Ok(());
         }
 
@@ -90,8 +94,9 @@ impl ClientConn {
         // add subscription
         self.subscriptions.insert(k, s);
         debug!(
-            "registered new subscription, currently have {} active subs",
-            self.subscriptions.len()
+            "registered new subscription, currently have {} active subs (cid: {})",
+            self.subscriptions.len(),
+            self.get_client_prefix(),
         );
         Ok(())
     }
@@ -101,7 +106,7 @@ impl ClientConn {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
         debug!(
-            "removed subscription, currently have {} active subs (cid={})",
+            "removed subscription, currently have {} active subs (cid: {})",
             self.subscriptions.len(),
             self.get_client_prefix(),
         );
