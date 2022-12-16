@@ -408,7 +408,7 @@ fn mig_8_to_9(conn: &mut PooledConnection) -> Result<usize> {
     let upgrade_sql = r##"
 CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
 CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
-PRAGMA user_version = 8;
+PRAGMA user_version = 9;
 "##;
     match conn.execute_batch(upgrade_sql) {
         Ok(()) => {
