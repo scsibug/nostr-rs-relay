@@ -20,7 +20,7 @@ pragma mmap_size = 536870912; -- 512MB of mmap
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 8;
+pub const DB_VERSION: usize = 9;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -49,6 +49,7 @@ content TEXT NOT NULL -- serialized json of event object
 -- Event Indexes
 CREATE UNIQUE INDEX IF NOT EXISTS event_hash_index ON event(event_hash);
 CREATE INDEX IF NOT EXISTS author_index ON event(author);
+CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
 CREATE INDEX IF NOT EXISTS delegated_by_index ON event(delegated_by);
 CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
 
@@ -388,6 +389,26 @@ PRAGMA user_version = 8;
     match conn.execute_batch(upgrade_sql) {
         Ok(()) => {
             info!("database schema upgraded v7 -> v8");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(8)
+}
+
+fn mig_8_to_9(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 8->9");
+    // Those old indexes were actually helpful...
+    let upgrade_sql = r##"
+CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
+CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
+PRAGMA user_version = 8;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v8 -> v9");
         }
         Err(err) => {
             error!("update failed: {}", err);
