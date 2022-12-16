@@ -14,4 +14,4 @@ jobs:
       - uses: docker/setup-qemu-action@v1
       - uses: docker/setup-buildx-action@v1
       - name: Build the Docker image
-        run: docker buildx build -t ghcr.io/v0l/nostr-rs-relay:latest --platform linux/amd64 --push .
+        run: docker buildx build -t ghcr.io/v0l/nostr-rs-relay:latest --platform linux/amd64 --push --cache-to type=gha --cache-from type=gha .
