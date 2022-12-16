@@ -37,6 +37,9 @@ pub struct ReqFilter {
     #[serde(skip)]
     pub tags: Option<HashMap<char, HashSet<String>>>,
     /// Force no matches due to malformed data
+    // we can't represent it in the req filter, so we don't want to
+    // erroneously match.  This basically indicates the req tried to
+    // do something invalid.
     pub force_no_match: bool,
 }
 
