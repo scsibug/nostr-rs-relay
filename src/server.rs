@@ -158,7 +158,7 @@ async fn handle_web_request(
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain")
-                .body(Body::from("Please use a Nostr client to connect."))
+                .body(Body::from("A nostr server is here https://github.com/v0l/nostr-rs-relay"))
                 .unwrap())
         }
         (_, _) => {
