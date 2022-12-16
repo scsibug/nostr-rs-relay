@@ -160,6 +160,10 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             if curr_version == 7 {
                 curr_version = mig_7_to_8(conn)?;
             }
+            if curr_version == 8 {
+                curr_version = mig_8_to_9(conn)?;
+            }
+
             if curr_version == DB_VERSION {
                 info!(
                     "All migration scripts completed successfully.  Welcome to v{}.",
