@@ -311,6 +311,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                     controlled_shutdown.send(()).ok();
                 }
                 Err(std::sync::mpsc::RecvError) => {
+                    // FIXME: spurious error on startup?
                     debug!("shutdown requestor is disconnected");
                 }
             };
@@ -431,6 +432,8 @@ async fn nostr_server(
     event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
 ) {
+    // the time this websocket nostr server started
+    let orig_start = Instant::now();
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
     // Track internal client state
@@ -461,7 +464,6 @@ async fn nostr_server(
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
     // keep track of the subscriptions we have
     let mut current_subs: Vec<Subscription> = Vec::new();
-
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
@@ -473,7 +475,7 @@ async fn nostr_server(
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-        info!("Close connection down due to shutdown, client: {}, ip: {:?}", cid, conn.ip());
+        info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
                 // server shutting down, exit loop
                 break;
             },
@@ -676,10 +678,11 @@ async fn nostr_server(
         stop_tx.send(()).ok();
     }
     info!(
-        "stopping client connection (cid: {}, ip: {:?}, sent: {} events, recv: {} events)",
+        "stopping client connection (cid: {}, ip: {:?}, sent: {} events, recv: {} events, connected: {:?})",
         cid,
         conn.ip(),
         client_published_event_count,
-        client_received_event_count
+        client_received_event_count,
+	orig_start.elapsed()
     );
 }

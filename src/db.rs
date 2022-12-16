@@ -597,6 +597,15 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     (query, params)
 }
 
+fn log_pool_stats(pool: &SqlitePool) {
+    let state: r2d2::State = pool.state();
+    let in_use_cxns = state.connections - state.idle_connections;
+    debug!(
+        "DB pool usage (in_use: {}, available: {})",
+        in_use_cxns, state.connections
+    );
+}
+
 /// Perform a database query using a subscription.
 ///
 /// The [`Subscription`] is converted into a SQL query.  Each result
@@ -617,7 +626,7 @@ pub async fn db_query(
         let (q, p) = query_from_sub(&sub);
         trace!("SQL generated in {:?}", start.elapsed());
         // show pool stats
-        debug!("DB pool stats: {:?}", pool.state());
+        log_pool_stats(&pool);
         // cutoff for displaying slow queries
         let slow_cutoff = Duration::from_millis(1000);
         let start = Instant::now();
