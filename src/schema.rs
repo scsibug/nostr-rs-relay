@@ -20,7 +20,7 @@ pragma mmap_size = 536870912; -- 512MB of mmap
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 9;
+pub const DB_VERSION: usize = 10;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -67,6 +67,7 @@ FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
 CREATE INDEX IF NOT EXISTS tag_val_hex_index ON tag(value_hex);
+CREATE INDEX IF NOT EXISTS tag_composite_index ON tag(event_id,name,value_hex,value);
 
 -- NIP-05 User Validation
 CREATE TABLE IF NOT EXISTS user_verification (
@@ -163,7 +164,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             if curr_version == 8 {
                 curr_version = mig_8_to_9(conn)?;
             }
-
+            if curr_version == 9 {
+                curr_version = mig_9_to_10(conn)?;
+            }
             if curr_version == DB_VERSION {
                 info!(
                     "All migration scripts completed successfully.  Welcome to v{}.",
@@ -419,5 +422,24 @@ PRAGMA user_version = 9;
             panic!("database could not be upgraded");
         }
     }
-    Ok(8)
+    Ok(9)
+}
+
+fn mig_9_to_10(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 9->10");
+    // Those old indexes were actually helpful...
+    let upgrade_sql = r##"
+CREATE INDEX IF NOT EXISTS tag_composite_index ON tag(event_id,name,value_hex,value);
+PRAGMA user_version = 10;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v9 -> v10");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(10)
 }
