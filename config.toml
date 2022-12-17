@@ -65,6 +65,11 @@ reject_future_seconds = 1800
 # an integer.  If not set (or set to 0), defaults to unlimited.
 #messages_per_sec = 0
 
+# Limit client subscriptions created per second, averaged over one
+# minute.  Must be an integer.  If not set (or set to 0), defaults to
+# unlimited.
+#subscriptions_per_min = 0
+
 # Limit the maximum size of an EVENT message.  Defaults to 128 KB.
 # Set to 0 for unlimited.
 #max_event_bytes = 131072

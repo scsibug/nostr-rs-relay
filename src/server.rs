@@ -14,6 +14,7 @@ use crate::notice::Notice;
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
+use governor::{Jitter, Quota, RateLimiter};
 use http::header::HeaderMap;
 use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
@@ -438,6 +439,19 @@ async fn nostr_server(
     let mut bcast_rx = broadcast.subscribe();
     // Track internal client state
     let mut conn = conn::ClientConn::new(client_info.remote_ip);
+    // subscription creation rate limiting
+    let mut sub_lim_opt = None;
+    // 100ms jitter when the rate limiter returns
+    let jitter = Jitter::up_to(Duration::from_millis(100));
+    let sub_per_min_setting = settings.limits.subscriptions_per_min;
+    if let Some(sub_per_min) = sub_per_min_setting {
+        if sub_per_min > 0 {
+            trace!("Rate limits for sub creation ({}/min)", sub_per_min);
+            let quota_time = core::num::NonZeroU32::new(sub_per_min).unwrap();
+            let quota = Quota::per_minute(quota_time);
+            sub_lim_opt = Some(RateLimiter::direct(quota));
+        }
+    }
     // Use the remote IP as the client identifier
     let cid = conn.get_client_prefix();
     // Create a channel for receiving query results from the database.
@@ -606,11 +620,15 @@ async fn nostr_server(
                     Ok(NostrMessage::SubMsg(s)) => {
                         debug!("subscription requested (cid: {}, sub: {:?})", cid, s.id);
                         // subscription handling consists of:
+                        // * check for rate limits
                         // * registering the subscription so future events can be matched
                         // * making a channel to cancel to request later
                         // * sending a request for a SQL query
             // Do nothing if the sub already exists.
             if !current_subs.contains(&s) {
+                if let Some(ref lim) = sub_lim_opt {
+                    lim.until_ready_with_jitter(jitter).await;
+                }
                 current_subs.push(s.clone());
                             let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
                             match conn.subscribe(s.clone()) {
