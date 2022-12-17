@@ -3,7 +3,7 @@ use crate::utils::is_hex;
 use hex;
 
 /// Types of hexadecimal queries.
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum HexSearch {
     // when no range is needed, exact 32-byte
     Exact(Vec<u8>),

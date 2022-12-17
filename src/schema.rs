@@ -20,7 +20,7 @@ pragma mmap_size = 536870912; -- 512MB of mmap
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 7;
+pub const DB_VERSION: usize = 9;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -48,11 +48,10 @@ content TEXT NOT NULL -- serialized json of event object
 
 -- Event Indexes
 CREATE UNIQUE INDEX IF NOT EXISTS event_hash_index ON event(event_hash);
-CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
 CREATE INDEX IF NOT EXISTS author_index ON event(author);
+CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
 CREATE INDEX IF NOT EXISTS delegated_by_index ON event(delegated_by);
-CREATE INDEX IF NOT EXISTS kind_index ON event(kind);
-CREATE INDEX IF NOT EXISTS kind_created_index ON event(kind,created_at);
+CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
 
 -- Tag Table
 -- Tag values are stored as either a BLOB (if they come in as a
@@ -158,6 +157,13 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             if curr_version == 6 {
                 curr_version = mig_6_to_7(conn)?;
             }
+            if curr_version == 7 {
+                curr_version = mig_7_to_8(conn)?;
+            }
+            if curr_version == 8 {
+                curr_version = mig_8_to_9(conn)?;
+            }
+
             if curr_version == DB_VERSION {
                 info!(
                     "All migration scripts completed successfully.  Welcome to v{}.",
@@ -373,4 +379,45 @@ PRAGMA user_version = 7;
         }
     }
     Ok(7)
+}
+
+fn mig_7_to_8(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 7->8");
+    // Remove redundant indexes, and add a better multi-column index.
+    let upgrade_sql = r##"
+DROP INDEX IF EXISTS created_at_index;
+DROP INDEX IF EXISTS kind_index;
+CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
+PRAGMA user_version = 8;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v7 -> v8");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(8)
+}
+
+fn mig_8_to_9(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 8->9");
+    // Those old indexes were actually helpful...
+    let upgrade_sql = r##"
+CREATE INDEX IF NOT EXISTS created_at_index ON event(created_at);
+CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
+PRAGMA user_version = 9;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v8 -> v9");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(8)
 }

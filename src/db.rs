@@ -428,14 +428,13 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
 
     // if the filter is malformed, don't return anything.
     if f.force_no_match {
-        let empty_query =
-            "SELECT DISTINCT(e.content), e.created_at FROM event e WHERE 1=0".to_owned();
+        let empty_query = "SELECT e.content, e.created_at FROM event e WHERE 1=0".to_owned();
         // query parameters for SQLite
         let empty_params: Vec<Box<dyn ToSql>> = vec![];
         return (empty_query, empty_params);
     }
 
-    let mut query = "SELECT DISTINCT(e.content), e.created_at FROM event e".to_owned();
+    let mut query = "SELECT e.content, e.created_at FROM event e".to_owned();
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
@@ -471,7 +470,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        if authvec.len() > 0 {
+        if !authvec.is_empty() {
             let authors_clause = format!("({})", auth_searches.join(" OR "));
             filter_components.push(authors_clause);
         } else {
@@ -511,7 +510,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        if idvec.len() > 0 {
+        if !idvec.is_empty() {
             let id_clause = format!("({})", id_searches.join(" OR "));
             filter_components.push(id_clause);
         } else {
@@ -591,11 +590,19 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     // encapsulate subqueries into select statements
     let subqueries_selects: Vec<String> = subqueries
         .iter()
-        .map(|s| format!("SELECT content, created_at FROM ({})", s))
+        .map(|s| format!("SELECT distinct content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
-    trace!("final query string: {}", query);
     (query, params)
+}
+
+fn log_pool_stats(pool: &SqlitePool) {
+    let state: r2d2::State = pool.state();
+    let in_use_cxns = state.connections - state.idle_connections;
+    debug!(
+        "DB pool usage (in_use: {}, available: {})",
+        in_use_cxns, state.connections
+    );
 }
 
 /// Perform a database query using a subscription.
@@ -612,14 +619,15 @@ pub async fn db_query(
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     task::spawn_blocking(move || {
-        trace!("going to query for: {:?}", sub);
         let mut row_count: usize = 0;
         let start = Instant::now();
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
         trace!("SQL generated in {:?}", start.elapsed());
         // show pool stats
-        debug!("DB pool stats: {:?}", pool.state());
+        log_pool_stats(&pool);
+        // cutoff for displaying slow queries
+        let slow_cutoff = Duration::from_millis(1000);
         let start = Instant::now();
         if let Ok(conn) = pool.get() {
             // execute the query. Don't cache, since queries vary so much.
@@ -628,18 +636,36 @@ pub async fn db_query(
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
                 if first_result {
+                    let first_result_elapsed = start.elapsed();
+                    // logging for slow queries; show sub and SQL
+                    if first_result_elapsed >= slow_cutoff {
+                        info!(
+                            "going to query for: {:?} (cid: {}, sub: {:?})",
+                            sub, client_id, sub.id
+                        );
+                        info!(
+                            "final query string (slow): {} (cid: {}, sub: {:?})",
+                            q, client_id, sub.id
+                        );
+                    } else {
+                        trace!(
+                            "going to query for: {:?} (cid: {}, sub: {:?})",
+                            sub,
+                            client_id,
+                            sub.id
+                        );
+                        trace!("final query string: {}", q);
+                    }
                     debug!(
-                        "time to first result: {:?} (cid={}, sub={:?})",
-                        start.elapsed(),
-                        client_id,
-                        sub.id
+                        "first result in {:?} (cid: {}, sub: {:?})",
+                        first_result_elapsed, client_id, sub.id
                     );
                     first_result = false;
                 }
                 // check if this is still active
                 // TODO:  check every N rows
                 if abandon_query_rx.try_recv().is_ok() {
-                    debug!("query aborted (sub={:?})", sub.id);
+                    debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
                     return Ok(());
                 }
                 row_count += 1;
@@ -658,11 +684,11 @@ pub async fn db_query(
                 })
                 .ok();
             debug!(
-                "query completed ({} rows) in {:?} (cid={}, sub={:?})",
-                row_count,
+                "query completed in {:?} (cid: {}, sub: {:?}, rows: {})",
                 start.elapsed(),
                 client_id,
-                sub.id
+                sub.id,
+                row_count
             );
         } else {
             warn!("Could not get a database connection for querying");
