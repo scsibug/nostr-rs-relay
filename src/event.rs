@@ -37,19 +37,19 @@ impl EventCmd {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Event {
     pub id: String,
-    pub(crate) pubkey: String,
+    pub pubkey: String,
     #[serde(skip)]
-    pub(crate) delegated_by: Option<String>,
-    pub(crate) created_at: u64,
-    pub(crate) kind: u64,
+    pub delegated_by: Option<String>,
+    pub created_at: u64,
+    pub kind: u64,
     #[serde(deserialize_with = "tag_from_string")]
     // NOTE: array-of-arrays may need to be more general than a string container
-    pub(crate) tags: Vec<Vec<String>>,
-    pub(crate) content: String,
-    pub(crate) sig: String,
+    pub tags: Vec<Vec<String>>,
+    pub content: String,
+    pub sig: String,
     // Optimization for tag search, built on demand.
     #[serde(skip)]
-    pub(crate) tagidx: Option<HashMap<char, HashSet<String>>>,
+    pub tagidx: Option<HashMap<char, HashSet<String>>>,
 }
 
 /// Simple tag type for array of array of strings.
@@ -226,7 +226,7 @@ impl Event {
     }
 
     /// Check if this event has a valid signature.
-    fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         // TODO: return a Result with a reason for invalid events
         // validation is performed by:
         // * parsing JSON string into event fields

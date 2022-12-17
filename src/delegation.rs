@@ -80,7 +80,7 @@ impl FromStr for Operator {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ConditionQuery {
-    pub(crate) conditions: Vec<Condition>,
+    pub conditions: Vec<Condition>,
 }
 
 impl ConditionQuery {
@@ -137,9 +137,9 @@ pub fn validate_delegation(
 /// An example complex condition would be:  kind=1,2,3&created_at<1665265999
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Condition {
-    pub(crate) field: Field,
-    pub(crate) operator: Operator,
-    pub(crate) values: Vec<u64>,
+    pub field: Field,
+    pub operator: Operator,
+    pub values: Vec<u64>,
 }
 
 impl Condition {
