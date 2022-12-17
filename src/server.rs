@@ -637,7 +637,7 @@ async fn nostr_server(
                                     if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
                     previous_query.send(()).ok();
                                     }
-                                    // start a database query
+                                    // start a database query.  this spawns a blocking database query on a worker thread.
                                     db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
                 },
                 Err(e) => {
