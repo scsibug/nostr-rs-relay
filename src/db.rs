@@ -428,14 +428,13 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
 
     // if the filter is malformed, don't return anything.
     if f.force_no_match {
-        let empty_query =
-            "SELECT DISTINCT(e.content), e.created_at FROM event e WHERE 1=0".to_owned();
+        let empty_query = "SELECT e.content, e.created_at FROM event e WHERE 1=0".to_owned();
         // query parameters for SQLite
         let empty_params: Vec<Box<dyn ToSql>> = vec![];
         return (empty_query, empty_params);
     }
 
-    let mut query = "SELECT DISTINCT(e.content), e.created_at FROM event e".to_owned();
+    let mut query = "SELECT e.content, e.created_at FROM event e".to_owned();
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
@@ -591,7 +590,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     // encapsulate subqueries into select statements
     let subqueries_selects: Vec<String> = subqueries
         .iter()
-        .map(|s| format!("SELECT content, created_at FROM ({})", s))
+        .map(|s| format!("SELECT distinct content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
     (query, params)
