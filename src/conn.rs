@@ -46,6 +46,11 @@ impl ClientConn {
         &self.subscriptions
     }
 
+    /// Check if the given subscription already exists
+    pub fn has_subscription(&self, sub: &Subscription) -> bool {
+        self.subscriptions.values().any(|x| x == sub)
+    }
+
     /// Get a short prefix of the client's unique identifier, suitable
     /// for logging.
     #[must_use]
