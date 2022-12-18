@@ -16,7 +16,7 @@ pub const STARTUP_SQL: &str = r##"
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA journal_size_limit=32768;
-pragma mmap_size = 536870912; -- 512MB of mmap
+pragma mmap_size = 1073741824; -- 1024MB of mmap
 "##;
 
 /// Latest database version
