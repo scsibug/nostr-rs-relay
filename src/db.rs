@@ -636,9 +636,11 @@ pub async fn db_query(
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
+    let start = Instant::now();
     task::spawn_blocking(move || {
-        let mut row_count: usize = 0;
+        debug!("moved DB query to thread in {:?}", start.elapsed());
         let start = Instant::now();
+        let mut row_count: usize = 0;
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
         debug!("SQL generated in {:?}", start.elapsed());
@@ -647,43 +649,46 @@ pub async fn db_query(
         // cutoff for displaying slow queries
         let slow_cutoff = Duration::from_millis(1000);
         let start = Instant::now();
+        let mut slow_first_event;
         if let Ok(conn) = pool.get() {
             // execute the query. Don't cache, since queries vary so much.
             let mut stmt = conn.prepare(&q)?;
             let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
+                let first_event_elapsed = start.elapsed();
+                slow_first_event = first_event_elapsed >= slow_cutoff;
                 if first_result {
-                    let first_result_elapsed = start.elapsed();
-                    // logging for slow queries; show sub and SQL
-                    if first_result_elapsed >= slow_cutoff {
-                        info!(
-                            "query req (slow): {:?} (cid: {}, sub: {:?})",
-                            sub, client_id, sub.id
-                        );
-                        info!(
-                            "query string (slow): {} (cid: {}, sub: {:?})",
-                            q, client_id, sub.id
-                        );
-                    } else {
-                        trace!(
-                            "query req: {:?} (cid: {}, sub: {:?})",
-                            sub,
-                            client_id,
-                            sub.id
-                        );
-                        trace!(
-                            "query string: {} (cid: {}, sub: {:?})",
-                            q,
-                            client_id,
-                            sub.id
-                        );
-                    }
                     debug!(
                         "first result in {:?} (cid: {}, sub: {:?})",
-                        first_result_elapsed, client_id, sub.id
+                        first_event_elapsed, client_id, sub.id
                     );
                     first_result = false;
+                }
+                // logging for slow queries; show sub and SQL
+                //
+                if slow_first_event {
+                    info!(
+                        "query req (slow): {:?} (cid: {}, sub: {:?})",
+                        sub, client_id, sub.id
+                    );
+                    info!(
+                        "query string (slow): {} (cid: {}, sub: {:?})",
+                        q, client_id, sub.id
+                    );
+                } else {
+                    trace!(
+                        "query req: {:?} (cid: {}, sub: {:?})",
+                        sub,
+                        client_id,
+                        sub.id
+                    );
+                    trace!(
+                        "query string: {} (cid: {}, sub: {:?})",
+                        q,
+                        client_id,
+                        sub.id
+                    );
                 }
                 // check if this is still active
                 // TODO:  check every N rows
