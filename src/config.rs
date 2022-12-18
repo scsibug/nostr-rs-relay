@@ -219,7 +219,7 @@ impl Default for Settings {
                 messages_per_sec: None,
                 subscriptions_per_min: None,
                 db_conns_per_client: None,
-                max_blocking_threads: 64,
+                max_blocking_threads: 16,
                 max_event_bytes: Some(2 << 17),      // 128K
                 max_ws_message_bytes: Some(2 << 17), // 128K
                 max_ws_frame_bytes: Some(2 << 17),   // 128K
