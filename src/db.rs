@@ -38,6 +38,8 @@ pub struct SubmittedEvent {
 
 /// Database file
 pub const DB_FILE: &str = "nostr.db";
+/// How many persisted events before optimization is triggered
+pub const EVENT_COUNT_OPTIMIZE_TRIGGER: usize = 500;
 
 /// Build a database connection pool.
 /// # Panics
@@ -86,6 +88,12 @@ pub fn build_pool(
     pool
 }
 
+/// Perform normal maintenance
+pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
+    conn.execute_batch("PRAGMA optimize;")?;
+    Ok(())
+}
+
 /// Spawn a database writer that persists events to the SQLite store.
 pub async fn db_writer(
     settings: Settings,
@@ -125,6 +133,8 @@ pub async fn db_writer(
         let rps_setting = settings.limits.messages_per_sec;
         let mut most_recent_rate_limit = Instant::now();
         let mut lim_opt = None;
+        // Keep rough track of events so we can run optimize eventually.
+        let mut optimize_counter: usize = 0;
         let clock = governor::clock::QuantaClock::default();
         if let Some(rps) = rps_setting {
             if rps > 0 {
@@ -256,6 +266,13 @@ pub async fn db_writer(
                         let msg = "relay experienced an error trying to publish the latest event";
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                     }
+                }
+                // Use this as a trigger to do optimization
+                optimize_counter += 1;
+                if optimize_counter > EVENT_COUNT_OPTIMIZE_TRIGGER {
+                    info!("running database optimizer");
+                    optimize_counter = 0;
+                    optimize_db(&mut pool.get()?).ok();
                 }
             }
 
@@ -624,7 +641,7 @@ pub async fn db_query(
         let start = Instant::now();
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
-        trace!("SQL generated in {:?}", start.elapsed());
+        debug!("SQL generated in {:?}", start.elapsed());
         // show pool stats
         log_pool_stats(&pool);
         // cutoff for displaying slow queries
@@ -641,21 +658,26 @@ pub async fn db_query(
                     // logging for slow queries; show sub and SQL
                     if first_result_elapsed >= slow_cutoff {
                         info!(
-                            "going to query for: {:?} (cid: {}, sub: {:?})",
+                            "query req (slow): {:?} (cid: {}, sub: {:?})",
                             sub, client_id, sub.id
                         );
                         info!(
-                            "final query string (slow): {} (cid: {}, sub: {:?})",
+                            "query string (slow): {} (cid: {}, sub: {:?})",
                             q, client_id, sub.id
                         );
                     } else {
                         trace!(
-                            "going to query for: {:?} (cid: {}, sub: {:?})",
+                            "query req: {:?} (cid: {}, sub: {:?})",
                             sub,
                             client_id,
                             sub.id
                         );
-                        trace!("final query string: {}", q);
+                        trace!(
+                            "query string: {} (cid: {}, sub: {:?})",
+                            q,
+                            client_id,
+                            sub.id
+                        );
                     }
                     debug!(
                         "first result in {:?} (cid: {}, sub: {:?})",
