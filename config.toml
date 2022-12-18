@@ -78,6 +78,9 @@ reject_future_seconds = 1800
 # defaults to unlimited (subject to subscription limits).
 #db_conns_per_client = 0
 
+# Limit blocking threads used for database connections.  Defaults to 64.
+#max_blocking_threads = 64
+
 # Limit the maximum size of an EVENT message.  Defaults to 128 KB.
 # Set to 0 for unlimited.
 #max_event_bytes = 131072

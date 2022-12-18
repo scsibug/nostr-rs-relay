@@ -245,6 +245,14 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
     let rt = Builder::new_multi_thread()
         .enable_all()
         .thread_name("tokio-ws")
+        // limit concurrent SQLite blocking threads
+        .max_blocking_threads(settings.limits.max_blocking_threads)
+        .on_thread_start(|| {
+            debug!("started new thread");
+        })
+        .on_thread_stop(|| {
+            debug!("stopping thread");
+        })
         .build()
         .unwrap();
     // start tokio

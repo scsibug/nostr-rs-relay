@@ -54,7 +54,8 @@ pub struct Limits {
     pub messages_per_sec: Option<u32>, // Artificially slow down event writing to limit disk consumption (averaged over 1 minute)
     pub subscriptions_per_min: Option<u32>, // Artificially slow down request (db query) creation to prevent abuse (averaged over 1 minute)
     pub db_conns_per_client: Option<u32>, // How many concurrent database queries (not subscriptions) may a client have?
-    pub max_event_bytes: Option<usize>,   // Maximum size of an EVENT message
+    pub max_blocking_threads: usize,
+    pub max_event_bytes: Option<usize>, // Maximum size of an EVENT message
     pub max_ws_message_bytes: Option<usize>,
     pub max_ws_frame_bytes: Option<usize>,
     pub broadcast_buffer: usize, // events to buffer for subscribers (prevents slow readers from consuming memory)
@@ -218,6 +219,7 @@ impl Default for Settings {
                 messages_per_sec: None,
                 subscriptions_per_min: None,
                 db_conns_per_client: None,
+                max_blocking_threads: 64,
                 max_event_bytes: Some(2 << 17),      // 128K
                 max_ws_message_bytes: Some(2 << 17), // 128K
                 max_ws_frame_bytes: Some(2 << 17),   // 128K
