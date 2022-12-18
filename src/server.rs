@@ -638,12 +638,12 @@ async fn nostr_server(
                                     db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
                 },
                 Err(e) => {
-                                    info!("Subscription error: {}", e);
+                    info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);
                                     ws_stream.send(make_notice_message(Notice::message(format!("Subscription error: {}", e)))).await.ok();
                 }
                             }
             } else {
-        info!("client send duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
+        info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
         }
                     },
                     Ok(NostrMessage::CloseMsg(cc)) => {
