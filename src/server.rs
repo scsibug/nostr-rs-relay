@@ -464,9 +464,11 @@ async fn nostr_server(
     let cid = conn.get_client_prefix();
     // Create a channel for receiving query results from the database.
     // we will send out the tx handle to any query we generate.
-    let (query_tx, mut query_rx) = mpsc::channel::<db::QueryResult>(256);
+    // this has capacity for some of the larger requests we see, which
+    // should allow the DB thread to release the handle earlier.
+    let (query_tx, mut query_rx) = mpsc::channel::<db::QueryResult>(20000);
     // Create channel for receiving NOTICEs
-    let (notice_tx, mut notice_rx) = mpsc::channel::<Notice>(32);
+    let (notice_tx, mut notice_rx) = mpsc::channel::<Notice>(128);
 
     // last time this client sent data (message, ping, etc.)
     let mut last_message_time = Instant::now();
