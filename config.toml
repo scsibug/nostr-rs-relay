@@ -62,13 +62,24 @@ reject_future_seconds = 1800
 
 [limits]
 # Limit events created per second, averaged over one minute.  Must be
-# an integer.  If not set (or set to 0), defaults to unlimited.
-#messages_per_sec = 0
+# an integer.  If not set (or set to 0), defaults to unlimited.  Note:
+# this is for the server as a whole, not per-connection.
+# messages_per_sec = 0
 
 # Limit client subscriptions created per second, averaged over one
 # minute.  Must be an integer.  If not set (or set to 0), defaults to
 # unlimited.
 #subscriptions_per_min = 0
+
+# UNIMPLEMENTED...
+# Limit how many concurrent database connections a client can have.
+# This prevents a single client from starting too many expensive
+# database queries.  Must be an integer.  If not set (or set to 0),
+# defaults to unlimited (subject to subscription limits).
+#db_conns_per_client = 0
+
+# Limit blocking threads used for database connections.  Defaults to 64.
+#max_blocking_threads = 64
 
 # Limit the maximum size of an EVENT message.  Defaults to 128 KB.
 # Set to 0 for unlimited.

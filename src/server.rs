@@ -245,6 +245,14 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
     let rt = Builder::new_multi_thread()
         .enable_all()
         .thread_name("tokio-ws")
+        // limit concurrent SQLite blocking threads
+        .max_blocking_threads(settings.limits.max_blocking_threads)
+        .on_thread_start(|| {
+            debug!("started new thread");
+        })
+        .on_thread_stop(|| {
+            debug!("stopping thread");
+        })
         .build()
         .unwrap();
     // start tokio
@@ -476,8 +484,6 @@ async fn nostr_server(
     // when these subscriptions are cancelled, make a message
     // available to the executing query so it knows to stop.
     let mut running_queries: HashMap<String, oneshot::Sender<()>> = HashMap::new();
-    // keep track of the subscriptions we have
-    let mut current_subs: Vec<Subscription> = Vec::new();
     // for stats, keep track of how many events the client published,
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
@@ -625,11 +631,10 @@ async fn nostr_server(
                         // * making a channel to cancel to request later
                         // * sending a request for a SQL query
             // Do nothing if the sub already exists.
-            if !current_subs.contains(&s) {
+            if !conn.has_subscription(&s) {
                 if let Some(ref lim) = sub_lim_opt {
-                    lim.until_ready_with_jitter(jitter).await;
+                lim.until_ready_with_jitter(jitter).await;
                 }
-                current_subs.push(s.clone());
                             let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
                             match conn.subscribe(s.clone()) {
                 Ok(()) => {
@@ -637,27 +642,22 @@ async fn nostr_server(
                                     if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
                     previous_query.send(()).ok();
                                     }
-                                    // start a database query
+                                    // start a database query.  this spawns a blocking database query on a worker thread.
                                     db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
                 },
                 Err(e) => {
-                                    info!("Subscription error: {}", e);
+                    info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);
                                     ws_stream.send(make_notice_message(Notice::message(format!("Subscription error: {}", e)))).await.ok();
                 }
                             }
             } else {
-        info!("client send duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
+        info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
         }
                     },
                     Ok(NostrMessage::CloseMsg(cc)) => {
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
             if let Ok(c) = parsed {
-                                // remove from the list of known subs
-                if let Some(pos) = current_subs.iter().position(|s| *s.id == c.id) {
-                current_subs.remove(pos);
-                }
-
                                 // check if a query is currently
                                 // running, and remove it if so.
                                 let stop_tx = running_queries.remove(&c.id);
