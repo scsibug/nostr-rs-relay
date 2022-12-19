@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.66.0@sha256:359949280cebefe93ccb33089fe25111a3aadfe99eac4b6cbe8ec3e1b571dacb as builder
+FROM docker.io/library/rust:1.66.0 as builder
 
 RUN USER=root cargo install cargo-auditable
 RUN USER=root cargo new --bin nostr-rs-relay
@@ -17,7 +17,7 @@ COPY ./src ./src
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo auditable build --release --locked
 
-FROM docker.io/library/debian:bullseye-20221205-slim@sha256:25f10b4f1ded5341a3ca0a30290ff3cd5639415f0c5a2222d5e7d5dd72952aa1
+FROM docker.io/library/debian:bullseye-20221205-slim
 
 ARG APP=/usr/src/app
 ARG APP_DATA=/usr/src/app/db
