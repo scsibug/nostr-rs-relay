@@ -339,8 +339,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         let pool = db::build_pool(
             "client query",
             &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
-                | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
             db_min_conn,
             db_max_conn,
             true,

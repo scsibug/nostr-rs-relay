@@ -116,7 +116,7 @@ pub async fn db_writer(
             &settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
-            4,
+            2,
             false,
         );
         if settings.database.in_memory {
@@ -636,9 +636,16 @@ pub async fn db_query(
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
-    let start = Instant::now();
+    let pre_spawn_start = Instant::now();
     task::spawn_blocking(move || {
-        debug!("moved DB query to thread in {:?}", start.elapsed());
+        let db_queue_time = pre_spawn_start.elapsed();
+        // report queuing time if it is slow
+        if db_queue_time > Duration::from_secs(1) {
+            debug!(
+                "(slow) DB query queued for {:?} (cid: {}, sub: {:?})",
+                db_queue_time, client_id, sub.id
+            );
+        }
         let start = Instant::now();
         let mut row_count: usize = 0;
         // generate SQL query
@@ -647,9 +654,13 @@ pub async fn db_query(
         // show pool stats
         log_pool_stats(&pool);
         // cutoff for displaying slow queries
-        let slow_cutoff = Duration::from_millis(1000);
+        let slow_cutoff = Duration::from_millis(2000);
+        // any client that doesn't cause us to generate new rows in 5
+        // seconds gets dropped.
+        let abort_cutoff = Duration::from_secs(5);
         let start = Instant::now();
         let mut slow_first_event;
+        let mut last_successful_send = Instant::now();
         if let Ok(conn) = pool.get() {
             // execute the query. Don't cache, since queries vary so much.
             let mut stmt = conn.prepare(&q)?;
@@ -665,14 +676,14 @@ pub async fn db_query(
                     );
                     first_result = false;
                 }
-                // logging for slow queries; show sub and SQL
-                //
-                if slow_first_event {
-                    info!(
+                // logging for slow queries; show sub and SQL.
+                // to reduce logging; only show 1/16th of clients (leading 0)
+                if slow_first_event && client_id.starts_with("00") {
+                    debug!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
                     );
-                    info!(
+                    debug!(
                         "query string (slow): {} (cid: {}, sub: {:?})",
                         q, client_id, sub.id
                     );
@@ -690,20 +701,40 @@ pub async fn db_query(
                         sub.id
                     );
                 }
-                // check if this is still active
-                // TODO:  check every N rows
-                if abandon_query_rx.try_recv().is_ok() {
+                // check if this is still active; every 100 rows
+                if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
                     debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
                     return Ok(());
                 }
                 row_count += 1;
                 let event_json = row.get(0)?;
+                loop {
+                    if query_tx.capacity() != 0 {
+                        // we have capacity to add another item
+                        break;
+                    } else {
+                        // the queue is full
+                        trace!("db reader thread is stalled");
+                        if last_successful_send + abort_cutoff < Instant::now() {
+                            // the queue has been full for too long, abort
+                            info!("aborting database query due to slow client");
+                            let ok: Result<()> = Ok(());
+                            return ok;
+                        }
+                        // give the queue a chance to clear before trying again
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+                // TODO: we could use try_send, but we'd have to juggle
+                // getting the query result back as part of the error
+                // result.
                 query_tx
                     .blocking_send(QueryResult {
                         sub_id: sub.get_id(),
                         event: event_json,
                     })
                     .ok();
+                last_successful_send = Instant::now();
             }
             query_tx
                 .blocking_send(QueryResult {
@@ -712,10 +743,11 @@ pub async fn db_query(
                 })
                 .ok();
             debug!(
-                "query completed in {:?} (cid: {}, sub: {:?}, rows: {})",
-                start.elapsed(),
+                "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
+                pre_spawn_start.elapsed(),
                 client_id,
                 sub.id,
+                start.elapsed(),
                 row_count
             );
         } else {
