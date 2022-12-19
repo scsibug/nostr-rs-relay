@@ -116,7 +116,7 @@ pub async fn db_writer(
             &settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
-            4,
+            2,
             false,
         );
         if settings.database.in_memory {
