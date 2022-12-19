@@ -647,7 +647,7 @@ pub async fn db_query(
         // show pool stats
         log_pool_stats(&pool);
         // cutoff for displaying slow queries
-        let slow_cutoff = Duration::from_millis(1000);
+        let slow_cutoff = Duration::from_millis(2000);
         let start = Instant::now();
         let mut slow_first_event;
         if let Ok(conn) = pool.get() {
@@ -665,9 +665,9 @@ pub async fn db_query(
                     );
                     first_result = false;
                 }
-                // logging for slow queries; show sub and SQL
-                //
-                if slow_first_event {
+                // logging for slow queries; show sub and SQL.
+                // to reduce logging; only show 1/16th of clients (leading 0)
+                if slow_first_event && client_id.starts_with('0') {
                     info!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
@@ -690,9 +690,8 @@ pub async fn db_query(
                         sub.id
                     );
                 }
-                // check if this is still active
-                // TODO:  check every N rows
-                if abandon_query_rx.try_recv().is_ok() {
+                // check if this is still active; every 100 rows
+                if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
                     debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
                     return Ok(());
                 }
