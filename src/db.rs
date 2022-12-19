@@ -636,9 +636,16 @@ pub async fn db_query(
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
-    let start = Instant::now();
+    let pre_spawn_start = Instant::now();
     task::spawn_blocking(move || {
-        debug!("moved DB query to thread in {:?}", start.elapsed());
+        let db_queue_time = pre_spawn_start.elapsed();
+        // report queuing time if it is slow
+        if db_queue_time > Duration::from_secs(1) {
+            debug!(
+                "(slow) DB query queued for {:?} (cid: {}, sub: {:?})",
+                db_queue_time, client_id, sub.id
+            );
+        }
         let start = Instant::now();
         let mut row_count: usize = 0;
         // generate SQL query
@@ -667,12 +674,12 @@ pub async fn db_query(
                 }
                 // logging for slow queries; show sub and SQL.
                 // to reduce logging; only show 1/16th of clients (leading 0)
-                if slow_first_event && client_id.starts_with('0') {
-                    info!(
+                if slow_first_event && client_id.starts_with("00") {
+                    debug!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
                     );
-                    info!(
+                    debug!(
                         "query string (slow): {} (cid: {}, sub: {:?})",
                         q, client_id, sub.id
                     );
@@ -711,10 +718,11 @@ pub async fn db_query(
                 })
                 .ok();
             debug!(
-                "query completed in {:?} (cid: {}, sub: {:?}, rows: {})",
-                start.elapsed(),
+                "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
+                pre_spawn_start.elapsed(),
                 client_id,
                 sub.id,
+                start.elapsed(),
                 row_count
             );
         } else {
