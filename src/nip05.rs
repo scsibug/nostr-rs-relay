@@ -6,6 +6,8 @@
 //! updated with the current NIP-05 verification status.
 use crate::config::VerifiedUsers;
 use crate::db;
+use crate::repo::sqlite::SqliteRepo;
+use crate::repo::Repo;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::utils::unix_time;
@@ -513,7 +515,9 @@ impl Verifier {
         // disabled/passive, the event has already been persisted.
         let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
-            match db::write_event(&mut self.write_pool.get()?, event) {
+            let mut conn = self.write_pool.get()?;
+            let mut sdb = SqliteRepo::new(&mut conn);
+            match sdb.write_event(event) {
                 Ok(updated) => {
                     if updated != 0 {
                         info!(
