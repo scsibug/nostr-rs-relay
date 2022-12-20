@@ -40,6 +40,8 @@ pub struct SubmittedEvent {
 pub const DB_FILE: &str = "nostr.db";
 /// How many persisted events before optimization is triggered
 pub const EVENT_COUNT_OPTIMIZE_TRIGGER: usize = 500;
+/// How many persisted events before we pause for backups
+pub const EVENT_COUNT_BACKUP_PAUSE_TRIGGER: usize = 5000;
 
 /// Build a database connection pool.
 /// # Panics
@@ -135,6 +137,8 @@ pub async fn db_writer(
         let mut lim_opt = None;
         // Keep rough track of events so we can run optimize eventually.
         let mut optimize_counter: usize = 0;
+        // Constant writing has interfered with online backups.  Keep track of how long since we've given the backups a chance to run.
+        let mut backup_pause_counter: usize = 0;
         let clock = governor::clock::QuantaClock::default();
         if let Some(rps) = rps_setting {
             if rps > 0 {
@@ -268,6 +272,13 @@ pub async fn db_writer(
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                     }
                 }
+                backup_pause_counter += 1;
+                if backup_pause_counter > EVENT_COUNT_BACKUP_PAUSE_TRIGGER {
+                    info!("pausing db write thread for a moment...");
+                    thread::sleep(Duration::from_millis(500));
+                    backup_pause_counter = 0
+                }
+
                 // Use this as a trigger to do optimization
                 optimize_counter += 1;
                 if optimize_counter > EVENT_COUNT_OPTIMIZE_TRIGGER {
