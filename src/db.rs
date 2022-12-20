@@ -243,6 +243,7 @@ pub async fn db_writer(
                 );
                 event_write = true
             } else {
+                log_pool_stats("writer", &pool);
                 match write_event(&mut pool.get()?, &event) {
                     Ok(updated) => {
                         if updated == 0 {
@@ -620,12 +621,12 @@ fn _pool_at_capacity(pool: &SqlitePool) -> bool {
     state.idle_connections == 0
 }
 
-fn log_pool_stats(pool: &SqlitePool) {
+fn log_pool_stats(name: &str, pool: &SqlitePool) {
     let state: r2d2::State = pool.state();
     let in_use_cxns = state.connections - state.idle_connections;
     debug!(
-        "DB pool usage (in_use: {}, available: {})",
-        in_use_cxns, state.connections
+        "DB pool {:?} usage (in_use: {}, available: {})",
+        name, in_use_cxns, state.connections
     );
 }
 
@@ -658,7 +659,7 @@ pub async fn db_query(
         let (q, p) = query_from_sub(&sub);
         debug!("SQL generated in {:?}", start.elapsed());
         // show pool stats
-        log_pool_stats(&pool);
+        log_pool_stats("reader", &pool);
         // cutoff for displaying slow queries
         let slow_cutoff = Duration::from_millis(2000);
         // any client that doesn't cause us to generate new rows in 5
