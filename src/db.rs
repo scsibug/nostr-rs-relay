@@ -321,7 +321,8 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     )?;
     if ins_count == 0 {
         // if the event was a duplicate, no need to insert event or
-        // pubkey references.  This will abort the txn.
+        // pubkey references.
+        tx.rollback().ok();
         return Ok(ins_count);
     }
     // remember primary key of the event most recently inserted.
