@@ -705,7 +705,7 @@ pub async fn db_query(
                 }
                 // logging for slow queries; show sub and SQL.
                 // to reduce logging; only show 1/16th of clients (leading 0)
-                if slow_first_event && client_id.starts_with("00") {
+                if row_count == 0 && slow_first_event && client_id.starts_with("0") {
                     debug!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
