@@ -647,8 +647,16 @@ pub async fn db_query(
     let pre_spawn_start = Instant::now();
     task::spawn_blocking(move || {
         let db_queue_time = pre_spawn_start.elapsed();
-        // report queuing time if it is slow
-        if db_queue_time > Duration::from_secs(1) {
+        // if the queue time was very long (>5 seconds), spare the DB and abort.
+        if db_queue_time > Duration::from_secs(5) {
+            info!(
+                "shedding DB query load from {:?} (cid: {}, sub: {:?})",
+                db_queue_time, client_id, sub.id
+            );
+            return Ok(());
+        }
+        // otherwise, report queuing time if it is slow
+        else if db_queue_time > Duration::from_secs(1) {
             debug!(
                 "(slow) DB query queued for {:?} (cid: {}, sub: {:?})",
                 db_queue_time, client_id, sub.id
