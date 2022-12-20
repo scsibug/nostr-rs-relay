@@ -41,7 +41,7 @@ pub const DB_FILE: &str = "nostr.db";
 /// How many persisted events before optimization is triggered
 pub const EVENT_COUNT_OPTIMIZE_TRIGGER: usize = 500;
 /// How many persisted events before we pause for backups
-pub const EVENT_COUNT_BACKUP_PAUSE_TRIGGER: usize = 5000;
+pub const EVENT_COUNT_BACKUP_PAUSE_TRIGGER: usize = 1000;
 
 /// Build a database connection pool.
 /// # Panics
