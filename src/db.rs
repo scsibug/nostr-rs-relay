@@ -614,6 +614,12 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
     (query, params)
 }
 
+/// Check if the pool is fully utilized
+fn _pool_at_capacity(pool: &SqlitePool) -> bool {
+    let state: r2d2::State = pool.state();
+    state.idle_connections == 0
+}
+
 fn log_pool_stats(pool: &SqlitePool) {
     let state: r2d2::State = pool.state();
     let in_use_cxns = state.connections - state.idle_connections;
