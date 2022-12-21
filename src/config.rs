@@ -1,6 +1,7 @@
 //! Configuration file and settings management
 use config::{Config, ConfigError, File};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tracing::warn;
 
@@ -30,6 +31,9 @@ pub struct Network {
     pub address: String,
     pub remote_ip_header: Option<String>, // retrieve client IP from this HTTP header if present
     pub ping_interval_seconds: u32,
+    pub tor_proxy: Option<SocketAddr>,
+    #[serde(default)]
+    pub tor_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,6 +218,8 @@ impl Default for Settings {
                 ping_interval_seconds: 300,
                 address: "0.0.0.0".to_owned(),
                 remote_ip_header: None,
+                tor_proxy: None,
+                tor_only: false,
             },
             limits: Limits {
                 messages_per_sec: None,

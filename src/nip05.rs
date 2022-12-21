@@ -10,9 +10,11 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::utils::unix_time;
 use hyper::body::HttpBody;
-use hyper::client::connect::HttpConnector;
+use hyper::client::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
+use hyper_tor_connector::maybe::MaybeTorConnector;
+use hyper_tor_connector::TorConnector;
 use rand::Rng;
 use rusqlite::params;
 use std::time::Duration;
@@ -34,7 +36,7 @@ pub struct Verifier {
     /// Settings
     settings: crate::config::Settings,
     /// HTTP client
-    client: hyper::Client<HttpsConnector<HttpConnector>, hyper::Body>,
+    client: hyper::Client<HttpsConnector<MaybeTorConnector>, hyper::Body>,
     /// After all accounts are updated, wait this long before checking again.
     wait_after_finish: Duration,
     /// Minimum amount of time between HTTP queries
@@ -161,7 +163,19 @@ impl Verifier {
             true, // wait for DB
         );
         // setup hyper client
-        let https = HttpsConnector::new();
+        let maybe_tor_connector = if let Some(proxy) = settings.network.tor_proxy {
+            if settings.network.tor_only {
+                MaybeTorConnector::TorOnly(TorConnector::new(proxy)?)
+            } else {
+                MaybeTorConnector::Hybrid {
+                    clearnet: HttpConnector::new(),
+                    tor: TorConnector::new(proxy)?,
+                }
+            }
+        } else {
+            MaybeTorConnector::ClearnetOnly(HttpConnector::new())
+        };
+        let https = HttpsConnector::new_with_connector(maybe_tor_connector);
         let client = Client::builder().build::<_, hyper::Body>(https);
 
         // After all accounts have been re-verified, don't check again
