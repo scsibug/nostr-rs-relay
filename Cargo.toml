@@ -36,7 +36,7 @@ governor = "0.4"
 nonzero_ext = "0.3"
 hyper = { version="0.14", features=["client", "server","http1","http2","tcp"] }
 hyper-tls = "0.5"
-hyper-tor-connector = { git = "https://github.com/dr-bonez/hyper-tor-connector", branch = "socks" }
+hyper-tor-connector = "0.1.0"
 http = { version = "0.2" }
 parse_duration = "2"
 rand = "0.8"

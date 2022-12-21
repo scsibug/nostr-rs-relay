@@ -840,7 +840,8 @@ dependencies = [
 [[package]]
 name = "hyper-tor-connector"
 version = "0.1.0"
-source = "git+https://github.com/dr-bonez/hyper-tor-connector?branch=socks#6a2dfe597ccfe4579cb040c138a17d50f14092be"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd59599d11eeddeddf46ea940b3802977ccaff01331118624d0bab54cb60c3c1"
 dependencies = [
  "futures",
  "hyper",
