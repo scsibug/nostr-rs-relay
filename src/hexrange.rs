@@ -1,5 +1,5 @@
 //! Utilities for searching hexadecimal
-use crate::utils::is_hex;
+use crate::utils::{is_hex};
 use hex;
 
 /// Types of hexadecimal queries.
@@ -20,15 +20,14 @@ fn is_all_fs(s: &str) -> bool {
 
 /// Find the next hex sequence greater than the argument.
 #[must_use] pub fn hex_range(s: &str) -> Option<HexSearch> {
-    // handle special cases
-    if !is_hex(s) || s.len() > 64 {
+    let mut hash_base = s.to_owned();
+    if !is_hex(&hash_base) || hash_base.len() > 64 {
         return None;
     }
-    if s.len() == 64 {
-        return Some(HexSearch::Exact(hex::decode(s).ok()?));
+    if hash_base.len() == 64 {
+        return Some(HexSearch::Exact(hex::decode(&hash_base).ok()?));
     }
     // if s is odd, add a zero
-    let mut hash_base = s.to_owned();
     let mut odd = hash_base.len() % 2 != 0;
     if odd {
         // extend the string to make it even

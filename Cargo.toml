@@ -48,6 +48,7 @@ sqlx = { version ="0.6.2", features=["runtime-tokio-rustls", "postgres", "chrono
 chrono = "0.4.23"
 prometheus = "0.13.3"
 indicatif = "0.17.3"
+bech32 = "0.9.1"
 
 [dev-dependencies]
 anyhow = "1"
