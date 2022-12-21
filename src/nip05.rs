@@ -60,9 +60,14 @@ impl Nip05Name {
 
     /// Determine the URL to query for verification
     fn to_url(&self) -> Option<http::Uri> {
+        let protocol = if self.domain.ends_with(".onion") {
+            "http"
+        } else {
+            "https"
+        };
         format!(
-            "https://{}/.well-known/nostr.json?name={}",
-            self.domain, self.local
+            "{}://{}/.well-known/nostr.json?name={}",
+            protocol, self.domain, self.local
         )
         .parse::<http::Uri>()
         .ok()

@@ -55,7 +55,7 @@ pub enum Error {
     #[error("Hyper Client error")]
     HyperError(hyper::Error),
     #[error("Tor Client error")]
-    TorError(hyper_tor_connector::Error),
+    TorError(#[from] hyper_tor_connector::Error),
     #[error("Hex encoding error")]
     HexError(hex::FromHexError),
     #[error("Delegation parse error")]
