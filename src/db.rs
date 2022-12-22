@@ -38,8 +38,11 @@ pub struct SubmittedEvent {
 
 /// Database file
 pub const DB_FILE: &str = "nostr.db";
+
+/// How frequently to run maintenance
 /// How many persisted events before DB maintenannce is triggered.
-pub const EVENT_COUNT_MAINTENANCE_TRIGGER: usize = 2000;
+pub const EVENT_MAINTENANCE_FREQ_SEC: u64 = 60;
+
 /// How many persisted events before we pause for backups.
 /// It isn't clear this is enough to make the online backup API work yet.
 pub const EVENT_COUNT_BACKUP_PAUSE_TRIGGER: usize = 1000;
@@ -170,7 +173,7 @@ pub async fn db_writer(
         let mut lim_opt = None;
         // Keep rough track of events so we can run maintenance
         // eventually.
-        let mut maintenance_counter: usize = 0;
+        let mut last_maintenance = Instant::now();
         // Constant writing has interfered with online backups.  Keep
         // track of how long since we've given the backups a chance to
         // run.
@@ -316,10 +319,9 @@ pub async fn db_writer(
                 }
 
                 // Use this as a trigger to do optimization & checkpointing
-                maintenance_counter += 1;
-                if maintenance_counter > EVENT_COUNT_MAINTENANCE_TRIGGER {
+                if last_maintenance.elapsed() > Duration::from_secs(EVENT_MAINTENANCE_FREQ_SEC) {
+                    last_maintenance = Instant::now();
                     debug!("running database optimizer");
-                    maintenance_counter = 0;
                     optimize_db(&mut pool.get()?).ok();
                     debug!("running wal_checkpoint(TRUNCATE)");
                     checkpoint_db(&mut pool.get()?).ok();
