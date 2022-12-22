@@ -517,7 +517,7 @@ impl Verifier {
                 Ok(updated) => {
                     if updated != 0 {
                         info!(
-                            "persisted event: {:?} in {:?}",
+                            "persisted event (new verified pubkey): {:?} in {:?}",
                             event.get_event_id_prefix(),
                             start.elapsed()
                         );
