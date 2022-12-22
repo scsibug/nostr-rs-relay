@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info, trace};
 
 use crate::repo::{Nip05Repo, NostrRepo, RepoMigrate};
+use crate::repo::sqlite_migration::upgrade_db;
 
 #[derive(Clone)]
 pub struct SqliteRepo {
@@ -30,8 +31,8 @@ impl SqliteRepo {
 
 #[async_trait]
 impl RepoMigrate for SqliteRepo {
-    async fn migrate_up(&mut self) {
-        todo!()
+    async fn migrate_up(&mut self) -> Result<usize>{
+        upgrade_db(&self.conn).await
     }
 }
 

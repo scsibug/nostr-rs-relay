@@ -12,7 +12,7 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::repo::sqlite::SqliteRepo;
-use crate::repo::NostrRepo;
+use crate::repo::{NostrRepo, RepoMigrate};
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -301,15 +301,18 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         } else {
             info!("opened database {} for writing", full_path.display());
         }
-        //upgrade_db(&mut pool.get()?)?;
+        let mut repo = SqliteRepo::new(pool.clone());
+        if let Ok(v) = repo.migrate_up().await {
+            info!("Database migrations complete @ version {}", v);
+        }
 
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
         tokio::task::spawn(
             db::db_writer(
-                SqliteRepo::new(pool.clone()),
-                SqliteRepo::new(pool.clone()),
+                repo.clone(),
+                repo.clone(),
                 settings.clone(),
                 event_rx,
                 bcast_tx.clone(),
@@ -325,8 +328,8 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 metadata_rx,
                 bcast_tx.clone(),
                 settings.clone(),
-                SqliteRepo::new(pool.clone()),
-                SqliteRepo::new(pool.clone()),
+                repo.clone(),
+                repo.clone(),
             );
             if let Ok(mut v) = verifier_opt {
                 if verified_users_active {
@@ -371,7 +374,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
-            let repo = SqliteRepo::new(pool.clone());
+            let repo = repo.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {

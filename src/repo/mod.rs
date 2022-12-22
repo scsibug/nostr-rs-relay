@@ -6,11 +6,12 @@ use async_trait::async_trait;
 use crate::nip05::VerificationRecord;
 
 pub mod sqlite;
+mod sqlite_migration;
 
 #[async_trait]
 pub trait RepoMigrate {
-    /// Run migrations
-    async fn migrate_up(&mut self);
+    /// Run migrations and return current version
+    async fn migrate_up(&mut self) -> Result<usize>;
 }
 
 #[async_trait]

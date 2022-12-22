@@ -1,10 +1,8 @@
 //! Event persistence and querying
 use crate::config::Settings;
-use crate::error::{Error, Result};
+use crate::error::{Result};
 use crate::event::Event;
-use crate::nip05;
 use crate::notice::Notice;
-use crate::repo::sqlite::SqliteRepo;
 use crate::repo::{Nip05Repo, NostrRepo};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
@@ -14,7 +12,6 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use tokio::task;
 use tracing::{debug, info, trace, warn};
 
 /// Events submitted from a client, with a return channel for notices
@@ -63,8 +60,6 @@ pub async fn build_pool(
         .idle_timeout(Duration::from_secs(60))
         .connect(db_str.as_str())
         .await?;
-
-    // todo!("Init DB");
 
     info!(
         "Built a connection pool {:?} (min={}, max={})",
