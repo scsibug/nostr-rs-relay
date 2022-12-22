@@ -22,6 +22,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -310,6 +311,17 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 }
             }
         }
+        // build a connection pool for DB maintenance
+        let maintenance_pool = db::build_pool(
+            "maintenance writer",
+            &settings,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            1,
+            1,
+            false,
+        );
+        db::db_maintenance(maintenance_pool).await;
+
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();
         tokio::spawn(async move {

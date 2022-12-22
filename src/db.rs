@@ -96,7 +96,9 @@ pub fn build_pool(
 
 /// Perform normal maintenance
 pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
+    let start = Instant::now();
     conn.execute_batch("PRAGMA optimize;")?;
+    info!("optimize ran in {:?}", start.elapsed());
     Ok(())
 }
 #[derive(Debug)]
@@ -171,9 +173,6 @@ pub async fn db_writer(
         let rps_setting = settings.limits.messages_per_sec;
         let mut most_recent_rate_limit = Instant::now();
         let mut lim_opt = None;
-        // Keep rough track of events so we can run maintenance
-        // eventually.
-        let mut last_maintenance = Instant::now();
         // Constant writing has interfered with online backups.  Keep
         // track of how long since we've given the backups a chance to
         // run.
@@ -317,15 +316,6 @@ pub async fn db_writer(
                     info!("pausing db write thread for a moment...");
                     thread::sleep(Duration::from_millis(500));
                     backup_pause_counter = 0
-                }
-
-                // Use this as a trigger to do optimization & checkpointing
-                if last_maintenance.elapsed() > Duration::from_secs(EVENT_MAINTENANCE_FREQ_SEC) {
-                    last_maintenance = Instant::now();
-                    debug!("running database optimizer");
-                    optimize_db(&mut pool.get()?).ok();
-                    debug!("running wal_checkpoint(TRUNCATE)");
-                    checkpoint_db(&mut pool.get()?).ok();
                 }
             }
 
@@ -684,6 +674,26 @@ fn log_pool_stats(name: &str, pool: &SqlitePool) {
         "DB pool {:?} usage (in_use: {}, available: {})",
         name, in_use_cxns, state.connections
     );
+}
+
+/// Perform database maintenance on a regular basis
+pub async fn db_maintenance(pool: SqlitePool) {
+    tokio::task::spawn(async move {
+        loop {
+            tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(EVENT_MAINTENANCE_FREQ_SEC)) => {
+                        if let Ok(mut conn) = pool.get() {
+                // set the busy timeout to a larger value (default is 5 seconds).
+                conn.busy_timeout(Duration::from_secs(60)).ok();
+                            debug!("running database optimizer");
+                            optimize_db(&mut conn).ok();
+                            debug!("running wal_checkpoint(TRUNCATE)");
+                            checkpoint_db(&mut conn).ok();
+                        }
+            }
+                };
+        }
+    });
 }
 
 /// Perform a database query using a subscription.
