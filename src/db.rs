@@ -689,8 +689,10 @@ pub async fn db_maintenance(pool: SqlitePool) {
             tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(EVENT_MAINTENANCE_FREQ_SEC)) => {
                         if let Ok(mut conn) = pool.get() {
-                // set the busy timeout to a larger value (default is 5 seconds).
-                conn.busy_timeout(Duration::from_secs(60)).ok();
+                // the busy timer will block writers, so don't set
+                // this any higher than you want max latency for event
+                // writes.
+                conn.busy_timeout(Duration::from_secs(1)).ok();
                             debug!("running database optimizer");
                             optimize_db(&mut conn).ok();
                             debug!("running wal_checkpoint(TRUNCATE)");
