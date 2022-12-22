@@ -1,1 +1,4 @@
 edition = "2021"
+#max_width = 140
+#chain_width = 100
+#fn_call_width = 100
