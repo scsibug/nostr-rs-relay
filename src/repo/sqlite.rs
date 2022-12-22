@@ -482,7 +482,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
 
     // Query for Kind
     if let Some(ks) = &f.kinds {
-        if ks.len() > 0 {
+        if !ks.is_empty() {
             if push_and {
                 query.push(" AND ");
             }
@@ -501,7 +501,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
 
     // Query for event, allowing prefix matches
     if let Some(id_vec) = &f.ids {
-        if id_vec.len() > 0 {
+        if !id_vec.is_empty() {
             if push_and {
                 query.push(" AND ");
             }
@@ -514,21 +514,21 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
                     Some(HexSearch::Exact(ex)) => {
                         id_query
                             .push("(event_hash = ")
-                            .push_bind(ex)
+                            .push_bind_unseparated(ex)
                             .push_unseparated(")");
                     }
                     Some(HexSearch::Range(lower, upper)) => {
                         id_query
                             .push("(event_hash > ")
-                            .push_bind(lower)
+                            .push_bind_unseparated(lower)
                             .push_unseparated(" AND event_hash < ")
-                            .push_bind(upper)
+                            .push_bind_unseparated(upper)
                             .push_unseparated(")");
                     }
                     Some(HexSearch::LowerOnly(lower)) => {
                         id_query
                             .push("(event_hash > ")
-                            .push_bind(lower)
+                            .push_bind_unseparated(lower)
                             .push_unseparated(")");
                     }
                     None => {
@@ -541,7 +541,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
 
     // Query for tags
     if let Some(map) = &f.tags {
-        if map.len() > 0 {
+        if !map.is_empty() {
             if push_and {
                 query.push(" AND ");
             }

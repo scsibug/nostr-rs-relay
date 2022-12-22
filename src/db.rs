@@ -55,7 +55,7 @@ pub async fn build_pool(
     let db_str = if settings.database.in_memory {
         "sqlite::memory".to_owned()
     } else {
-        format!("sqlite:{}", full_path.display())
+        format!("sqlite:{}?mode=rwc", full_path.display())
     };
     let pool: SqlitePool = PoolOptions::new()
         .max_connections(max_size)
