@@ -11,6 +11,8 @@ use crate::event::EventCmd;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
+use crate::repo::sqlite::SqliteRepo;
+use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -46,7 +48,7 @@ use tungstenite::protocol::WebSocketConfig;
 /// Handle arbitrary HTTP requests, including for WebSocket upgrades.
 async fn handle_web_request(
     mut request: Request<Body>,
-    pool: db::SqlitePool,
+    repo: impl NostrRepo + Send + 'static,
     settings: Settings,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
@@ -103,7 +105,7 @@ async fn handle_web_request(
                                 };
                                 // spawn a nostr server with our websocket
                                 tokio::spawn(nostr_server(
-                                    pool,
+                                    repo,
                                     client_info,
                                     settings,
                                     ws_stream,
@@ -159,7 +161,9 @@ async fn handle_web_request(
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain")
-                .body(Body::from("A nostr server is here https://github.com/v0l/nostr-rs-relay"))
+                .body(Body::from(
+                    "A nostr server is here https://github.com/v0l/nostr-rs-relay",
+                ))
                 .unwrap())
         }
         (_, _) => {
@@ -284,23 +288,44 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // overwhelming this will drop events and won't register
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
+
+        let db_dir = &settings.database.data_directory;
+        let full_path = Path::new(db_dir).join(db::DB_FILE);
+
+        // create a connection pool
+        let pool = db::build_pool("event writer", &settings, 1, 2, false)
+            .await
+            .unwrap();
+        if settings.database.in_memory {
+            info!("using in-memory database, this will not persist a restart!");
+        } else {
+            info!("opened database {} for writing", full_path.display());
+        }
+        //upgrade_db(&mut pool.get()?)?;
+
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
-        db::db_writer(
+        let writer = db::db_writer(
+            SqliteRepo::new(pool.clone()),
+            SqliteRepo::new(pool.clone()),
             settings.clone(),
             event_rx,
             bcast_tx.clone(),
             metadata_tx.clone(),
             shutdown_listen,
-        )
-        .await;
+        );
         info!("db writer created");
 
         // create a nip-05 verifier thread; if enabled.
         if settings.verified_users.mode != VerifiedUsersMode::Disabled {
-            let verifier_opt =
-                nip05::Verifier::new(metadata_rx, bcast_tx.clone(), settings.clone());
+            let verifier_opt = nip05::Verifier::new(
+                metadata_rx,
+                bcast_tx.clone(),
+                settings.clone(),
+                SqliteRepo::new(pool.clone()),
+                SqliteRepo::new(pool.clone()),
+            );
             if let Ok(mut v) = verifier_opt {
                 if verified_users_active {
                     tokio::task::spawn(async move {
@@ -335,30 +360,22 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             info!("shutting down due to SIGINT (main)");
             ctrl_c_shutdown.send(()).ok();
         });
-        // build a connection pool for sqlite connections
-        let pool = db::build_pool(
-            "client query",
-            &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            db_min_conn,
-            db_max_conn,
-            true,
-        );
+
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
-            let svc_pool = pool.clone();
             let remote_addr = conn.remote_addr();
             let bcast = bcast_tx.clone();
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
+            let repo = SqliteRepo::new(pool.clone());
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
                     handle_web_request(
                         request,
-                        svc_pool.clone(),
+                        repo.clone(),
                         settings.clone(),
                         remote_addr,
                         bcast.clone(),
@@ -432,7 +449,7 @@ struct ClientInfo {
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
-    pool: db::SqlitePool,
+    mut pool: impl NostrRepo,
     client_info: ClientInfo,
     settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
@@ -496,7 +513,7 @@ async fn nostr_server(
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-        info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
+                info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
                 // server shutting down, exit loop
                 break;
             },
@@ -644,7 +661,7 @@ async fn nostr_server(
                     previous_query.send(()).ok();
                                     }
                                     // start a database query.  this spawns a blocking database query on a worker thread.
-                                    db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+                                    pool.query_subscription(s, cid.to_owned(), query_tx.clone(), abandon_query_rx).await;
                 },
                 Err(e) => {
                     info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);

@@ -1,14 +1,11 @@
 //! Database schema and migrations
-use crate::db::PooledConnection;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::utils::is_lower_hex;
 use const_format::formatcp;
-use rusqlite::limits::Limit;
-use rusqlite::params;
-use rusqlite::Connection;
 use std::cmp::Ordering;
 use std::time::Instant;
+use sqlx::{Executor, SqlitePool};
 use tracing::{debug, error, info};
 
 /// Startup DB Pragmas
@@ -87,14 +84,16 @@ CREATE INDEX IF NOT EXISTS user_verification_event_index ON user_verification(me
 );
 
 /// Determine the current application database schema version.
-pub fn curr_db_version(conn: &mut Connection) -> Result<usize> {
-    let query = "PRAGMA user_version;";
-    let curr_version = conn.query_row(query, [], |row| row.get(0))?;
-    Ok(curr_version)
+pub async fn curr_db_version(conn: &mut SqlitePool) -> Result<usize> {
+
+    let curr_version: u32 = sqlx::query("PRAGMA user_version;")
+        .fetch_one(conn)
+        .await?;
+    Ok(curr_version as usize)
 }
 
-fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
-    match conn.execute_batch(INIT_SQL) {
+async fn mig_init(conn: &mut SqlitePool) -> Result<usize> {
+    match sqlx::query(INIT_SQL).execute(conn).await {
         Ok(()) => {
             info!(
                 "database pragma/schema initialized to v{}, and ready",
@@ -449,7 +448,7 @@ PRAGMA user_version = 10;
     Ok(10)
 }
 
-fn mig_10_to_11(conn: &mut PooledConnection) -> Result<usize> {
+fn mig_10_to_11(conn: &mut SqlitePool) -> Result<usize> {
     info!("database schema needs update from 10->11");
     // Those old indexes were actually helpful...
     let upgrade_sql = r##"

@@ -41,13 +41,13 @@ pub enum Error {
     #[error("Command unknown")]
     CommandUnknownError,
     #[error("SQL error")]
-    SqlError(rusqlite::Error),
+    SqlError(sqlx::Error),
     #[error("Config error")]
     ConfigError(config::ConfigError),
     #[error("Data directory does not exist")]
     DatabaseDirError,
     #[error("Database Connection Pool Error")]
-    DatabasePoolError(r2d2::Error),
+    DatabasePoolError(sqlx::Error),
     #[error("Custom Error : {0}")]
     CustomError(String),
     #[error("Task join error")]
@@ -80,8 +80,8 @@ impl From<hyper::Error> for Error {
     }
 }
 
-impl From<r2d2::Error> for Error {
-    fn from(d: r2d2::Error) -> Self {
+impl From<sqlx::Error> for Error {
+    fn from(d: sqlx::Error) -> Self {
         Error::DatabasePoolError(d)
     }
 }
@@ -90,13 +90,6 @@ impl From<tokio::task::JoinError> for Error {
     /// Wrap SQL error
     fn from(_j: tokio::task::JoinError) -> Self {
         Error::JoinError
-    }
-}
-
-impl From<rusqlite::Error> for Error {
-    /// Wrap SQL error
-    fn from(r: rusqlite::Error) -> Self {
-        Error::SqlError(r)
     }
 }
 

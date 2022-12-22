@@ -5,18 +5,15 @@
 //! consumes a stream of metadata events, and keeps a database table
 //! updated with the current NIP-05 verification status.
 use crate::config::VerifiedUsers;
-use crate::db;
-use crate::repo::sqlite::SqliteRepo;
-use crate::repo::Repo;
 use crate::error::{Error, Result};
 use crate::event::Event;
+use crate::repo::{Nip05Repo, NostrRepo};
 use crate::utils::unix_time;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
 use rand::Rng;
-use rusqlite::params;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
@@ -24,17 +21,17 @@ use tokio::time::Interval;
 use tracing::{debug, info, warn};
 
 /// NIP-05 verifier state
-pub struct Verifier {
+pub struct Verifier<TNip05Repo, TNostrRepo> {
     /// Metadata events for us to inspect
     metadata_rx: tokio::sync::broadcast::Receiver<Event>,
     /// Newly validated events get written and then broadcast on this channel to subscribers
     event_tx: tokio::sync::broadcast::Sender<Event>,
-    /// SQLite read query pool
-    read_pool: db::SqlitePool,
-    /// SQLite write query pool
-    write_pool: db::SqlitePool,
     /// Settings
     settings: crate::config::Settings,
+    /// NIP-05 Repository
+    repo: TNip05Repo,
+    /// Event repository
+    event_repo: TNostrRepo,
     /// HTTP client
     client: hyper::Client<HttpsConnector<HttpConnector>, hyper::Body>,
     /// After all accounts are updated, wait this long before checking again.
@@ -70,7 +67,7 @@ impl Nip05Name {
 }
 
 // Parsing Nip05Names from strings
-impl std::convert::TryFrom<&str> for Nip05Name {
+impl TryFrom<&str> for Nip05Name {
     type Error = Error;
     fn try_from(inet: &str) -> Result<Self, Self::Error> {
         // break full name at the @ boundary.
@@ -138,30 +135,16 @@ fn body_contains_user(username: &str, address: &str, bytes: hyper::body::Bytes) 
     Ok(check_name.map(|x| x == address).unwrap_or(false))
 }
 
-impl Verifier {
+impl<TNip05Repo: Nip05Repo, TNostrRepo: NostrRepo> Verifier<TNip05Repo, TNostrRepo> {
     pub fn new(
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
         settings: crate::config::Settings,
+        repo: TNip05Repo,
+        event_repo: TNostrRepo
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
-        // build a database connection for reading and writing.
-        let write_pool = db::build_pool(
-            "nip05 writer",
-            &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-            1,    // min conns
-            4,    // max conns
-            true, // wait for DB
-        );
-        let read_pool = db::build_pool(
-            "nip05 reader",
-            &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            1,    // min conns
-            8,    // max conns
-            true, // wait for DB
-        );
+
         // setup hyper client
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
@@ -169,9 +152,11 @@ impl Verifier {
         // After all accounts have been re-verified, don't check again
         // for this long.
         let wait_after_finish = Duration::from_secs(60 * 10);
+
         // when we have an active queue of accounts to validate, we
         // will wait this duration between HTTP requests.
         let http_wait_duration = Duration::from_secs(1);
+
         // setup initial interval for re-verification.  If we find
         // there is no work to be done, it will be reset to a longer
         // duration.
@@ -179,8 +164,8 @@ impl Verifier {
         Ok(Verifier {
             metadata_rx,
             event_tx,
-            read_pool,
-            write_pool,
+            repo,
+            event_repo,
             settings,
             client,
             wait_after_finish,
@@ -310,8 +295,10 @@ impl Verifier {
                     Ok(e) => {
                         if let Some(naddr) = e.get_nip05_addr() {
                             info!("got metadata event for ({:?},{:?})", naddr.to_string() ,e.get_author_prefix());
+
                             // Process a new author, checking if they are verified:
-                            let check_verified = get_latest_user_verification(self.read_pool.get().expect("could not get connection"), &e.pubkey).await;
+                            let check_verified = self.repo.get_latest_user_verification(e.pubkey.as_str()).await;
+
                             // ensure the event we got is more recent than the one we have, otherwise we can ignore it.
                             if let Ok(last_check) = check_verified {
                                 if e.created_at <= last_check.event_created {
@@ -363,8 +350,10 @@ impl Verifier {
             .verified_users
             .verify_update_frequency_duration;
         let max_failures = self.settings.verified_users.max_consecutive_failures;
+
         // get from settings, but default to 6hrs between re-checking an account
         let reverify_dur = reverify_setting.unwrap_or_else(|| Duration::from_secs(60 * 60 * 6));
+
         // find all verification records that have success or failure OLDER than the reverify_dur.
         let now = SystemTime::now();
         let earliest = now - reverify_dur;
@@ -372,7 +361,7 @@ impl Verifier {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|x| x.as_secs())
             .unwrap_or(0);
-        let vr = get_oldest_user_verification(self.read_pool.get()?, earliest_epoch).await;
+        let vr = self.repo.get_oldest_user_verification(earliest_epoch).await;
         match vr {
             Ok(ref v) => {
                 let new_status = self.get_web_verification(&v.name, &v.address).await;
@@ -380,8 +369,7 @@ impl Verifier {
                     UserWebVerificationStatus::Verified => {
                         // freshly verified account, update the
                         // timestamp.
-                        self.update_verification_record(self.write_pool.get()?, v)
-                            .await?;
+                        self.repo.update_verification_timestamp(v.rowid).await?;
                     }
                     UserWebVerificationStatus::DomainNotAllowed
                     | UserWebVerificationStatus::Unknown => {
@@ -396,23 +384,20 @@ impl Verifier {
                                 "giving up on verifying {:?} after {} failures",
                                 v.name, v.failure_count
                             );
-                            self.delete_verification_record(self.write_pool.get()?, v)
-                                .await?;
+                            self.repo.delete_verification(v.rowid).await?;
                         } else {
                             // record normal failure, incrementing failure count
-                            self.fail_verification_record(self.write_pool.get()?, v)
-                                .await?;
+                            self.repo.fail_verification(v.rowid).await?;
                         }
                     }
                     UserWebVerificationStatus::Unverified => {
                         // domain has removed the verification, drop
                         // the record on our side.
-                        self.delete_verification_record(self.write_pool.get()?, v)
-                            .await?;
+                        self.repo.delete_verification(v.rowid).await?;
                     }
                 }
             }
-            Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+            Err(Error::SqlError(_)) => {
                 // No users need verification.  Reset the interval to
                 // the next verification attempt.
                 let start = tokio::time::Instant::now() + self.wait_after_finish;
@@ -428,80 +413,6 @@ impl Verifier {
         Ok(())
     }
 
-    /// Reset the verification timestamp on a VerificationRecord
-    pub async fn update_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        tokio::task::spawn_blocking(move || {
-            // add some jitter to the verification to prevent everything from stacking up together.
-            let verif_time = now_jitter(600);
-            let tx = conn.transaction()?;
-            {
-                // update verification time and reset any failure count
-                let query =
-                    "UPDATE user_verification SET verified_at=?, failure_count=0 WHERE id=?";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![verif_time, vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification updated for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-    /// Reset the failure timestamp on a VerificationRecord
-    pub async fn fail_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        let fail_count = vr.failure_count.saturating_add(1);
-        tokio::task::spawn_blocking(move || {
-            // add some jitter to the verification to prevent everything from stacking up together.
-            let fail_time = now_jitter(600);
-            let tx = conn.transaction()?;
-            {
-                let query = "UPDATE user_verification SET failed_at=?, failure_count=? WHERE id=?";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![fail_time, fail_count, vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification failed for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-    /// Delete a VerificationRecord that is no longer valid
-    pub async fn delete_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        tokio::task::spawn_blocking(move || {
-            let tx = conn.transaction()?;
-            {
-                let query = "DELETE FROM user_verification WHERE id=?;";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification rescinded for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-
     /// Persist an event, create a verification record, and broadcast.
     // TODO: have more event-writing logic handled in the db module.
     // Right now, these events avoid the rate limit.  That is
@@ -515,9 +426,7 @@ impl Verifier {
         // disabled/passive, the event has already been persisted.
         let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
-            let mut conn = self.write_pool.get()?;
-            let mut sdb = SqliteRepo::new(&mut conn);
-            match sdb.write_event(event) {
+            match self.event_repo.write_event(event).await {
                 Ok(updated) => {
                     if updated != 0 {
                         info!(
@@ -536,8 +445,9 @@ impl Verifier {
                 }
             }
         }
+
         // write the verification record
-        save_verification_record(self.write_pool.get()?, event, name).await?;
+        self.repo.create_verification_record(event.id.as_str(), name).await?;
         Ok(())
     }
 }
@@ -632,130 +542,6 @@ impl std::fmt::Display for VerificationRecord {
             self.address.chars().take(8).collect::<String>()
         )
     }
-}
-
-/// Create a new verification record based on an event
-pub async fn save_verification_record(
-    mut conn: db::PooledConnection,
-    event: &Event,
-    name: &str,
-) -> Result<()> {
-    let e = hex::decode(&event.id).ok();
-    let n = name.to_owned();
-    let a_prefix = event.get_author_prefix();
-    tokio::task::spawn_blocking(move || {
-        let tx = conn.transaction()?;
-        {
-            // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
-            let query = "INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash=?), ?, strftime('%s','now'));";
-            let mut stmt = tx.prepare(query)?;
-            stmt.execute(params![e, n])?;
-            // get the row ID
-            let v_id = tx.last_insert_rowid();
-            // delete everything else by this name
-            let del_query = "DELETE FROM user_verification WHERE name = ? AND id != ?;";
-            let mut del_stmt = tx.prepare(del_query)?;
-            let count = del_stmt.execute(params![n,v_id])?;
-            if count > 0 {
-                info!("removed {} old verification records for ({:?},{:?})", count, n, a_prefix);
-            }
-        }
-        tx.commit()?;
-        info!("saved new verification record for ({:?},{:?})", n, a_prefix);
-        let ok: Result<()> = Ok(());
-        ok
-    }).await?
-}
-
-/// Retrieve the most recent verification record for a given pubkey (async).
-pub async fn get_latest_user_verification(
-    conn: db::PooledConnection,
-    pubkey: &str,
-) -> Result<VerificationRecord> {
-    let p = pubkey.to_owned();
-    tokio::task::spawn_blocking(move || query_latest_user_verification(conn, p)).await?
-}
-
-/// Query database for the latest verification record for a given pubkey.
-pub fn query_latest_user_verification(
-    mut conn: db::PooledConnection,
-    pubkey: String,
-) -> Result<VerificationRecord> {
-    let tx = conn.transaction()?;
-    let query = "SELECT v.id, v.name, e.event_hash, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE e.author=? ORDER BY e.created_at DESC, v.verified_at DESC, v.failed_at DESC LIMIT 1;";
-    let mut stmt = tx.prepare_cached(query)?;
-    let fields = stmt.query_row(params![hex::decode(&pubkey).ok()], |r| {
-        let rowid: u64 = r.get(0)?;
-        let rowname: String = r.get(1)?;
-        let eventid: Vec<u8> = r.get(2)?;
-        let created_at: u64 = r.get(3)?;
-        // create a tuple since we can't throw non-rusqlite errors in this closure
-        Ok((
-            rowid,
-            rowname,
-            eventid,
-            created_at,
-            r.get(4).ok(),
-            r.get(5).ok(),
-            r.get(6)?,
-        ))
-    })?;
-    Ok(VerificationRecord {
-        rowid: fields.0,
-        name: Nip05Name::try_from(&fields.1[..])?,
-        address: pubkey,
-        event: hex::encode(fields.2),
-        event_created: fields.3,
-        last_success: fields.4,
-        last_failure: fields.5,
-        failure_count: fields.6,
-    })
-}
-
-/// Retrieve the oldest user verification (async)
-pub async fn get_oldest_user_verification(
-    conn: db::PooledConnection,
-    earliest: u64,
-) -> Result<VerificationRecord> {
-    tokio::task::spawn_blocking(move || query_oldest_user_verification(conn, earliest)).await?
-}
-
-pub fn query_oldest_user_verification(
-    mut conn: db::PooledConnection,
-    earliest: u64,
-) -> Result<VerificationRecord> {
-    let tx = conn.transaction()?;
-    let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
-    let mut stmt = tx.prepare_cached(query)?;
-    let fields = stmt.query_row(params![earliest, earliest], |r| {
-        let rowid: u64 = r.get(0)?;
-        let rowname: String = r.get(1)?;
-        let eventid: Vec<u8> = r.get(2)?;
-        let pubkey: Vec<u8> = r.get(3)?;
-        let created_at: u64 = r.get(4)?;
-        // create a tuple since we can't throw non-rusqlite errors in this closure
-        Ok((
-            rowid,
-            rowname,
-            eventid,
-            pubkey,
-            created_at,
-            r.get(5).ok(),
-            r.get(6).ok(),
-            r.get(7)?,
-        ))
-    })?;
-    let vr = VerificationRecord {
-        rowid: fields.0,
-        name: Nip05Name::try_from(&fields.1[..])?,
-        address: hex::encode(fields.3),
-        event: hex::encode(fields.2),
-        event_created: fields.4,
-        last_success: fields.5,
-        last_failure: fields.6,
-        failure_count: fields.7,
-    };
-    Ok(vr)
 }
 
 #[cfg(test)]
