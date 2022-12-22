@@ -5,7 +5,7 @@ use crate::error::Result;
 
 use crate::subscription::Subscription;
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 /// A subscription identifier has a maximum length
@@ -74,7 +74,7 @@ impl ClientConn {
         // prevent arbitrarily long subscription identifiers from
         // being used.
         if sub_id_len > MAX_SUBSCRIPTION_ID_LEN {
-            info!(
+            debug!(
                 "ignoring sub request with excessive length: ({})",
                 sub_id_len
             );
@@ -84,7 +84,7 @@ impl ClientConn {
         if self.subscriptions.contains_key(&k) {
             self.subscriptions.remove(&k);
             self.subscriptions.insert(k, s.clone());
-            debug!(
+            trace!(
                 "replaced existing subscription (cid: {}, sub: {:?})",
                 self.get_client_prefix(),
                 s.get_id()
@@ -98,7 +98,7 @@ impl ClientConn {
         }
         // add subscription
         self.subscriptions.insert(k, s);
-        debug!(
+        trace!(
             "registered new subscription, currently have {} active subs (cid: {})",
             self.subscriptions.len(),
             self.get_client_prefix(),
@@ -110,7 +110,7 @@ impl ClientConn {
     pub fn unsubscribe(&mut self, c: &Close) {
         // TODO: return notice if subscription did not exist.
         self.subscriptions.remove(&c.id);
-        debug!(
+        trace!(
             "removed subscription, currently have {} active subs (cid: {})",
             self.subscriptions.len(),
             self.get_client_prefix(),

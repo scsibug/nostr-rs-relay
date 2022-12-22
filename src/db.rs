@@ -667,13 +667,19 @@ fn _pool_at_capacity(pool: &SqlitePool) -> bool {
     state.idle_connections == 0
 }
 
+/// Log pool stats
 fn log_pool_stats(name: &str, pool: &SqlitePool) {
     let state: r2d2::State = pool.state();
     let in_use_cxns = state.connections - state.idle_connections;
-    debug!(
+    trace!(
         "DB pool {:?} usage (in_use: {}, available: {})",
-        name, in_use_cxns, state.connections
+        name,
+        in_use_cxns,
+        state.connections
     );
+    if state.connections == in_use_cxns {
+        debug!("DB pool {:?} is empty (in_use: {})", name, in_use_cxns);
+    }
 }
 
 /// Perform database maintenance on a regular basis
