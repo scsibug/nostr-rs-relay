@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};

@@ -12,6 +12,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use tracing::{debug, info, trace, warn};
 
 /// Events submitted from a client, with a return channel for notices
@@ -49,16 +50,16 @@ pub async fn build_pool(
         }
     }
 
-    let db_str = if settings.database.in_memory {
-        "sqlite::memory".to_owned()
-    } else {
-        format!("sqlite:{}?mode=rwc", full_path.display())
-    };
     let pool: SqlitePool = PoolOptions::new()
         .max_connections(max_size)
         .min_connections(min_size)
         .idle_timeout(Duration::from_secs(60))
-        .connect(db_str.as_str())
+        .connect_with(SqliteConnectOptions::new()
+            .filename(full_path)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .foreign_keys(true)
+        )
         .await?;
 
     info!(

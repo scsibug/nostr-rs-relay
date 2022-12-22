@@ -7,6 +7,7 @@ use crate::nip05::VerificationRecord;
 
 pub mod sqlite;
 mod sqlite_migration;
+mod postgres;
 
 #[async_trait]
 pub trait RepoMigrate {
