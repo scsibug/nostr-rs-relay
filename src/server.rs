@@ -88,6 +88,7 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
+                                let origin = get_header_string("origin", request.headers());
                                 let user_agent = get_header_string("user-agent", request.headers());
                                 // determine the remote IP from headers if the exist
                                 let header_ip = settings
@@ -101,6 +102,7 @@ async fn handle_web_request(
                                 let client_info = ClientInfo {
                                     remote_ip,
                                     user_agent,
+                                    origin,
                                 };
                                 // spawn a nostr server with our websocket
                                 tokio::spawn(nostr_server(
@@ -439,6 +441,7 @@ fn make_notice_message(notice: Notice) -> Message {
 struct ClientInfo {
     remote_ip: String,
     user_agent: Option<String>,
+    origin: Option<String>,
 }
 
 /// Handle new client connections.  This runs through an event loop
@@ -502,9 +505,12 @@ async fn nostr_server(
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
     debug!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
-    if let Some(ua) = client_info.user_agent {
-        debug!("cid: {}, user-agent: {:?}", cid, ua);
-    }
+    let origin = client_info.origin.unwrap_or("<unspecified>".into());
+    let user_agent = client_info.user_agent.unwrap_or("<unspecified>".into());
+    debug!(
+        "cid: {}, origin: {:?}, user-agent: {:?}",
+        cid, origin, user_agent
+    );
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
