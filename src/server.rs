@@ -306,14 +306,16 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
-        let writer = db::db_writer(
-            SqliteRepo::new(pool.clone()),
-            SqliteRepo::new(pool.clone()),
-            settings.clone(),
-            event_rx,
-            bcast_tx.clone(),
-            metadata_tx.clone(),
-            shutdown_listen,
+        tokio::task::spawn(
+            db::db_writer(
+                SqliteRepo::new(pool.clone()),
+                SqliteRepo::new(pool.clone()),
+                settings.clone(),
+                event_rx,
+                bcast_tx.clone(),
+                metadata_tx.clone(),
+                shutdown_listen,
+            )
         );
         info!("db writer created");
 

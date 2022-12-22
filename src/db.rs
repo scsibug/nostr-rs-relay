@@ -112,7 +112,7 @@ pub async fn db_writer(
             break;
         }
         // call blocking read on channel
-        let next_event = event_rx.blocking_recv();
+        let next_event = event_rx.recv().await;
         // if the channel has closed, we will never get work
         if next_event.is_none() {
             break;
