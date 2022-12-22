@@ -58,7 +58,6 @@ pub async fn build_pool(
             .filename(full_path)
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal)
-            .locking_mode(SqliteLockingMode::Exclusive)
             .create_if_missing(true)
             .foreign_keys(true)
         )
