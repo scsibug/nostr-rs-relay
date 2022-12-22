@@ -721,7 +721,7 @@ pub fn query_oldest_user_verification(
     earliest: u64,
 ) -> Result<VerificationRecord> {
     let tx = conn.transaction()?;
-    let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
+    let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v INNER JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
     let mut stmt = tx.prepare_cached(query)?;
     let fields = stmt.query_row(params![earliest, earliest], |r| {
         let rowid: u64 = r.get(0)?;
