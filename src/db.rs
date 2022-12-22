@@ -84,7 +84,7 @@ pub fn build_pool(
         .test_on_check_out(true) // no noticeable performance hit
         .min_idle(Some(min_size))
         .max_size(max_size)
-        .max_lifetime(Some(Duration::from_secs(60)))
+        .max_lifetime(Some(Duration::from_secs(30)))
         .build(manager)
         .unwrap();
     info!(
