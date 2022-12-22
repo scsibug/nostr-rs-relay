@@ -248,10 +248,10 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
         .on_thread_start(|| {
-            debug!("started new thread");
+            trace!("started new thread");
         })
         .on_thread_stop(|| {
-            debug!("stopping thread");
+            trace!("stopping thread");
         })
         .build()
         .unwrap();
@@ -538,7 +538,7 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        debug!("sub match for client: {}, sub: {:?}, event: {:?}",
+                        trace!("sub match for client: {}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it

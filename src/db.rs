@@ -715,7 +715,10 @@ pub async fn db_query(
         let mut row_count: usize = 0;
         // generate SQL query
         let (q, p) = query_from_sub(&sub);
-        debug!("SQL generated in {:?}", start.elapsed());
+        let sql_gen_elapsed = start.elapsed();
+        if sql_gen_elapsed > Duration::from_millis(10) {
+            debug!("SQL (slow) generated in {:?}", start.elapsed());
+        }
         // show pool stats
         log_pool_stats("reader", &pool);
         // cutoff for displaying slow queries
