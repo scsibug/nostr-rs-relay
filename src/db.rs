@@ -12,7 +12,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteLockingMode, SqliteSynchronous};
 use tracing::{debug, info, trace, warn};
 
 /// Events submitted from a client, with a return channel for notices
@@ -58,6 +58,8 @@ pub async fn build_pool(
             .filename(full_path)
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Normal)
+            .locking_mode(SqliteLockingMode::Exclusive)
+            .create_if_missing(true)
             .foreign_keys(true)
         )
         .await?;
