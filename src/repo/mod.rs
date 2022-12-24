@@ -11,6 +11,7 @@ mod sqlite_migration;
 
 pub(crate) mod postgres;
 mod postgres_migration;
+mod common;
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 

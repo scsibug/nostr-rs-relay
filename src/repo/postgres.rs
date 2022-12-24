@@ -2,17 +2,18 @@ use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::nip05::VerificationRecord;
-use crate::repo::{NostrRepo, PostgresPool};
-use crate::subscription::Subscription;
+use crate::repo::{common, NostrRepo, PostgresPool};
+use crate::subscription::{ReqFilter, Subscription};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use sqlx::QueryBuilder;
+use sqlx::{Postgres, QueryBuilder};
 
 use crate::repo::postgres_migration::run_migrations;
 use crate::utils::{is_hex, is_lower_hex};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
+use crate::hexrange::{hex_range, HexSearch};
 
 pub struct PostgresRepo {
     conn: PostgresPool,
@@ -190,11 +191,12 @@ ON CONFLICT (id) DO NOTHING"#,
         query_tx: Sender<QueryResult>,
         abandon_query_rx: Receiver<()>,
     ) -> Result<()> {
-        todo!()
+        common::query_sub(sub, client_id, query_tx, abandon_query_rx, query_from_filter, &self.conn).await
     }
 
     async fn optimize_db(&self) -> Result<()> {
-        todo!()
+        // Not implemented
+        Ok(())
     }
 
     async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
@@ -220,4 +222,184 @@ ON CONFLICT (id) DO NOTHING"#,
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord> {
         todo!()
     }
+}
+
+
+/// Create a dynamic SQL query and params from a subscription filter.
+fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
+    // if the filter is malformed, don't return anything.
+    if f.force_no_match {
+        return None;
+    }
+
+    let mut query = QueryBuilder::new("SELECT e.\"content\", e.created_at FROM \"event\" e WHERE ");
+
+    let mut push_and = false;
+    // Query for "authors", allowing prefix matches
+    if let Some(auth_vec) = &f.authors {
+        let mut range_authors = query.separated(" OR ");
+        for auth in auth_vec {
+            match hex_range(auth) {
+                Some(HexSearch::Exact(ex)) => {
+                    range_authors
+                        .push("(e.pub_key = ")
+                        .push_bind_unseparated(ex.clone())
+                        .push_unseparated(" OR e.delegated_by = ")
+                        .push_bind_unseparated(ex)
+                        .push_unseparated(")");
+                }
+                Some(HexSearch::Range(lower, upper)) => {
+                    range_authors
+                        .push("(e.pub_key > ")
+                        .push_bind_unseparated(lower.clone())
+                        .push_unseparated(" AND e.pub_key < ")
+                        .push_bind_unseparated(upper.clone())
+                        .push_unseparated(" OR (e.delegated_by > ")
+                        .push_bind_unseparated(lower)
+                        .push_unseparated(" AND e.delegated_by < ")
+                        .push_bind_unseparated(upper)
+                        .push_unseparated(")");
+                }
+                Some(HexSearch::LowerOnly(lower)) => {
+                    range_authors
+                        .push("(e.pub_key > ")
+                        .push_bind_unseparated(lower.clone())
+                        .push_unseparated(" OR e.delegated_by > ")
+                        .push_bind_unseparated(lower)
+                        .push_unseparated(")");
+                }
+                None => {
+                    info!("Could not parse hex range from author {:?}", auth);
+                }
+            }
+            push_and = true;
+        }
+    }
+
+    // Query for Kind
+    if let Some(ks) = &f.kinds {
+        if !ks.is_empty() {
+            if push_and {
+                query.push(" AND ");
+            }
+            push_and = true;
+            // kind is number, no escaping needed
+            let str_kinds: Vec<String> = ks.iter().map(|x| x.to_string()).collect();
+
+            query.push("e.kind in (");
+            let mut list_query = query.separated(", ");
+            for k in str_kinds {
+                list_query.push_bind(k);
+            }
+            query.push(")");
+        }
+    }
+
+    // Query for event, allowing prefix matches
+    if let Some(id_vec) = &f.ids {
+        if !id_vec.is_empty() {
+            if push_and {
+                query.push(" AND ");
+            }
+            push_and = true;
+
+            // take each author and convert to a hex search
+            let mut id_query = query.separated(" OR ");
+            for id in id_vec {
+                match hex_range(id) {
+                    Some(HexSearch::Exact(ex)) => {
+                        id_query
+                            .push("(id = ")
+                            .push_bind_unseparated(ex)
+                            .push_unseparated(")");
+                    }
+                    Some(HexSearch::Range(lower, upper)) => {
+                        id_query
+                            .push("(id > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(" AND id < ")
+                            .push_bind_unseparated(upper)
+                            .push_unseparated(")");
+                    }
+                    Some(HexSearch::LowerOnly(lower)) => {
+                        id_query
+                            .push("(id > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(")");
+                    }
+                    None => {
+                        info!("Could not parse hex range from id {:?}", id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Query for tags
+    if let Some(map) = &f.tags {
+        if !map.is_empty() {
+            if push_and {
+                query.push(" AND ");
+            }
+            push_and = true;
+
+            for (key, val) in map.iter() {
+                query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = ")
+                    .push_bind(key.to_string())
+                    .push(" AND (value in (");
+
+                // plain value match first
+                let mut tag_query = query.separated(", ");
+                for v in val
+                    .iter()
+                {
+                    if (v.len() % 2 != 0) && !is_lower_hex(v) {
+                        tag_query.push_bind(v);
+                    } else {
+                        tag_query.push_bind(hex::decode(v).ok());
+                    }
+                }
+                query.push(")))");
+            }
+        }
+    }
+
+    // Query for timestamp
+    if f.since.is_some() {
+        if push_and {
+            query.push(" AND ");
+        }
+        push_and = true;
+        query
+            .push("e.created_at > ")
+            .push_bind(Utc.timestamp_opt(f.since.unwrap() as i64, 0).unwrap());
+    }
+
+    // Query for timestamp
+    if f.until.is_some() {
+        if push_and {
+            query.push(" AND ");
+        }
+        push_and = true;
+        query
+            .push("e.created_at < ")
+            .push_bind(Utc.timestamp_opt(f.until.unwrap() as i64, 0).unwrap());
+    }
+
+    // never display hidden events
+    if push_and {
+        query.push(" AND hidden != 1::bit(1)");
+    } else {
+        query.push("hidden != 1::bit(1)");
+    }
+
+    // Apply per-filter limit to this query.
+    // The use of a LIMIT implies a DESC order, to capture only the most recent events.
+    if let Some(lim) = f.limit {
+        query.push(" ORDER BY e.created_at DESC LIMIT ");
+        query.push(lim);
+    } else {
+        query.push(" ORDER BY e.created_at ASC");
+    }
+    Some(query)
 }

@@ -22,7 +22,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 
 [database]
 # Database engine (sqlite/postgres)
-engine = "sqlite"
+engine = "postgres"
 
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command
@@ -43,7 +43,7 @@ data_directory = "."
 #max_conn = 128
 
 # Postgres database settings
-#connection = "postgresql://postgres:nostr@localhost:7500/nostr"
+connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
 [network]
 # Bind to this network address
