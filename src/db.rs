@@ -221,6 +221,24 @@ pub async fn db_writer(
                 }
             }
 
+            // Check that event kind isn't blacklisted
+            let kinds_blacklist = &settings.limits.event_kind_blacklist.clone();
+            if let Some(event_kind_blacklist) = kinds_blacklist {
+                if event_kind_blacklist.contains(&event.kind) {
+                    info!(
+                        "Rejecting event {}, blacklisted kind",
+                        &event.get_event_id_prefix()
+                    );
+                    notice_tx
+                        .try_send(Notice::blocked(
+                            event.id,
+                            "event kind is blocked by relay"
+                        ))
+                        .ok();
+                    continue;
+                }
+            }
+
             // send any metadata events to the NIP-05 verifier
             if nip05_active && event.is_kind_metadata() {
                 // we are sending this prior to even deciding if we
