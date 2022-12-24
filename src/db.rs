@@ -102,11 +102,11 @@ pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
     Ok(())
 }
 #[derive(Debug)]
-enum SqliteReturnStatus {
-    SqliteOk,
-    SqliteBusy,
-    SqliteError,
-    SqliteOther(u64),
+enum SqliteStatus {
+    Ok,
+    Busy,
+    Error,
+    Other(u64),
 }
 
 /// Checkpoint/Truncate WAL
@@ -120,10 +120,10 @@ pub fn checkpoint_db(conn: &mut PooledConnection) -> Result<()> {
         Ok((checkpoint_result, wal_size, frames_checkpointed))
     })?;
     let result = match cp_result {
-        0 => SqliteReturnStatus::SqliteOk,
-        1 => SqliteReturnStatus::SqliteBusy,
-        2 => SqliteReturnStatus::SqliteError,
-        x => SqliteReturnStatus::SqliteOther(x),
+        0 => SqliteStatus::Ok,
+        1 => SqliteStatus::Busy,
+        2 => SqliteStatus::Error,
+        x => SqliteStatus::Other(x),
     };
     info!(
         "checkpoint ran in {:?} (result: {:?}, WAL size: {})",
@@ -770,7 +770,7 @@ pub async fn db_query(
                 }
                 // logging for slow queries; show sub and SQL.
                 // to reduce logging; only show 1/16th of clients (leading 0)
-                if row_count == 0 && slow_first_event && client_id.starts_with("0") {
+                if row_count == 0 && slow_first_event && client_id.starts_with('0') {
                     debug!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id

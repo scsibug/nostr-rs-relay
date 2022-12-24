@@ -505,8 +505,10 @@ async fn nostr_server(
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
     debug!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
-    let origin = client_info.origin.unwrap_or("<unspecified>".into());
-    let user_agent = client_info.user_agent.unwrap_or("<unspecified>".into());
+    let origin = client_info.origin.unwrap_or_else(|| "<unspecified>".into());
+    let user_agent = client_info
+        .user_agent
+        .unwrap_or_else(|| "<unspecified>".into());
     debug!(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
