@@ -23,6 +23,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -89,6 +90,7 @@ async fn handle_web_request(
                                     Some(config),
                                 )
                                 .await;
+                                let origin = get_header_string("origin", request.headers());
                                 let user_agent = get_header_string("user-agent", request.headers());
                                 // determine the remote IP from headers if the exist
                                 let header_ip = settings
@@ -102,6 +104,7 @@ async fn handle_web_request(
                                 let client_info = ClientInfo {
                                     remote_ip,
                                     user_agent,
+                                    origin,
                                 };
                                 // spawn a nostr server with our websocket
                                 tokio::spawn(nostr_server(
@@ -252,10 +255,10 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
         .on_thread_start(|| {
-            debug!("started new thread");
+            trace!("started new thread");
         })
         .on_thread_stop(|| {
-            debug!("stopping thread");
+            trace!("stopping thread");
         })
         .build()
         .unwrap();
@@ -336,6 +339,17 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 }
             }
         }
+        // build a connection pool for DB maintenance
+        let maintenance_pool = db::build_pool(
+            "maintenance writer",
+            &settings,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            1,
+            1,
+            false,
+        );
+        db::db_maintenance(maintenance_pool).await;
+
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();
         tokio::spawn(async move {
@@ -445,6 +459,7 @@ fn make_notice_message(notice: Notice) -> Message {
 struct ClientInfo {
     remote_ip: String,
     user_agent: Option<String>,
+    origin: Option<String>,
 }
 
 /// Handle new client connections.  This runs through an event loop
@@ -508,9 +523,14 @@ async fn nostr_server(
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
     debug!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
-    if let Some(ua) = client_info.user_agent {
-        debug!("cid: {}, user-agent: {:?}", cid, ua);
-    }
+    let origin = client_info.origin.unwrap_or_else(|| "<unspecified>".into());
+    let user_agent = client_info
+        .user_agent
+        .unwrap_or_else(|| "<unspecified>".into());
+    debug!(
+        "cid: {}, origin: {:?}, user-agent: {:?}",
+        cid, origin, user_agent
+    );
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
@@ -556,7 +576,7 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        debug!("sub match for client: {}, sub: {:?}, event: {:?}",
+                        trace!("sub match for client: {}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
                         // create an event response and send it

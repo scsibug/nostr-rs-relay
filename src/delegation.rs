@@ -80,7 +80,7 @@ impl FromStr for Operator {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ConditionQuery {
-    pub(crate) conditions: Vec<Condition>,
+    pub conditions: Vec<Condition>,
 }
 
 impl ConditionQuery {
@@ -137,9 +137,9 @@ pub fn validate_delegation(
 /// An example complex condition would be:  kind=1,2,3&created_at<1665265999
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Condition {
-    pub(crate) field: Field,
-    pub(crate) operator: Operator,
-    pub(crate) values: Vec<u64>,
+    pub field: Field,
+    pub operator: Operator,
+    pub values: Vec<u64>,
 }
 
 impl Condition {
@@ -332,19 +332,6 @@ mod tests {
         assert_eq!(parsed, cq);
         Ok(())
     }
-    fn simple_event() -> Event {
-        Event {
-            id: "0".to_owned(),
-            pubkey: "0".to_owned(),
-            delegated_by: None,
-            created_at: 0,
-            kind: 0,
-            tags: vec![],
-            content: "".to_owned(),
-            sig: "0".to_owned(),
-            tagidx: None,
-        }
-    }
     // Check for condition logic on event w/ empty values
     #[test]
     fn condition_with_empty_values() {
@@ -353,7 +340,7 @@ mod tests {
             operator: Operator::GreaterThan,
             values: vec![],
         };
-        let e = simple_event();
+        let e = Event::simple_event();
         assert!(!c.allows_event(&e));
         c.operator = Operator::LessThan;
         assert!(!c.allows_event(&e));
@@ -373,7 +360,7 @@ mod tests {
             operator: Operator::GreaterThan,
             values: vec![10],
         };
-        let mut e = simple_event();
+        let mut e = Event::simple_event();
         // kind is not greater than 10, not allowed
         e.kind = 1;
         assert!(!c.allows_event(&e));
@@ -392,7 +379,7 @@ mod tests {
             operator: Operator::Equals,
             values: vec![0, 10, 20],
         };
-        let mut e = simple_event();
+        let mut e = Event::simple_event();
         // Allow if event kind is in list for Equals
         e.kind = 10;
         assert!(c.allows_event(&e));

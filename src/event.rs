@@ -37,19 +37,19 @@ impl EventCmd {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Event {
     pub id: String,
-    pub(crate) pubkey: String,
+    pub pubkey: String,
     #[serde(skip)]
-    pub(crate) delegated_by: Option<String>,
-    pub(crate) created_at: u64,
-    pub(crate) kind: u64,
+    pub delegated_by: Option<String>,
+    pub created_at: u64,
+    pub kind: u64,
     #[serde(deserialize_with = "tag_from_string")]
     // NOTE: array-of-arrays may need to be more general than a string container
-    pub(crate) tags: Vec<Vec<String>>,
-    pub(crate) content: String,
-    pub(crate) sig: String,
+    pub tags: Vec<Vec<String>>,
+    pub content: String,
+    pub sig: String,
     // Optimization for tag search, built on demand.
     #[serde(skip)]
-    pub(crate) tagidx: Option<HashMap<char, HashSet<String>>>,
+    pub tagidx: Option<HashMap<char, HashSet<String>>>,
 }
 
 /// Simple tag type for array of array of strings.
@@ -101,6 +101,21 @@ impl From<EventCmd> for Result<Event> {
 }
 
 impl Event {
+    #[cfg(test)]
+    pub fn simple_event() -> Event {
+        Event {
+            id: "0".to_owned(),
+            pubkey: "0".to_owned(),
+            delegated_by: None,
+            created_at: 0,
+            kind: 0,
+            tags: vec![],
+            content: "".to_owned(),
+            sig: "0".to_owned(),
+            tagidx: None,
+        }
+    }
+
     pub fn is_kind_metadata(&self) -> bool {
         self.kind == 0
     }
@@ -226,7 +241,7 @@ impl Event {
     }
 
     /// Check if this event has a valid signature.
-    fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         // TODO: return a Result with a reason for invalid events
         // validation is performed by:
         // * parsing JSON string into event fields
@@ -319,31 +334,18 @@ impl Event {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn simple_event() -> Event {
-        Event {
-            id: "0".to_owned(),
-            pubkey: "0".to_owned(),
-            delegated_by: None,
-            created_at: 0,
-            kind: 0,
-            tags: vec![],
-            content: "".to_owned(),
-            sig: "0".to_owned(),
-            tagidx: None,
-        }
-    }
 
     #[test]
     fn event_creation() {
         // create an event
-        let event = simple_event();
+        let event = Event::simple_event();
         assert_eq!(event.id, "0");
     }
 
     #[test]
     fn event_serialize() -> Result<()> {
         // serialize an event to JSON string
-        let event = simple_event();
+        let event = Event::simple_event();
         let j = serde_json::to_string(&event)?;
         assert_eq!(j, "{\"id\":\"0\",\"pubkey\":\"0\",\"created_at\":0,\"kind\":0,\"tags\":[],\"content\":\"\",\"sig\":\"0\"}");
         Ok(())
@@ -351,14 +353,14 @@ mod tests {
 
     #[test]
     fn empty_event_tag_match() {
-        let event = simple_event();
+        let event = Event::simple_event();
         assert!(!event
             .generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
     }
 
     #[test]
     fn single_event_tag_match() {
-        let mut event = simple_event();
+        let mut event = Event::simple_event();
         event.tags = vec![vec!["e".to_owned(), "foo".to_owned()]];
         event.build_index();
         assert_eq!(
@@ -373,7 +375,7 @@ mod tests {
     #[test]
     fn event_tags_serialize() -> Result<()> {
         // serialize an event with tags to JSON string
-        let mut event = simple_event();
+        let mut event = Event::simple_event();
         event.tags = vec![
             vec![
                 "e".to_owned(),
