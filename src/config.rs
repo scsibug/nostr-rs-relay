@@ -60,6 +60,7 @@ pub struct Limits {
     pub max_ws_frame_bytes: Option<usize>,
     pub broadcast_buffer: usize, // events to buffer for subscribers (prevents slow readers from consuming memory)
     pub event_persist_buffer: usize, // events to buffer for database commits (block senders if database writes are too slow)
+    pub event_kind_blacklist: Option<Vec<u64>>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +226,7 @@ impl Default for Settings {
                 max_ws_frame_bytes: Some(2 << 17),   // 128K
                 broadcast_buffer: 16384,
                 event_persist_buffer: 4096,
+                event_kind_blacklist: None,
             },
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish

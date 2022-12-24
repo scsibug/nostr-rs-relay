@@ -100,6 +100,11 @@ reject_future_seconds = 1800
 # backpressure to senders if writes are slow.
 #event_persist_buffer = 4096
 
+# Event kind blacklist. Events with these kinds will be discarded.
+#event_kind_blacklist = [
+#    70202,
+#]
+
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable
