@@ -9,17 +9,17 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use hex;
 use rand::Rng;
-use sqlx::sqlite::{SqliteRow};
+use sqlx::sqlite::SqliteRow;
 use sqlx::{Error, Execute, FromRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, trace};
 
-use crate::repo::{Nip05Repo, NostrRepo, RepoMigrate};
 use crate::repo::sqlite_migration::upgrade_db;
+use crate::repo::{NostrRepo};
 
 #[derive(Clone)]
 pub struct SqliteRepo {
-    conn: SqlitePool
+    conn: SqlitePool,
 }
 
 impl SqliteRepo {
@@ -29,15 +29,12 @@ impl SqliteRepo {
 }
 
 #[async_trait]
-impl RepoMigrate for SqliteRepo {
-    async fn migrate_up(&mut self) -> Result<usize>{
+impl NostrRepo for SqliteRepo {
+    async fn migrate_up(&self) -> Result<usize> {
         upgrade_db(&self.conn).await
     }
-}
 
-#[async_trait]
-impl NostrRepo for SqliteRepo {
-    async fn write_event(&mut self, e: &Event) -> Result<u64> {
+    async fn write_event(&self, e: &Event) -> Result<u64> {
         // start transaction
         let mut tx = self.conn.begin().await?;
 
@@ -186,7 +183,7 @@ impl NostrRepo for SqliteRepo {
     }
 
     async fn query_subscription(
-        &mut self,
+        &self,
         sub: Subscription,
         client_id: String,
         query_tx: tokio::sync::mpsc::Sender<QueryResult>,
@@ -294,7 +291,8 @@ impl NostrRepo for SqliteRepo {
                         sub_id: sub.get_id(),
                         event: event_json,
                     })
-                    .await.ok();
+                    .await
+                    .ok();
                 last_successful_send = Instant::now();
             }
         }
@@ -303,7 +301,8 @@ impl NostrRepo for SqliteRepo {
                 sub_id: sub.get_id(),
                 event: "EOSE".to_string(),
             })
-            .await.ok();
+            .await
+            .ok();
         debug!(
             "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
             start.elapsed(),
@@ -315,15 +314,12 @@ impl NostrRepo for SqliteRepo {
         Ok(())
     }
 
-    async fn optimize_db(&mut self) -> Result<()> {
+    async fn optimize_db(&self) -> Result<()> {
         sqlx::query("PRAGMA optimize").execute(&self.conn).await?;
         Ok(())
     }
-}
 
-#[async_trait]
-impl Nip05Repo for SqliteRepo {
-    async fn create_verification_record(&mut self, event_id: &str, name: &str) -> Result<()> {
+    async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
         let mut tx = self.conn.begin().await?;
 
         // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
@@ -340,7 +336,7 @@ impl Nip05Repo for SqliteRepo {
         Ok(())
     }
 
-    async fn update_verification_timestamp(&mut self, id: u64) -> Result<()> {
+    async fn update_verification_timestamp(&self, id: u64) -> Result<()> {
         // add some jitter to the verification to prevent everything from stacking up together.
         let verify_time = now_jitter(600);
         let mut tx = self.conn.begin().await?;
@@ -357,7 +353,7 @@ impl Nip05Repo for SqliteRepo {
         Ok(())
     }
 
-    async fn fail_verification(&mut self, id: u64) -> Result<()> {
+    async fn fail_verification(&self, id: u64) -> Result<()> {
         sqlx::query("UPDATE user_verification SET failed_at = ?, failure_count = failure_count + 1 WHERE id = ?")
             .bind(unix_time() as i64)
             .bind(id as i64)
@@ -366,7 +362,7 @@ impl Nip05Repo for SqliteRepo {
         Ok(())
     }
 
-    async fn delete_verification(&mut self, id: u64) -> Result<()> {
+    async fn delete_verification(&self, id: u64) -> Result<()> {
         sqlx::query("DELETE FROM user_verification WHERE id = ?")
             .bind(id as i64)
             .execute(&self.conn)
@@ -374,7 +370,7 @@ impl Nip05Repo for SqliteRepo {
         Ok(())
     }
 
-    async fn get_latest_user_verification(&mut self, pub_key: &str) -> Result<VerificationRecord> {
+    async fn get_latest_user_verification(&self, pub_key: &str) -> Result<VerificationRecord> {
         let query = r#"SELECT
             v.id,
             v.name,
@@ -396,7 +392,7 @@ impl Nip05Repo for SqliteRepo {
         Ok(res)
     }
 
-    async fn get_oldest_user_verification(&mut self, before: u64) -> Result<VerificationRecord> {
+    async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord> {
         let query = r#"SELECT
             v.id,
             v.name,
@@ -618,8 +614,8 @@ fn log_pool_stats(pool: &SqlitePool) {
 
 impl FromRow<'_, SqliteRow> for VerificationRecord {
     fn from_row(row: &'_ SqliteRow) -> std::result::Result<Self, Error> {
-        let name = Nip05Name::try_from(row.get::<'_, &str, &str>("name"))
-            .or(Err(Error::RowNotFound))?;
+        let name =
+            Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(Error::RowNotFound))?;
         Ok(VerificationRecord {
             rowid: row.get::<'_, i64, &str>("id") as u64,
             name,
@@ -629,9 +625,9 @@ impl FromRow<'_, SqliteRow> for VerificationRecord {
             last_success: None,
             last_failure: match row.try_get::<'_, i64, &str>("failed_at") {
                 Ok(x) => Some(x as u64),
-                _ => None
+                _ => None,
             },
-            failure_count: row.get::<'_, i64, &str>("failure_count") as u64
+            failure_count: row.get::<'_, i64, &str>("failure_count") as u64,
         })
     }
 }

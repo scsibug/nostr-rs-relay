@@ -4,10 +4,11 @@
 //! address with their public key, in metadata events.  This module
 //! consumes a stream of metadata events, and keeps a database table
 //! updated with the current NIP-05 verification status.
+use std::sync::Arc;
 use crate::config::VerifiedUsers;
 use crate::error::{Error, Result};
 use crate::event::Event;
-use crate::repo::{Nip05Repo, NostrRepo};
+use crate::repo::{NostrRepo};
 use crate::utils::unix_time;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
@@ -21,7 +22,7 @@ use tokio::time::Interval;
 use tracing::{debug, info, warn};
 
 /// NIP-05 verifier state
-pub struct Verifier<TNip05Repo, TNostrRepo> {
+pub struct Verifier {
     /// Metadata events for us to inspect
     metadata_rx: tokio::sync::broadcast::Receiver<Event>,
     /// Newly validated events get written and then broadcast on this channel to subscribers
@@ -29,9 +30,7 @@ pub struct Verifier<TNip05Repo, TNostrRepo> {
     /// Settings
     settings: crate::config::Settings,
     /// NIP-05 Repository
-    repo: TNip05Repo,
-    /// Event repository
-    event_repo: TNostrRepo,
+    repo: Arc<dyn NostrRepo>,
     /// HTTP client
     client: hyper::Client<HttpsConnector<HttpConnector>, hyper::Body>,
     /// After all accounts are updated, wait this long before checking again.
@@ -135,13 +134,12 @@ fn body_contains_user(username: &str, address: &str, bytes: hyper::body::Bytes) 
     Ok(check_name.map(|x| x == address).unwrap_or(false))
 }
 
-impl<TNip05Repo: Nip05Repo, TNostrRepo: NostrRepo> Verifier<TNip05Repo, TNostrRepo> {
+impl Verifier {
     pub fn new(
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
         settings: crate::config::Settings,
-        repo: TNip05Repo,
-        event_repo: TNostrRepo
+        repo: Arc<dyn NostrRepo>
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
 
@@ -165,7 +163,6 @@ impl<TNip05Repo: Nip05Repo, TNostrRepo: NostrRepo> Verifier<TNip05Repo, TNostrRe
             metadata_rx,
             event_tx,
             repo,
-            event_repo,
             settings,
             client,
             wait_after_finish,
@@ -426,7 +423,7 @@ impl<TNip05Repo: Nip05Repo, TNostrRepo: NostrRepo> Verifier<TNip05Repo, TNostrRe
         // disabled/passive, the event has already been persisted.
         let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
-            match self.event_repo.write_event(event).await {
+            match self.repo.write_event(event).await {
                 Ok(updated) => {
                     if updated != 0 {
                         info!(

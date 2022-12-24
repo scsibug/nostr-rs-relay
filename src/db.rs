@@ -1,19 +1,22 @@
 //! Event persistence and querying
-use crate::config::Settings;
-use crate::error::{Result};
+use crate::config::{Database, Settings};
+use crate::error::Result;
 use crate::event::Event;
 use crate::notice::Notice;
-use crate::repo::{Nip05Repo, NostrRepo};
+use crate::repo::{NostrRepo, PostgresPool};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use sqlx::pool::PoolOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sqlx::SqlitePool;
 use std::path::Path;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteLockingMode, SqliteSynchronous};
 use tracing::{debug, info, trace, warn};
+use crate::repo::postgres::PostgresRepo;
+use crate::repo::sqlite::SqliteRepo;
 
 /// Events submitted from a client, with a return channel for notices
 pub struct SubmittedEvent {
@@ -26,54 +29,53 @@ pub const DB_FILE: &str = "nostr.db";
 /// How many persisted events before optimization is triggered
 pub const EVENT_COUNT_OPTIMIZE_TRIGGER: usize = 500;
 
-/// Build a database connection pool.
+/// Build repo
 /// # Panics
 ///
 /// Will panic if the pool could not be created.
-pub async fn build_pool(
-    name: &str,
-    settings: &Settings,
-    min_size: u32,
-    max_size: u32,
-    wait_for_db: bool,
-) -> Result<SqlitePool> {
-    let db_dir = &settings.database.data_directory;
+pub async fn build_repo(settings: &Database) -> Arc<dyn NostrRepo> {
+    match settings.engine.as_str() {
+        "sqlite" => Arc::new(build_sqlite_pool(settings).await),
+        "postgres" => Arc::new(build_postgres_pool(settings).await),
+        _ => panic!("Unknown database engine")
+    }
+}
+
+async fn build_postgres_pool(config: &Database) -> PostgresRepo {
+    let pool: PostgresPool = PoolOptions::new()
+        .max_connections(config.max_conn)
+        .min_connections(config.min_conn)
+        .idle_timeout(Duration::from_secs(60))
+        .connect(config.connection.as_str())
+        .await
+        .unwrap();
+    PostgresRepo::new(pool)
+}
+
+async fn build_sqlite_pool(config: &Database) -> SqliteRepo {
+    let db_dir = &config.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
 
-    // small hack; if the database doesn't exist yet, that means the
-    // writer thread hasn't finished.  Give it a chance to work.  This
-    // is only an issue with the first time we run.
-    if !settings.database.in_memory {
-        while !full_path.exists() && wait_for_db {
-            debug!("Database reader pool is waiting on the database to be created...");
-            async_std::task::sleep(Duration::from_millis(500)).await;
-        }
-    }
-
     let pool: SqlitePool = PoolOptions::new()
-        .max_connections(max_size)
-        .min_connections(min_size)
+        .max_connections(config.max_conn)
+        .min_connections(config.min_conn)
         .idle_timeout(Duration::from_secs(60))
-        .connect_with(SqliteConnectOptions::new()
-            .filename(full_path)
-            .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
-            .create_if_missing(true)
-            .foreign_keys(true)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(full_path)
+                .journal_mode(SqliteJournalMode::Wal)
+                .synchronous(SqliteSynchronous::Normal)
+                .create_if_missing(true)
+                .foreign_keys(true),
         )
-        .await?;
-
-    info!(
-        "Built a connection pool {:?} (min={}, max={})",
-        name, min_size, max_size
-    );
-    Ok(pool)
+        .await
+        .unwrap();
+    SqliteRepo::new(pool)
 }
 
 /// Spawn a database writer that persists events to the SQLite store.
 pub async fn db_writer(
-    mut repo: impl NostrRepo,
-    mut nip05_repo: impl Nip05Repo,
+    repo: Arc<dyn NostrRepo>,
     settings: Settings,
     mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
@@ -150,7 +152,7 @@ pub async fn db_writer(
 
         // check for  NIP-05 verification
         if nip05_enabled {
-            match nip05_repo.get_latest_user_verification(&event.pubkey).await {
+            match repo.get_latest_user_verification(&event.pubkey).await {
                 Ok(uv) => {
                     if uv.is_valid(&settings.verified_users) {
                         info!(

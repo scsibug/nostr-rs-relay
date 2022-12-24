@@ -3,10 +3,10 @@ use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::utils::is_lower_hex;
 use const_format::formatcp;
-use std::cmp::Ordering;
-use std::time::Instant;
 use futures_util::StreamExt;
 use sqlx::{Executor, Row, SqlitePool};
+use std::cmp::Ordering;
+use std::time::Instant;
 use tracing::{debug, error, info};
 
 /// Startup DB Pragmas
@@ -86,7 +86,6 @@ CREATE INDEX IF NOT EXISTS user_verification_event_index ON user_verification(me
 
 /// Determine the current application database schema version.
 pub async fn curr_db_version(conn: &SqlitePool) -> Result<usize> {
-
     let curr_version: u32 = sqlx::query_scalar("PRAGMA user_version;")
         .fetch_one(conn)
         .await?;
@@ -249,8 +248,9 @@ PRAGMA user_version = 3;
     {
         let mut query = sqlx::query(
             "select event_id, \"e\", lower(hex(referenced_event)) from event_ref \
-            union select event_id, \"p\", lower(hex(referenced_pubkey)) from pubkey_ref;")
-            .fetch(conn);
+            union select event_id, \"p\", lower(hex(referenced_pubkey)) from pubkey_ref;",
+        )
+        .fetch(conn);
 
         while let Some(Ok(row)) = query.next().await {
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
@@ -332,8 +332,7 @@ async fn mig_5_to_6(conn: &SqlitePool) -> Result<usize> {
     {
         // Clear out table
         tx.execute("DELETE FROM tag;").await?;
-        let mut query = sqlx::query("select id, content from event order by id")
-            .fetch(conn);
+        let mut query = sqlx::query("select id, content from event order by id").fetch(conn);
 
         while let Some(Ok(row)) = query.next().await {
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.

@@ -21,6 +21,9 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 #tracing = true
 
 [database]
+# Database engine (sqlite/postgres)
+engine = "sqlite"
+
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command
 # line option.
@@ -38,6 +41,9 @@ data_directory = "."
 
 # Maximum number of SQLite reader connections
 #max_conn = 128
+
+# Postgres database settings
+#connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
 [network]
 # Bind to this network address

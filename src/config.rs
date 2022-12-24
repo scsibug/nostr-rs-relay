@@ -17,10 +17,12 @@ pub struct Info {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Database {
+    pub engine: String,
     pub data_directory: String,
     pub in_memory: bool,
     pub min_conn: u32,
     pub max_conn: u32,
+    pub connection: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,10 +206,12 @@ impl Default for Settings {
             },
             diagnostics: Diagnostics { tracing: false },
             database: Database {
+                engine: "sqlite".to_owned(),
                 data_directory: ".".to_owned(),
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 128,
+                connection: "".to_owned()
             },
             network: Network {
                 port: 8080,

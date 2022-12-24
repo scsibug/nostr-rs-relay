@@ -1,0 +1,8 @@
+services:
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_DB: nostr
+      POSTGRES_PASSWORD: nostr
+    ports:
+      - 7500:5432

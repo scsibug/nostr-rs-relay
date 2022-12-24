@@ -11,8 +11,7 @@ use crate::event::EventCmd;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
-use crate::repo::sqlite::SqliteRepo;
-use crate::repo::{NostrRepo, RepoMigrate};
+use crate::repo::{NostrRepo};
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -30,6 +29,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -48,7 +48,7 @@ use tungstenite::protocol::WebSocketConfig;
 /// Handle arbitrary HTTP requests, including for WebSocket upgrades.
 async fn handle_web_request(
     mut request: Request<Body>,
-    repo: impl NostrRepo + Send + 'static,
+    repo: Arc<dyn NostrRepo>,
     settings: Settings,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
@@ -293,15 +293,13 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         let full_path = Path::new(db_dir).join(db::DB_FILE);
 
         // create a connection pool
-        let pool = db::build_pool("event writer", &settings, 1, 2, false)
-            .await
-            .unwrap();
+        let mut repo = db::build_repo(&settings.database)
+            .await;
         if settings.database.in_memory {
             info!("using in-memory database, this will not persist a restart!");
         } else {
             info!("opened database {} for writing", full_path.display());
         }
-        let mut repo = SqliteRepo::new(pool.clone());
         if let Ok(v) = repo.migrate_up().await {
             info!("Database migrations complete @ version {}", v);
         }
@@ -311,7 +309,6 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // written (to all connected clients).
         tokio::task::spawn(
             db::db_writer(
-                repo.clone(),
                 repo.clone(),
                 settings.clone(),
                 event_rx,
@@ -328,8 +325,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 metadata_rx,
                 bcast_tx.clone(),
                 settings.clone(),
-                repo.clone(),
-                repo.clone(),
+                repo.clone()
             );
             if let Ok(mut v) = verifier_opt {
                 if verified_users_active {
@@ -454,7 +450,7 @@ struct ClientInfo {
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
 async fn nostr_server(
-    mut pool: impl NostrRepo,
+    pool: Arc<dyn NostrRepo>,
     client_info: ClientInfo,
     settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
