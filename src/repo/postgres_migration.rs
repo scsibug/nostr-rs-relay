@@ -1,6 +1,6 @@
+use crate::repo::PostgresPool;
 use async_trait::async_trait;
 use sqlx::{Executor, Postgres, Transaction};
-use crate::repo::PostgresPool;
 
 #[async_trait]
 pub trait Migration {
@@ -79,7 +79,6 @@ CREATE TABLE "event" (
 	created_at timestamp with time zone NOT NULL,
 	kind numeric NOT NULL,
 	"content" bytea NOT NULL,
-	sig bytea NOT NULL,
 	hidden bit(1) NOT NULL DEFAULT 0::bit(1),
 	delegated_by bytea NULL,
 	first_seen timestamp with time zone NOT NULL DEFAULT now(),
