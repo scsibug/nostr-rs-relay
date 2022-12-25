@@ -11,7 +11,7 @@ use crate::event::EventCmd;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
-use crate::repo::{NostrRepo};
+use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -23,15 +23,14 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
-use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc::Receiver as MpscReceiver;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::runtime::Builder;
@@ -296,8 +295,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         let full_path = Path::new(db_dir).join(db::DB_FILE);
 
         // create a connection pool
-        let mut repo = db::build_repo(&settings.database)
-            .await;
+        let mut repo = db::build_repo(&settings.database).await;
         if settings.database.in_memory {
             info!("using in-memory database, this will not persist a restart!");
         } else {
@@ -310,16 +308,14 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // start the database writer thread.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
-        tokio::task::spawn(
-            db::db_writer(
-                repo.clone(),
-                settings.clone(),
-                event_rx,
-                bcast_tx.clone(),
-                metadata_tx.clone(),
-                shutdown_listen,
-            )
-        );
+        tokio::task::spawn(db::db_writer(
+            repo.clone(),
+            settings.clone(),
+            event_rx,
+            bcast_tx.clone(),
+            metadata_tx.clone(),
+            shutdown_listen,
+        ));
         info!("db writer created");
 
         // create a nip-05 verifier thread; if enabled.
@@ -328,7 +324,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 metadata_rx,
                 bcast_tx.clone(),
                 settings.clone(),
-                repo.clone()
+                repo.clone(),
             );
             if let Ok(mut v) = verifier_opt {
                 if verified_users_active {
@@ -339,16 +335,8 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                 }
             }
         }
-        // build a connection pool for DB maintenance
-        let maintenance_pool = db::build_pool(
-            "maintenance writer",
-            &settings,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            1,
-            1,
-            false,
-        );
-        db::db_maintenance(maintenance_pool).await;
+
+        // db::db_maintenance(maintenance_pool).await;
 
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();

@@ -8,15 +8,13 @@ use sqlx::Postgres;
 
 pub(crate) mod sqlite;
 mod sqlite_migration;
-
 pub(crate) mod postgres;
 mod postgres_migration;
-mod common;
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
 #[async_trait]
-pub trait NostrRepo : Send + Sync {
+pub trait NostrRepo: Send + Sync {
     /// Run migrations and return current version
     async fn migrate_up(&self) -> Result<usize>;
 

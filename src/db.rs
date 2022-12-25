@@ -3,6 +3,8 @@ use crate::config::{Database, Settings};
 use crate::error::Result;
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::repo::postgres::PostgresRepo;
+use crate::repo::sqlite::SqliteRepo;
 use crate::repo::{NostrRepo, PostgresPool};
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
@@ -15,8 +17,6 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::{debug, info, trace, warn};
-use crate::repo::postgres::PostgresRepo;
-use crate::repo::sqlite::SqliteRepo;
 
 /// Events submitted from a client, with a return channel for notices
 pub struct SubmittedEvent {
@@ -37,7 +37,7 @@ pub async fn build_repo(settings: &Database) -> Arc<dyn NostrRepo> {
     match settings.engine.as_str() {
         "sqlite" => Arc::new(build_sqlite_pool(settings).await),
         "postgres" => Arc::new(build_postgres_pool(settings).await),
-        _ => panic!("Unknown database engine")
+        _ => panic!("Unknown database engine"),
     }
 }
 

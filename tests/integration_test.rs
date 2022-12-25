@@ -2,6 +2,9 @@ use anyhow::Result;
 
 use std::thread;
 use std::time::Duration;
+use nostr_sdk::Client;
+use nostr_sdk::nostr::SubscriptionFilter;
+use tracing::instrument::WithSubscriber;
 
 mod common;
 
@@ -42,6 +45,25 @@ async fn relay_home_page() -> Result<()> {
     let relay = common::start_relay()?;
     common::wait_for_healthy_relay(&relay).await?;
     // tell relay to shutdown
+    let _res = relay.shutdown_tx.send(());
+    Ok(())
+}
+
+#[tokio::test]
+async fn sub_tests() -> Result<()> {
+    let relay = common::start_relay()?;
+
+    let my_keys = Client::generate_keys();
+    let client = Client::new(&my_keys);
+    client.add_relay("ws://localhost:8080", None).await?;
+    client.connect().await?;
+
+    client.publish_text_note("test", &[]).await?;
+    let sub = SubscriptionFilter::new()
+        .limit(1);
+    let result = client.subscribe(vec![sub]).await;
+    assert!(result.is_ok());
+
     let _res = relay.shutdown_tx.send(());
     Ok(())
 }

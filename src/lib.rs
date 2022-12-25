@@ -9,8 +9,8 @@ pub mod hexrange;
 pub mod info;
 pub mod nip05;
 pub mod notice;
+pub mod repo;
 pub mod subscription;
 pub mod utils;
-pub mod repo;
 // Public API for creating relays programatically
 pub mod server;

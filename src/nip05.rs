@@ -4,17 +4,17 @@
 //! address with their public key, in metadata events.  This module
 //! consumes a stream of metadata events, and keeps a database table
 //! updated with the current NIP-05 verification status.
-use std::sync::Arc;
 use crate::config::VerifiedUsers;
 use crate::error::{Error, Result};
 use crate::event::Event;
-use crate::repo::{NostrRepo};
+use crate::repo::NostrRepo;
 use crate::utils::unix_time;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
 use rand::Rng;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
@@ -139,7 +139,7 @@ impl Verifier {
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
         settings: crate::config::Settings,
-        repo: Arc<dyn NostrRepo>
+        repo: Arc<dyn NostrRepo>,
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
 
@@ -444,7 +444,9 @@ impl Verifier {
         }
 
         // write the verification record
-        self.repo.create_verification_record(event.id.as_str(), name).await?;
+        self.repo
+            .create_verification_record(event.id.as_str(), name)
+            .await?;
         Ok(())
     }
 }

@@ -35,6 +35,7 @@ pub fn start_relay() -> Result<Relay> {
     settings.database.in_memory = true;
     settings.database.min_conn = 4;
     settings.database.max_conn = 8;
+    settings.database.engine = "sqlite".to_owned();
     let (shutdown_tx, shutdown_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
     let handle = thread::spawn(|| {
         // server will block the thread it is run on.

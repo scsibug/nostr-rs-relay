@@ -211,7 +211,7 @@ impl Default for Settings {
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 128,
-                connection: "".to_owned()
+                connection: "".to_owned(),
             },
             network: Network {
                 port: 8080,
