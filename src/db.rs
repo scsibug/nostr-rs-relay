@@ -753,10 +753,13 @@ pub async fn db_query(
         let start = Instant::now();
         let mut slow_first_event;
         let mut last_successful_send = Instant::now();
-        if let Ok(conn) = pool.get() {
-            // execute the query. Don't cache, since queries vary so much.
-            let mut stmt = conn.prepare(&q)?;
+        if let Ok(mut conn) = pool.get() {
+            // execute the query.
+            // make the actual SQL query (with parameters inserted) available
+            conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
+            let mut stmt = conn.prepare_cached(&q)?;
             let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
+
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
                 let first_event_elapsed = start.elapsed();

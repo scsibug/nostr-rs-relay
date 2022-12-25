@@ -28,7 +28,7 @@ secp256k1 = {version = "0.21", features = ["rand", "rand-std", "serde", "bitcoin
 serde = { version = "1.0", features = ["derive"] }
 serde_json = {version = "1.0", features = ["preserve_order"]}
 hex = "0.4"
-rusqlite = { version = "0.26", features = ["limits","bundled"]}
+rusqlite = { version = "0.26", features = ["limits","bundled","modern_sqlite", "trace"]}
 r2d2 = "0.8"
 r2d2_sqlite = "0.19"
 lazy_static = "1.4"
