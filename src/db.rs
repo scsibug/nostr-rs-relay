@@ -784,24 +784,7 @@ pub async fn db_query(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
                     );
-                    debug!(
-                        "query string (slow): {} (cid: {}, sub: {:?})",
-                        q, client_id, sub.id
-                    );
-                } else {
-                    trace!(
-                        "query req: {:?} (cid: {}, sub: {:?})",
-                        sub,
-                        client_id,
-                        sub.id
-                    );
-                    trace!(
-                        "query string: {} (cid: {}, sub: {:?})",
-                        q,
-                        client_id,
-                        sub.id
-                    );
-                }
+		}
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
                     debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
@@ -818,7 +801,8 @@ pub async fn db_query(
                         trace!("db reader thread is stalled");
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
-                            info!("aborting database query due to slow client");
+                            info!("aborting database query due to slow client (cid: {}, sub: {:?})",
+				  client_id, sub.id);
                             let ok: Result<()> = Ok(());
                             return ok;
                         }
