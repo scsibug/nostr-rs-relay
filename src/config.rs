@@ -207,7 +207,7 @@ impl Default for Settings {
                 data_directory: ".".to_owned(),
                 in_memory: false,
                 min_conn: 4,
-                max_conn: 128,
+                max_conn: 8,
             },
             network: Network {
                 port: 8080,
