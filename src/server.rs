@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -247,14 +248,19 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
-        .thread_name("tokio-ws")
+        .thread_name_fn(|| {
+	    // give each thread a unique numeric name
+	    static ATOMIC_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+	    let id = ATOMIC_ID.fetch_add(1,Ordering::SeqCst);
+	    format!("tokio-ws-{}", id)
+		})
         // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
         .on_thread_start(|| {
-            trace!("started new thread");
+            trace!("started new thread: {:?}", std::thread::current().name());
         })
         .on_thread_stop(|| {
-            trace!("stopping thread");
+	    trace!("stopped thread: {:?}", std::thread::current().name());
         })
         .build()
         .unwrap();
