@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info, trace};
 
 use crate::repo::sqlite_migration::upgrade_db;
-use crate::repo::NostrRepo;
+use crate::repo::{now_jitter, NostrRepo};
 
 #[derive(Clone)]
 pub struct SqliteRepo {
@@ -314,7 +314,7 @@ impl NostrRepo for SqliteRepo {
         // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
         sqlx::query(r#"
         DELETE FROM user_verification WHERE name = ?2;
-        INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash = ?1, ?2, strftime('%s','now'))"#)
+        INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash = ?1), ?2, strftime('%s','now'))"#)
             .bind(hex::decode(event_id).ok())
             .bind(name)
             .execute(&mut tx)
@@ -403,15 +403,6 @@ impl NostrRepo for SqliteRepo {
             .await?;
         Ok(res)
     }
-}
-
-// Current time, with a slight foward jitter in seconds
-fn now_jitter(sec: u64) -> u64 {
-    // random time between now, and 10min in future.
-    let mut rng = rand::thread_rng();
-    let jitter_amount = rng.gen_range(0..sec);
-    let now = unix_time();
-    now.saturating_add(jitter_amount)
 }
 
 /// Create a dynamic SQL query and params from a subscription filter.

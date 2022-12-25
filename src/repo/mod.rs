@@ -3,13 +3,15 @@ use crate::error::Result;
 use crate::event::Event;
 use crate::nip05::VerificationRecord;
 use crate::subscription::Subscription;
+use crate::utils::unix_time;
 use async_trait::async_trait;
+use rand::Rng;
 use sqlx::Postgres;
 
-pub(crate) mod sqlite;
-mod sqlite_migration;
 pub(crate) mod postgres;
 mod postgres_migration;
+pub(crate) mod sqlite;
+mod sqlite_migration;
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
@@ -55,4 +57,13 @@ pub trait NostrRepo: Send + Sync {
 
     /// Get oldest verification before timestamp
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord>;
+}
+
+// Current time, with a slight forward jitter in seconds
+pub(crate) fn now_jitter(sec: u64) -> u64 {
+    // random time between now, and 10min in future.
+    let mut rng = rand::thread_rng();
+    let jitter_amount = rng.gen_range(0..sec);
+    let now = unix_time();
+    now.saturating_add(jitter_amount)
 }

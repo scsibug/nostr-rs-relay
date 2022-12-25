@@ -1,9 +1,9 @@
 use anyhow::Result;
 
+use nostr_sdk::nostr::SubscriptionFilter;
+use nostr_sdk::Client;
 use std::thread;
 use std::time::Duration;
-use nostr_sdk::Client;
-use nostr_sdk::nostr::SubscriptionFilter;
 use tracing::instrument::WithSubscriber;
 
 mod common;
@@ -59,8 +59,7 @@ async fn sub_tests() -> Result<()> {
     client.connect().await?;
 
     client.publish_text_note("test", &[]).await?;
-    let sub = SubscriptionFilter::new()
-        .limit(1);
+    let sub = SubscriptionFilter::new().limit(1);
     let result = client.subscribe(vec![sub]).await;
     assert!(result.is_ok());
 

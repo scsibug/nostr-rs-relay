@@ -1,18 +1,19 @@
 use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
-use crate::nip05::VerificationRecord;
-use crate::repo::{NostrRepo, PostgresPool};
+use crate::nip05::{Nip05Name, VerificationRecord};
+use crate::repo::{now_jitter, NostrRepo, PostgresPool};
 use crate::subscription::{ReqFilter, Subscription};
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
-use chrono::{TimeZone, Utc};
-use sqlx::{Postgres, QueryBuilder, Row};
+use chrono::{DateTime, TimeZone, Utc};
+use sqlx::postgres::PgRow;
+use sqlx::{Error, FromRow, Postgres, QueryBuilder, Row};
 use std::time::{Duration, Instant};
 
 use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
-use crate::utils::{is_hex, is_lower_hex};
+use crate::utils::{is_hex, is_lower_hex, unix_time};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::log::trace;
@@ -110,7 +111,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 .bind(&id_blob)
                 .bind(e.kind as i64)
                 .bind(hex::decode(&e.pubkey).ok())
-                .bind(e.created_at as i64)
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                 .execute(&mut tx)
                 .await?
                 .rows_affected();
@@ -314,27 +315,97 @@ ON CONFLICT (id) DO NOTHING"#,
     }
 
     async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
-        todo!()
+        // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
+        sqlx::query(
+            r#"
+        DELETE FROM user_verification WHERE "name" = $2;
+        INSERT INTO user_verification (event_id, "name", verified_at) VALUES ($1, $2, now())"#,
+        )
+        .bind(hex::decode(event_id).ok())
+        .bind(name)
+        .execute(&self.conn)
+        .await?;
+
+        info!("saved new verification record for ({:?})", name);
+        Ok(())
     }
 
     async fn update_verification_timestamp(&self, id: u64) -> Result<()> {
-        todo!()
+        // add some jitter to the verification to prevent everything from stacking up together.
+        let verify_time = now_jitter(600);
+
+        // update verification time and reset any failure count
+        sqlx::query(
+            "UPDATE user_verification SET verified_at = $1, failure_count = 0 WHERE id = $2",
+        )
+        .bind(Utc.timestamp_opt(verify_time as i64, 0).unwrap())
+        .bind(id as i64)
+        .execute(&self.conn)
+        .await?;
+
+        info!("verification updated for {}", id);
+        Ok(())
     }
 
     async fn fail_verification(&self, id: u64) -> Result<()> {
-        todo!()
+        sqlx::query("UPDATE user_verification SET failed_at = now(), failure_count = failure_count + 1 WHERE id = $1")
+            .bind(id as i64)
+            .execute(&self.conn)
+            .await?;
+        Ok(())
     }
 
     async fn delete_verification(&self, id: u64) -> Result<()> {
-        todo!()
+        sqlx::query("DELETE FROM user_verification WHERE id = $1")
+            .bind(id as i64)
+            .execute(&self.conn)
+            .await?;
+        Ok(())
     }
 
     async fn get_latest_user_verification(&self, pub_key: &str) -> Result<VerificationRecord> {
-        todo!()
+        let query = r#"SELECT
+            v.id,
+            v."name",
+            e.id,
+            e.pub_key,
+            e.created_at,
+            v.verified_at,
+            v.failed_at,
+            v.failure_count
+            FROM user_verification v
+            LEFT JOIN "event" e ON e.id = v.event_id
+            WHERE e.pub_key = $1
+            ORDER BY e.created_at DESC, v.verified_at DESC, v.failed_at DESC
+            LIMIT 1"#;
+        let res = sqlx::query_as::<_, VerificationRecord>(query)
+            .bind(hex::decode(pub_key).ok())
+            .fetch_one(&self.conn)
+            .await?;
+        Ok(res)
     }
 
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord> {
-        todo!()
+        let query = r#"SELECT
+            v.id,
+            v."name",
+            e.id,
+            e.pub_key,
+            e.created_at,
+            v.verified_at,
+            v.failed_at,
+            v.failure_count
+            FROM user_verification v
+            LEFT JOIN "event" e ON e.id = v.event_id
+                WHERE (v.verified_at < $1 OR v.verified_at IS NULL)
+                AND (v.failed_at < $1 OR v.failed_at IS NULL)
+            ORDER BY v.verified_at ASC, v.failed_at ASC
+            LIMIT 1"#;
+        let res = sqlx::query_as::<_, VerificationRecord>(query)
+            .bind(Utc.timestamp_opt(before as i64, 0).unwrap())
+            .fetch_one(&self.conn)
+            .await?;
+        Ok(res)
     }
 }
 
@@ -513,4 +584,24 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         query.push(" ORDER BY e.created_at ASC");
     }
     Some(query)
+}
+
+impl FromRow<'_, PgRow> for VerificationRecord {
+    fn from_row(row: &'_ PgRow) -> std::result::Result<Self, Error> {
+        let name =
+            Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(Error::RowNotFound))?;
+        Ok(VerificationRecord {
+            rowid: row.get::<'_, i64, &str>("id") as u64,
+            name,
+            address: row.get("pub_key"),
+            event: row.get("event_id"),
+            event_created: row.get::<'_, DateTime<Utc>, &str>("created_at").timestamp() as u64,
+            last_success: None,
+            last_failure: match row.try_get::<'_, DateTime<Utc>, &str>("failed_at") {
+                Ok(x) => Some(x.timestamp() as u64),
+                _ => None,
+            },
+            failure_count: row.get::<'_, i64, &str>("failure_count") as u64,
+        })
+    }
 }
