@@ -16,6 +16,7 @@ COPY ./src ./src
 # build auditable release using locked deps
 RUN rm ./target/release/deps/nostr*relay*
 RUN cargo auditable build --release --locked
+RUN cargo test
 
 FROM docker.io/library/debian:bullseye-slim
 
