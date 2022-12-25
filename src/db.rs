@@ -94,6 +94,16 @@ pub fn build_pool(
     pool
 }
 
+/// Display database pool stats every 1 minute
+pub async fn monitor_pool(name: &str, pool: SqlitePool) {
+    let sleep_dur = Duration::from_secs(60);
+    loop {
+	log_pool_stats(name, &pool);
+	tokio::time::sleep(sleep_dur).await;
+    }
+}
+
+
 /// Perform normal maintenance
 pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
     let start = Instant::now();
@@ -671,15 +681,13 @@ fn _pool_at_capacity(pool: &SqlitePool) -> bool {
 fn log_pool_stats(name: &str, pool: &SqlitePool) {
     let state: r2d2::State = pool.state();
     let in_use_cxns = state.connections - state.idle_connections;
-    trace!(
-        "DB pool {:?} usage (in_use: {}, available: {})",
+    debug!(
+        "DB pool {:?} usage (in_use: {}, available: {}, max: {})",
         name,
         in_use_cxns,
-        state.connections
+        state.connections,
+	pool.max_size()
     );
-    if state.connections == in_use_cxns {
-        debug!("DB pool {:?} is empty (in_use: {})", name, in_use_cxns);
-    }
 }
 
 /// Perform database maintenance on a regular basis
@@ -743,8 +751,6 @@ pub async fn db_query(
         if sql_gen_elapsed > Duration::from_millis(10) {
             debug!("SQL (slow) generated in {:?}", start.elapsed());
         }
-        // show pool stats
-        log_pool_stats("reader", &pool);
         // cutoff for displaying slow queries
         let slow_cutoff = Duration::from_millis(2000);
         // any client that doesn't cause us to generate new rows in 5

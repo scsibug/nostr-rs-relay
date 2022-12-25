@@ -358,6 +358,10 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             db_max_conn,
             true,
         );
+	// spawn a task to check the pool size.
+	let pool_monitor = pool.clone();
+	tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
+
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
