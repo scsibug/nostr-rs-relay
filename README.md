@@ -82,6 +82,38 @@ Text Note [81cf...2652] from 296a...9b92 5 seconds ago
 A pre-built container is also available on DockerHub:
 https://hub.docker.com/r/scsibug/nostr-rs-relay
 
+## Build and Run (without Docker)
+
+Building `nostr-rs-relay` requires an installation of Cargo & Rust: https://www.rust-lang.org/tools/install
+
+Clone this repository, and then build a release version of the relay:
+
+```console
+$ git clone -q https://git.sr.ht/\~gheartsfield/nostr-rs-relay
+$ cd nostr-rs-relay
+$ cargo build -q -r
+```
+
+The relay executable is now located in
+`target/release/nostr-rs-relay`.  In order to run it with logging
+enabled, execute it with the `RUST_LOG` variable set:
+
+```console
+$ RUST_LOG=warn,nostr_rs_relay=info ./target/release/nostr-rs-relay
+Dec 26 10:31:56.455  INFO nostr_rs_relay: Starting up from main
+Dec 26 10:31:56.464  INFO nostr_rs_relay::server: listening on: 0.0.0.0:8080
+Dec 26 10:31:56.466  INFO nostr_rs_relay::server: db writer created
+Dec 26 10:31:56.466  INFO nostr_rs_relay::db: Built a connection pool "event writer" (min=1, max=2)
+Dec 26 10:31:56.466  INFO nostr_rs_relay::db: opened database "./nostr.db" for writing
+Dec 26 10:31:56.466  INFO nostr_rs_relay::schema: DB version = 11
+Dec 26 10:31:56.467  INFO nostr_rs_relay::db: Built a connection pool "maintenance writer" (min=1, max=2)
+Dec 26 10:31:56.467  INFO nostr_rs_relay::server: control message listener started
+Dec 26 10:31:56.468  INFO nostr_rs_relay::db: Built a connection pool "client query" (min=4, max=8)
+```
+
+You now have a running relay, on port `8080`.  Use a `nostr` client or
+`websocat` to connect and send/query for events.
+
 ## Configuration
 
 The sample [`config.toml`](config.toml) file demonstrates the
