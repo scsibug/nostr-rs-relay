@@ -97,7 +97,7 @@ CREATE TABLE "tag" (
 	CONSTRAINT tag_fk FOREIGN KEY (event_id) REFERENCES "event"(id) ON DELETE CASCADE
 );
 CREATE INDEX tag_event_id_idx ON tag USING btree (event_id, name);
-CREATE INDEX tag_event_id_value_idx ON tag USING btree (event_id, name, value);
+CREATE UNIQUE INDEX tag_event_id_value_idx ON tag (event_id,name,value);
 CREATE INDEX tag_value_idx ON tag USING btree (value);
 
 -- NIP-05 Verfication table
