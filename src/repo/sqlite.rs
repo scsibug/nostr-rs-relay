@@ -8,7 +8,6 @@ use crate::utils::{is_hex, is_lower_hex, unix_time};
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use hex;
-use rand::Rng;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Error, FromRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use std::time::{Duration, Instant};

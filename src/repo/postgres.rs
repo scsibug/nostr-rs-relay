@@ -77,7 +77,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 let tag_val = &tag[1];
                 // only single-char tags are searchable
                 let tag_char_opt = single_char_tagname(tag_name);
-                let query = "INSERT INTO tag (event_id, \"name\", value) VALUES($1, $2, $3) ON CONFLICT (event_id, \"name\") DO NOTHING";
+                let query = "INSERT INTO tag (event_id, \"name\", value) VALUES($1, $2, $3) ON CONFLICT (event_id, \"name\", value) DO NOTHING";
                 match &tag_char_opt {
                     Some(_) => {
                         // if tag value is lowercase hex;
