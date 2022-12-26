@@ -106,8 +106,8 @@ ON CONFLICT (id) DO NOTHING"#,
         // event with the same kind from the same author that was issued
         // earlier than this.
         if e.kind == 0 || e.kind == 3 || (e.kind >= 10000 && e.kind < 20000) {
-            let update_count = sqlx::query("UPDATE \"event\" SET hidden = 1 \
-            WHERE id != $1 AND kind = $2 AND pub_key = $3 AND created_at <= $4 and hidden != 1")
+            let update_count = sqlx::query("UPDATE \"event\" SET hidden = 1::bit(1) \
+            WHERE id != $1 AND kind = $2 AND pub_key = $3 AND created_at <= $4 and hidden != 1::bit(1)")
                 .bind(&id_blob)
                 .bind(e.kind as i64)
                 .bind(hex::decode(&e.pubkey).ok())
@@ -135,7 +135,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 .collect();
 
             let mut builder = QueryBuilder::new(
-                "UPDATE \"event\" SET hidden = 1 WHERE kind != 5 AND pub_key = ",
+                "UPDATE \"event\" SET hidden = 1::bit(1) WHERE kind != 5 AND pub_key = ",
             );
             builder.push_bind(hex::decode(&e.pubkey).ok());
             builder.push(" AND id IN (");
@@ -174,7 +174,7 @@ ON CONFLICT (id) DO NOTHING"#,
                     e.get_event_id_prefix(),
                     e.get_author_prefix()
                 );
-                sqlx::query("UPDATE \"event\" SET hidden = 1 WHERE id = $1")
+                sqlx::query("UPDATE \"event\" SET hidden = 1::bit(1) WHERE id = $1")
                     .bind(&id_blob)
                     .execute(&mut tx)
                     .await?;
@@ -526,7 +526,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             push_and = true;
 
             for (key, val) in map.iter() {
-                query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1 and (t.\"name\" = ")
+                query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = ")
                     .push_bind(key.to_string())
                     .push(" AND (value in (");
 
@@ -568,9 +568,9 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
 
     // never display hidden events
     if push_and {
-        query.push(" AND e.hidden != 1");
+        query.push(" AND e.hidden != 1::bit(1)");
     } else {
-        query.push("e.hidden != 1");
+        query.push("e.hidden != 1::bit(1)");
     }
 
     // Apply per-filter limit to this query.
