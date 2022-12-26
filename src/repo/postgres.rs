@@ -138,7 +138,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 "UPDATE \"event\" SET hidden = 1 WHERE kind != 5 AND pub_key = ",
             );
             builder.push_bind(hex::decode(&e.pubkey).ok());
-            builder.push(" AND event_hash IN (");
+            builder.push(" AND id IN (");
 
             let mut sep = builder.separated(", ");
             for pk in pub_keys {
@@ -467,13 +467,11 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 query.push(" AND ");
             }
             push_and = true;
-            // kind is number, no escaping needed
-            let str_kinds: Vec<String> = ks.iter().map(|x| x.to_string()).collect();
 
             query.push("e.kind in (");
             let mut list_query = query.separated(", ");
-            for k in str_kinds {
-                list_query.push_bind(k);
+            for k in ks.iter() {
+                list_query.push_bind(*k as i64);
             }
             query.push(")");
         }

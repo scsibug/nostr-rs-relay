@@ -77,7 +77,7 @@ CREATE TABLE "event" (
 	id bytea NOT NULL,
 	pub_key bytea NOT NULL,
 	created_at timestamp with time zone NOT NULL,
-	kind numeric NOT NULL,
+	kind integer NOT NULL,
 	"content" bytea NOT NULL,
 	hidden bit(1) NOT NULL DEFAULT 0::bit(1),
 	delegated_by bytea NULL,
