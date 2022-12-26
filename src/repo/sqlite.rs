@@ -8,6 +8,7 @@ use crate::utils::{is_hex, is_lower_hex, unix_time};
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use hex;
+use prometheus::Histogram;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Error, FromRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use std::time::{Duration, Instant};
@@ -15,15 +16,20 @@ use tracing::{debug, info, trace};
 
 use crate::repo::sqlite_migration::upgrade_db;
 use crate::repo::{now_jitter, NostrRepo};
+use crate::server::NostrMetrics;
 
 #[derive(Clone)]
 pub struct SqliteRepo {
     conn: SqlitePool,
+    metrics: NostrMetrics,
 }
 
 impl SqliteRepo {
-    pub fn new(c: SqlitePool) -> SqliteRepo {
-        SqliteRepo { conn: c }
+    pub fn new(c: SqlitePool, m: NostrMetrics) -> SqliteRepo {
+        SqliteRepo {
+            conn: c,
+            metrics: m,
+        }
     }
 }
 
@@ -36,6 +42,7 @@ impl NostrRepo for SqliteRepo {
     async fn write_event(&self, e: &Event) -> Result<u64> {
         // start transaction
         let mut tx = self.conn.begin().await?;
+        let start = Instant::now();
 
         // get relevant fields from event and convert to blobs.
         let id_blob = hex::decode(&e.id).ok();
@@ -178,6 +185,9 @@ impl NostrRepo for SqliteRepo {
             }
         }
         tx.commit().await?;
+        self.metrics
+            .write_events
+            .observe(start.elapsed().as_secs_f64());
         Ok(ins_count)
     }
 
@@ -291,6 +301,9 @@ impl NostrRepo for SqliteRepo {
             })
             .await
             .ok();
+        self.metrics
+            .query_sub
+            .observe(start.elapsed().as_secs_f64());
         debug!(
             "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
             start.elapsed(),

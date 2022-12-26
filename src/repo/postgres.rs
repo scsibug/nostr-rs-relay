@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
+use crate::server::NostrMetrics;
 use crate::utils::{is_hex, is_lower_hex, unix_time};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
@@ -21,11 +22,15 @@ use tracing::{debug, info};
 
 pub struct PostgresRepo {
     conn: PostgresPool,
+    metrics: NostrMetrics,
 }
 
 impl PostgresRepo {
-    pub fn new(c: PostgresPool) -> PostgresRepo {
-        PostgresRepo { conn: c }
+    pub fn new(c: PostgresPool, m: NostrMetrics) -> PostgresRepo {
+        PostgresRepo {
+            conn: c,
+            metrics: m,
+        }
     }
 }
 
@@ -38,6 +43,7 @@ impl NostrRepo for PostgresRepo {
     async fn write_event(&self, e: &Event) -> Result<u64> {
         // start transaction
         let mut tx = self.conn.begin().await?;
+        let start = Instant::now();
 
         // get relevant fields from event and convert to blobs.
         let id_blob = hex::decode(&e.id).ok();
@@ -186,6 +192,9 @@ ON CONFLICT (id) DO NOTHING"#,
             }
         }
         tx.commit().await?;
+        self.metrics
+            .write_events
+            .observe(start.elapsed().as_secs_f64());
         Ok(ins_count)
     }
 
@@ -299,6 +308,9 @@ ON CONFLICT (id) DO NOTHING"#,
             })
             .await
             .ok();
+        self.metrics
+            .query_sub
+            .observe(start.elapsed().as_secs_f64());
         debug!(
             "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
             start.elapsed(),

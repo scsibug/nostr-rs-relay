@@ -6,6 +6,7 @@ use crate::notice::Notice;
 use crate::repo::postgres::PostgresRepo;
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::{NostrRepo, PostgresPool};
+use crate::server::NostrMetrics;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use sqlx::pool::PoolOptions;
@@ -33,15 +34,15 @@ pub const EVENT_COUNT_OPTIMIZE_TRIGGER: usize = 500;
 /// # Panics
 ///
 /// Will panic if the pool could not be created.
-pub async fn build_repo(settings: &Database) -> Arc<dyn NostrRepo> {
+pub async fn build_repo(settings: &Database, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.engine.as_str() {
-        "sqlite" => Arc::new(build_sqlite_pool(settings).await),
-        "postgres" => Arc::new(build_postgres_pool(settings).await),
+        "sqlite" => Arc::new(build_sqlite_pool(settings, metrics).await),
+        "postgres" => Arc::new(build_postgres_pool(settings, metrics).await),
         _ => panic!("Unknown database engine"),
     }
 }
 
-async fn build_postgres_pool(config: &Database) -> PostgresRepo {
+async fn build_postgres_pool(config: &Database, metrics: NostrMetrics) -> PostgresRepo {
     let pool: PostgresPool = PoolOptions::new()
         .max_connections(config.max_conn)
         .min_connections(config.min_conn)
@@ -49,10 +50,10 @@ async fn build_postgres_pool(config: &Database) -> PostgresRepo {
         .connect(config.connection.as_str())
         .await
         .unwrap();
-    PostgresRepo::new(pool)
+    PostgresRepo::new(pool, metrics)
 }
 
-async fn build_sqlite_pool(config: &Database) -> SqliteRepo {
+async fn build_sqlite_pool(config: &Database, metrics: NostrMetrics) -> SqliteRepo {
     let db_dir = &config.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
 
@@ -70,7 +71,7 @@ async fn build_sqlite_pool(config: &Database) -> SqliteRepo {
         )
         .await
         .unwrap();
-    SqliteRepo::new(pool)
+    SqliteRepo::new(pool, metrics)
 }
 
 /// Spawn a database writer that persists events to the SQLite store.

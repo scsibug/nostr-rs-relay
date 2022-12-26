@@ -23,6 +23,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use prometheus::{Encoder, Histogram, HistogramOpts, Registry, TextEncoder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -52,8 +53,10 @@ async fn handle_web_request(
     settings: Settings,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
-    event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
+    event_tx: mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
+    registry: Registry,
+    metrics: NostrMetrics,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -114,6 +117,7 @@ async fn handle_web_request(
                                     broadcast,
                                     event_tx,
                                     shutdown,
+                                    metrics,
                                 ));
                             }
                             // todo: trace, don't print...
@@ -166,6 +170,18 @@ async fn handle_web_request(
                 .body(Body::from(
                     "A nostr server is here https://github.com/v0l/nostr-rs-relay",
                 ))
+                .unwrap())
+        }
+        ("/metrics", false) => {
+            let mut buffer = vec![];
+            let encoder = TextEncoder::new();
+            let metric_families = registry.gather();
+            encoder.encode(&metric_families, &mut buffer).unwrap();
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(buffer))
                 .unwrap())
         }
         (_, _) => {
@@ -291,11 +307,32 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
 
+        // setup prometheus registry
+        let registry = Registry::new();
+
+        let query_sub = Histogram::with_opts(HistogramOpts::new(
+            "query_sub",
+            "Subscription response times",
+        ))
+        .unwrap();
+        let write_events = Histogram::with_opts(HistogramOpts::new(
+            "write_event",
+            "Event writing response times",
+        ))
+        .unwrap();
+        registry.register(Box::new(query_sub.clone())).unwrap();
+        registry.register(Box::new(write_events.clone())).unwrap();
+
         let db_dir = &settings.database.data_directory;
         let full_path = Path::new(db_dir).join(db::DB_FILE);
 
+        let metrics = NostrMetrics {
+            query_sub,
+            write_events,
+        };
+
         // create a connection pool
-        let mut repo = db::build_repo(&settings.database).await;
+        let repo = db::build_repo(&settings.database, metrics.clone()).await;
         if settings.database.in_memory {
             info!("using in-memory database, this will not persist a restart!");
         } else {
@@ -373,6 +410,8 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
             let repo = repo.clone();
+            let registry = registry.clone();
+            let metrics = metrics.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -384,6 +423,8 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                         bcast.clone(),
                         event.clone(),
                         stop.subscribe(),
+                        registry.clone(),
+                        metrics.clone(),
                     )
                 }))
             }
@@ -460,6 +501,7 @@ async fn nostr_server(
     broadcast: Sender<Event>,
     event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
+    metrics: NostrMetrics,
 ) {
     // the time this websocket nostr server started
     let orig_start = Instant::now();
@@ -730,4 +772,10 @@ async fn nostr_server(
         client_received_event_count,
 	orig_start.elapsed()
     );
+}
+
+#[derive(Clone)]
+pub struct NostrMetrics {
+    pub query_sub: Histogram,
+    pub write_events: Histogram,
 }
