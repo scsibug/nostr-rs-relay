@@ -325,10 +325,11 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             &settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
-            1,
+            2,
             false,
         );
-        db::db_maintenance(maintenance_pool).await;
+        db::db_optimize(maintenance_pool.clone()).await;
+        db::db_checkpoint(maintenance_pool).await;
 
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();
