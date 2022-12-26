@@ -200,6 +200,13 @@ impl Subscription {
     pub fn get_id(&self) -> String {
         self.id.clone()
     }
+
+    /// Determine if any filter is requesting historical (database)
+    /// queries.  If every filter has limit:0, we do not need to query the DB.
+    pub fn needs_historical_events(&self) -> bool {
+	self.filters.iter().any(|f| f.limit!=Some(0))
+    }
+
     /// Determine if this subscription matches a given [`Event`].  Any
     /// individual filter match is sufficient.
     pub fn interested_in_event(&self, event: &Event) -> bool {

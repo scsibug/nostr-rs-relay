@@ -674,8 +674,10 @@ async fn nostr_server(
                                     if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
                     previous_query.send(()).ok();
                                     }
+		                    if s.needs_historical_events() {
                                     // start a database query.  this spawns a blocking database query on a worker thread.
-                                    db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+					db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+				    }
                 },
                 Err(e) => {
                     info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);
