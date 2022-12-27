@@ -721,7 +721,7 @@ pub async fn db_checkpoint_task(pool: SqlitePool, safe_to_read: Arc<Mutex<u64>>)
 	// default threshold for the busy timer
 	let busy_wait_default = Duration::from_secs(1);
 	// if the WAL file is getting too big, switch to this
-	let busy_wait_default_long = Duration::from_secs(5);
+	let busy_wait_default_long = Duration::from_secs(10);
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(CHECKPOINT_FREQ_SEC)) => {

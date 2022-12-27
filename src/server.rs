@@ -689,7 +689,8 @@ async fn nostr_server(
 		    if s.needs_historical_events() {
 			{
 			    // acquire and immediately release lock; this ensures we do not start new queries during a wal checkpoint.
-			    let _ = safe_to_read.lock().await;
+                            let _ = safe_to_read.lock().await;
+                            trace!("passed safe_to_read lock");
 			}
                                     // start a database query.  this spawns a blocking database query on a worker thread.
 					db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
