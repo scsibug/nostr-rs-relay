@@ -762,9 +762,14 @@ pub async fn db_query(
     pool: SqlitePool,
     query_tx: tokio::sync::mpsc::Sender<QueryResult>,
     mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+    safe_to_read: Arc<Mutex<u64>>,
 ) {
     let pre_spawn_start = Instant::now();
     task::spawn_blocking(move || {
+	{
+	    // if we are waiting on a checkpoint, stop until it is complete
+	    let _ = safe_to_read.blocking_lock();
+	}
         let db_queue_time = pre_spawn_start.elapsed();
         // if the queue time was very long (>5 seconds), spare the DB and abort.
         if db_queue_time > Duration::from_secs(5) {
