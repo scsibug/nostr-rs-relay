@@ -19,8 +19,10 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use rusqlite::types::ToSql;
 use rusqlite::OpenFlags;
+use tokio::sync::{Mutex, MutexGuard};
 use std::fmt::Write as _;
 use std::path::Path;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -691,7 +693,7 @@ fn log_pool_stats(name: &str, pool: &SqlitePool) {
 
 
 /// Perform database maintenance on a regular basis
-pub async fn db_optimize(pool: SqlitePool) {
+pub async fn db_optimize_task(pool: SqlitePool) {
     tokio::task::spawn(async move {
         loop {
             tokio::select! {
@@ -710,7 +712,7 @@ pub async fn db_optimize(pool: SqlitePool) {
 }
 
 /// Perform database WAL checkpoint on a regular basis
-pub async fn db_checkpoint(pool: SqlitePool) {
+pub async fn db_checkpoint_task(pool: SqlitePool, safe_to_read: Arc<Mutex<u64>>) {
     tokio::task::spawn(async move {
 	// WAL size in pages.
 	let mut current_wal_size = 0;
@@ -724,6 +726,7 @@ pub async fn db_checkpoint(pool: SqlitePool) {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(CHECKPOINT_FREQ_SEC)) => {
                     if let Ok(mut conn) = pool.get() {
+                        let mut _guard:Option<MutexGuard<u64>> = None;
 			// the busy timer will block writers, so don't set
 			// this any higher than you want max latency for event
 			// writes.
@@ -732,6 +735,9 @@ pub async fn db_checkpoint(pool: SqlitePool) {
 			} else {
 			    // if the wal size has exceeded a threshold, increase the busy timeout.
 			    conn.busy_timeout(busy_wait_default_long).ok();
+			    // take a lock that will prevent new readers.
+			    info!("blocking new readers to perform wal_checkpoint");
+			    _guard = Some(safe_to_read.lock().await);
 			}
                         debug!("running wal_checkpoint(TRUNCATE)");
                         if let Ok(new_size) = checkpoint_db(&mut conn) {

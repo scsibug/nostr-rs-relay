@@ -25,10 +25,12 @@ use hyper::{
 use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::sync::Mutex;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::time::Duration;
@@ -54,6 +56,7 @@ async fn handle_web_request(
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
+    safe_to_read: Arc<Mutex<u64>>,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -114,6 +117,7 @@ async fn handle_web_request(
                                     broadcast,
                                     event_tx,
                                     shutdown,
+				    safe_to_read,
                                 ));
                             }
                             // todo: trace, don't print...
@@ -328,8 +332,13 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             2,
             false,
         );
-        db::db_optimize(maintenance_pool.clone()).await;
-        db::db_checkpoint(maintenance_pool).await;
+
+	// Create a mutex that will block readers, so that a
+	// checkpoint can be performed quickly.
+	let safe_to_read = Arc::new(Mutex::new(0));
+
+        db::db_optimize_task(maintenance_pool.clone()).await;
+        db::db_checkpoint_task(maintenance_pool, safe_to_read.clone()).await;
 
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();
@@ -378,6 +387,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
+            let safe_to_read = safe_to_read.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -389,6 +399,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
                         bcast.clone(),
                         event.clone(),
                         stop.subscribe(),
+			safe_to_read.clone(),
                     )
                 }))
             }
@@ -465,6 +476,7 @@ async fn nostr_server(
     broadcast: Sender<Event>,
     event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
+    safe_to_read: Arc<Mutex<u64>>,
 ) {
     // the time this websocket nostr server started
     let orig_start = Instant::now();
@@ -674,7 +686,11 @@ async fn nostr_server(
                                     if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
                     previous_query.send(()).ok();
                                     }
-		                    if s.needs_historical_events() {
+		    if s.needs_historical_events() {
+			{
+			    // acquire and immediately release lock; this ensures we do not start new queries during a wal checkpoint.
+			    let _ = safe_to_read.lock().await;
+			}
                                     // start a database query.  this spawns a blocking database query on a worker thread.
 					db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
 				    }
