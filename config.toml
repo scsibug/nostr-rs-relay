@@ -36,8 +36,9 @@ data_directory = "."
 # Minimum number of SQLite reader connections
 #min_conn = 4
 
-# Maximum number of SQLite reader connections
-#max_conn = 128
+# Maximum number of SQLite reader connections.  Recommend setting this
+# to approx the number of cores.
+#max_conn = 8
 
 [network]
 # Bind to this network address

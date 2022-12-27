@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -247,14 +248,19 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
-        .thread_name("tokio-ws")
+        .thread_name_fn(|| {
+	    // give each thread a unique numeric name
+	    static ATOMIC_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+	    let id = ATOMIC_ID.fetch_add(1,Ordering::SeqCst);
+	    format!("tokio-ws-{}", id)
+		})
         // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
         .on_thread_start(|| {
-            trace!("started new thread");
+            trace!("started new thread: {:?}", std::thread::current().name());
         })
         .on_thread_stop(|| {
-            trace!("stopping thread");
+	    trace!("stopped thread: {:?}", std::thread::current().name());
         })
         .build()
         .unwrap();
@@ -319,10 +325,11 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             &settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
             1,
-            1,
+            2,
             false,
         );
-        db::db_maintenance(maintenance_pool).await;
+        db::db_optimize(maintenance_pool.clone()).await;
+        db::db_checkpoint(maintenance_pool).await;
 
         // listen for (external to tokio) shutdown request
         let controlled_shutdown = invoke_shutdown.clone();
@@ -358,6 +365,10 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             db_max_conn,
             true,
         );
+	// spawn a task to check the pool size.
+	let pool_monitor = pool.clone();
+	tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
+
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
@@ -505,8 +516,10 @@ async fn nostr_server(
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
     debug!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
-    let origin = client_info.origin.unwrap_or("<unspecified>".into());
-    let user_agent = client_info.user_agent.unwrap_or("<unspecified>".into());
+    let origin = client_info.origin.unwrap_or_else(|| "<unspecified>".into());
+    let user_agent = client_info
+        .user_agent
+        .unwrap_or_else(|| "<unspecified>".into());
     debug!(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
@@ -661,8 +674,10 @@ async fn nostr_server(
                                     if let Some(previous_query) = running_queries.insert(s.id.to_owned(), abandon_query_tx) {
                     previous_query.send(()).ok();
                                     }
+		                    if s.needs_historical_events() {
                                     // start a database query.  this spawns a blocking database query on a worker thread.
-                                    db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+					db::db_query(s, cid.to_owned(), pool.clone(), query_tx.clone(), abandon_query_rx).await;
+				    }
                 },
                 Err(e) => {
                     info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);

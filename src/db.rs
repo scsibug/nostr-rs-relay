@@ -39,9 +39,8 @@ pub struct SubmittedEvent {
 /// Database file
 pub const DB_FILE: &str = "nostr.db";
 
-/// How frequently to run maintenance
-/// How many persisted events before DB maintenannce is triggered.
-pub const EVENT_MAINTENANCE_FREQ_SEC: u64 = 60;
+/// How frequently to attempt checkpointing
+pub const CHECKPOINT_FREQ_SEC: u64 = 60;
 
 /// How many persisted events before we pause for backups.
 /// It isn't clear this is enough to make the online backup API work yet.
@@ -94,6 +93,16 @@ pub fn build_pool(
     pool
 }
 
+/// Display database pool stats every 1 minute
+pub async fn monitor_pool(name: &str, pool: SqlitePool) {
+    let sleep_dur = Duration::from_secs(60);
+    loop {
+	log_pool_stats(name, &pool);
+	tokio::time::sleep(sleep_dur).await;
+    }
+}
+
+
 /// Perform normal maintenance
 pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
     let start = Instant::now();
@@ -102,15 +111,15 @@ pub fn optimize_db(conn: &mut PooledConnection) -> Result<()> {
     Ok(())
 }
 #[derive(Debug)]
-enum SqliteReturnStatus {
-    SqliteOk,
-    SqliteBusy,
-    SqliteError,
-    SqliteOther(u64),
+enum SqliteStatus {
+    Ok,
+    Busy,
+    Error,
+    Other(u64),
 }
 
-/// Checkpoint/Truncate WAL
-pub fn checkpoint_db(conn: &mut PooledConnection) -> Result<()> {
+/// Checkpoint/Truncate WAL.  Returns the number of WAL pages remaining.
+pub fn checkpoint_db(conn: &mut PooledConnection) -> Result<usize> {
     let query = "PRAGMA wal_checkpoint(TRUNCATE);";
     let start = Instant::now();
     let (cp_result, wal_size, _frames_checkpointed) = conn.query_row(query, [], |row| {
@@ -120,10 +129,10 @@ pub fn checkpoint_db(conn: &mut PooledConnection) -> Result<()> {
         Ok((checkpoint_result, wal_size, frames_checkpointed))
     })?;
     let result = match cp_result {
-        0 => SqliteReturnStatus::SqliteOk,
-        1 => SqliteReturnStatus::SqliteBusy,
-        2 => SqliteReturnStatus::SqliteError,
-        x => SqliteReturnStatus::SqliteOther(x),
+        0 => SqliteStatus::Ok,
+        1 => SqliteStatus::Busy,
+        2 => SqliteStatus::Error,
+        x => SqliteStatus::Other(x),
     };
     info!(
         "checkpoint ran in {:?} (result: {:?}, WAL size: {})",
@@ -131,7 +140,7 @@ pub fn checkpoint_db(conn: &mut PooledConnection) -> Result<()> {
         result,
         wal_size
     );
-    Ok(())
+    Ok(wal_size as usize)
 }
 
 /// Spawn a database writer that persists events to the SQLite store.
@@ -417,7 +426,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // if this event is replaceable update, hide every other replaceable
     // event with the same kind from the same author that was issued
     // earlier than this.
-    if e.kind == 0 || e.kind == 3 || (e.kind >= 10000 && e.kind < 20000) {
+    if e.kind == 0 || e.kind == 3 || e.kind == 41 || (e.kind >= 10000 && e.kind < 20000) {
         let update_count = tx.execute(
             "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=? AND author=? AND created_at <= ? and hidden!=TRUE",
             params![ev_id, e.kind, hex::decode(&e.pubkey).ok(), e.created_at],
@@ -689,35 +698,66 @@ fn _pool_at_capacity(pool: &SqlitePool) -> bool {
 fn log_pool_stats(name: &str, pool: &SqlitePool) {
     let state: r2d2::State = pool.state();
     let in_use_cxns = state.connections - state.idle_connections;
-    trace!(
-        "DB pool {:?} usage (in_use: {}, available: {})",
+    debug!(
+        "DB pool {:?} usage (in_use: {}, available: {}, max: {})",
         name,
         in_use_cxns,
-        state.connections
+        state.connections,
+	pool.max_size()
     );
-    if state.connections == in_use_cxns {
-        debug!("DB pool {:?} is empty (in_use: {})", name, in_use_cxns);
-    }
 }
 
+
 /// Perform database maintenance on a regular basis
-pub async fn db_maintenance(pool: SqlitePool) {
+pub async fn db_optimize(pool: SqlitePool) {
     tokio::task::spawn(async move {
         loop {
             tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(EVENT_MAINTENANCE_FREQ_SEC)) => {
-                        if let Ok(mut conn) = pool.get() {
-                // the busy timer will block writers, so don't set
-                // this any higher than you want max latency for event
-                // writes.
-                conn.busy_timeout(Duration::from_secs(1)).ok();
-                            debug!("running database optimizer");
-                            optimize_db(&mut conn).ok();
-                            debug!("running wal_checkpoint(TRUNCATE)");
-                            checkpoint_db(&mut conn).ok();
-                        }
-            }
-                };
+                _ = tokio::time::sleep(Duration::from_secs(60*60)) => {
+                    if let Ok(mut conn) = pool.get() {
+			// the busy timer will block writers, so don't set
+			// this any higher than you want max latency for event
+			// writes.
+                        info!("running database optimizer");
+                        optimize_db(&mut conn).ok();
+                    }
+		}
+            };
+        }
+    });
+}
+
+/// Perform database WAL checkpoint on a regular basis
+pub async fn db_checkpoint(pool: SqlitePool) {
+    tokio::task::spawn(async move {
+	// WAL size in pages.
+	let mut current_wal_size = 0;
+	// WAL threshold for more aggressive checkpointing (10,000 pages, or about 40MB)
+	let wal_threshold = 1000*10;
+	// default threshold for the busy timer
+	let busy_wait_default = Duration::from_secs(1);
+	// if the WAL file is getting too big, switch to this
+	let busy_wait_default_long = Duration::from_secs(5);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(CHECKPOINT_FREQ_SEC)) => {
+                    if let Ok(mut conn) = pool.get() {
+			// the busy timer will block writers, so don't set
+			// this any higher than you want max latency for event
+			// writes.
+			if current_wal_size <= wal_threshold {
+			    conn.busy_timeout(busy_wait_default).ok();
+			} else {
+			    // if the wal size has exceeded a threshold, increase the busy timeout.
+			    conn.busy_timeout(busy_wait_default_long).ok();
+			}
+                        debug!("running wal_checkpoint(TRUNCATE)");
+                        if let Ok(new_size) = checkpoint_db(&mut conn) {
+			    current_wal_size = new_size;
+			}
+                    }
+		}
+            };
         }
     });
 }
@@ -761,8 +801,6 @@ pub async fn db_query(
         if sql_gen_elapsed > Duration::from_millis(10) {
             debug!("SQL (slow) generated in {:?}", start.elapsed());
         }
-        // show pool stats
-        log_pool_stats("reader", &pool);
         // cutoff for displaying slow queries
         let slow_cutoff = Duration::from_millis(2000);
         // any client that doesn't cause us to generate new rows in 5
@@ -771,10 +809,13 @@ pub async fn db_query(
         let start = Instant::now();
         let mut slow_first_event;
         let mut last_successful_send = Instant::now();
-        if let Ok(conn) = pool.get() {
-            // execute the query. Don't cache, since queries vary so much.
-            let mut stmt = conn.prepare(&q)?;
+        if let Ok(mut conn) = pool.get() {
+            // execute the query.
+            // make the actual SQL query (with parameters inserted) available
+            conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
+            let mut stmt = conn.prepare_cached(&q)?;
             let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
+
             let mut first_result = true;
             while let Some(row) = event_rows.next()? {
                 let first_event_elapsed = start.elapsed();
@@ -788,29 +829,12 @@ pub async fn db_query(
                 }
                 // logging for slow queries; show sub and SQL.
                 // to reduce logging; only show 1/16th of clients (leading 0)
-                if row_count == 0 && slow_first_event && client_id.starts_with("0") {
+                if row_count == 0 && slow_first_event && client_id.starts_with('0') {
                     debug!(
                         "query req (slow): {:?} (cid: {}, sub: {:?})",
                         sub, client_id, sub.id
                     );
-                    debug!(
-                        "query string (slow): {} (cid: {}, sub: {:?})",
-                        q, client_id, sub.id
-                    );
-                } else {
-                    trace!(
-                        "query req: {:?} (cid: {}, sub: {:?})",
-                        sub,
-                        client_id,
-                        sub.id
-                    );
-                    trace!(
-                        "query string: {} (cid: {}, sub: {:?})",
-                        q,
-                        client_id,
-                        sub.id
-                    );
-                }
+		}
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
                     debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
@@ -827,7 +851,8 @@ pub async fn db_query(
                         trace!("db reader thread is stalled");
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
-                            info!("aborting database query due to slow client");
+                            info!("aborting database query due to slow client (cid: {}, sub: {:?})",
+				  client_id, sub.id);
                             let ok: Result<()> = Ok(());
                             return ok;
                         }

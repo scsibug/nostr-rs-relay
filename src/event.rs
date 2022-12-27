@@ -101,7 +101,6 @@ impl From<EventCmd> for Result<Event> {
 }
 
 impl Event {
-
     #[cfg(test)]
     pub fn simple_event() -> Event {
         Event {
