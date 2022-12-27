@@ -145,7 +145,7 @@ impl NostrRepo for SqliteRepo {
             builder.push(" AND event_hash IN (");
 
             let mut sep = builder.separated(", ");
-            for pk in pubKeys {
+            for pk in pub_keys {
                 sep.push_bind(pk);
             }
             sep.push_unseparated(")");
