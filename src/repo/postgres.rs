@@ -434,6 +434,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
+        query.push("(");
         let mut range_authors = query.separated(" OR ");
         for auth in auth_vec {
             match hex_range(auth) {
@@ -471,6 +472,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             }
             push_and = true;
         }
+        query.push(")");
     }
 
     // Query for Kind

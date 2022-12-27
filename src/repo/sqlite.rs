@@ -133,7 +133,7 @@ impl NostrRepo for SqliteRepo {
         // if this event is a deletion, hide the referenced events from the same author.
         if e.kind == 5 {
             let event_candidates = e.tag_values_by_name("e");
-            let pubKeys: Vec<Vec<u8>> = event_candidates
+            let pub_keys: Vec<Vec<u8>> = event_candidates
                 .iter()
                 .filter(|x| is_hex(x) && x.len() == 64)
                 .filter_map(|x| hex::decode(x).ok())
@@ -429,6 +429,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
+        query.push("(");
         let mut range_authors = query.separated(" OR ");
         for auth in auth_vec {
             match hex_range(auth) {
@@ -466,6 +467,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Sqlite>> {
             }
             push_and = true;
         }
+        query.push(")");
     }
 
     // Query for Kind
