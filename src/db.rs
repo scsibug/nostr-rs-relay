@@ -828,6 +828,17 @@ pub async fn db_query(
                         sub, client_id, sub.id
                     );
 		}
+		// check if a checkpoint is trying to run, and abort
+		if row_count % 100 == 0 {
+		    {
+			if let Err(_) = safe_to_read.try_lock() {
+			    // lock was held, abort this query
+			    debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+			    return Ok(());
+			}
+		    }
+		}
+
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
                     debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
@@ -849,6 +860,12 @@ pub async fn db_query(
                             let ok: Result<()> = Ok(());
                             return ok;
                         }
+			// check if a checkpoint is trying to run, and abort
+			if let Err(_) = safe_to_read.try_lock() {
+			    // lock was held, abort this query
+			    debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+			    return Ok(());
+			}
                         // give the queue a chance to clear before trying again
                         thread::sleep(Duration::from_millis(100));
                     }
