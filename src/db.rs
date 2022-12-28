@@ -10,13 +10,15 @@ use crate::server::NostrMetrics;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use sqlx::pool::PoolOptions;
+use sqlx::postgres::PgConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
-use sqlx::SqlitePool;
+use sqlx::{ConnectOptions, SqlitePool};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
 /// Events submitted from a client, with a return channel for notices
@@ -43,11 +45,15 @@ pub async fn build_repo(settings: &Database, metrics: NostrMetrics) -> Arc<dyn N
 }
 
 async fn build_postgres_pool(config: &Database, metrics: NostrMetrics) -> PostgresRepo {
+    let mut options: PgConnectOptions = config.connection.as_str().parse().unwrap();
+    options.log_statements(LevelFilter::Debug);
+    options.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
+
     let pool: PostgresPool = PoolOptions::new()
         .max_connections(config.max_conn)
         .min_connections(config.min_conn)
         .idle_timeout(Duration::from_secs(60))
-        .connect(config.connection.as_str())
+        .connect_with(options)
         .await
         .unwrap();
     PostgresRepo::new(pool, metrics)
@@ -57,18 +63,20 @@ async fn build_sqlite_pool(config: &Database, metrics: NostrMetrics) -> SqliteRe
     let db_dir = &config.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
 
+    let mut options = SqliteConnectOptions::new()
+        .filename(full_path)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .create_if_missing(true)
+        .foreign_keys(true);
+    options.log_statements(LevelFilter::Debug);
+    options.log_slow_statements(LevelFilter::Info, Duration::from_secs(60));
+
     let pool: SqlitePool = PoolOptions::new()
         .max_connections(config.max_conn)
         .min_connections(config.min_conn)
         .idle_timeout(Duration::from_secs(60))
-        .connect_with(
-            SqliteConnectOptions::new()
-                .filename(full_path)
-                .journal_mode(SqliteJournalMode::Wal)
-                .synchronous(SqliteSynchronous::Normal)
-                .create_if_missing(true)
-                .foreign_keys(true),
-        )
+        .connect_with(options)
         .await
         .unwrap();
     SqliteRepo::new(pool, metrics)
