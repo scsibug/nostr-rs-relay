@@ -587,7 +587,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 let mut tag_query = query.separated(", ");
                 for v in val.iter() {
                     if (v.len() % 2 != 0) && !is_lower_hex(v) {
-                        tag_query.push_bind(v);
+                        tag_query.push_bind(v.as_bytes());
                     } else {
                         tag_query.push_bind(hex::decode(v).ok());
                     }
