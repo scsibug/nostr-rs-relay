@@ -470,15 +470,15 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     }
                     Some(HexSearch::Range(lower, upper)) => {
                         range_authors
-                            .push("(e.pub_key > ")
+                            .push("((e.pub_key > ")
                             .push_bind_unseparated(lower.clone())
                             .push_unseparated(" AND e.pub_key < ")
                             .push_bind_unseparated(upper.clone())
-                            .push_unseparated(" OR (e.delegated_by > ")
+                            .push_unseparated(") OR (e.delegated_by > ")
                             .push_bind_unseparated(lower)
                             .push_unseparated(" AND e.delegated_by < ")
                             .push_bind_unseparated(upper)
-                            .push_unseparated(")");
+                            .push_unseparated("))");
                     }
                     Some(HexSearch::LowerOnly(lower)) => {
                         range_authors
