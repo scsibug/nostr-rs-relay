@@ -439,66 +439,68 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
-        query.push("(");
-
         // filter out non-hex values
         let auth_vec : Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
 
-        // shortcut authors into "IN" query
-        let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
-        if !any_is_range {
-            query.push("e.pub_key in (");
-            let mut pk_sep = query.separated(", ");
-            for pk in auth_vec.iter() {
-                pk_sep.push_bind(hex::decode(pk).ok());
-            }
-            query.push(") OR e.delegated_by in (");
-            let mut pk_delegated_sep = query.separated(", ");
-            for pk in auth_vec.iter() {
-                pk_delegated_sep.push_bind(hex::decode(pk).ok());
+        if !auth_vec.is_empty() {
+            query.push("(");
+
+            // shortcut authors into "IN" query
+            let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
+            if !any_is_range {
+                query.push("e.pub_key in (");
+                let mut pk_sep = query.separated(", ");
+                for pk in auth_vec.iter() {
+                    pk_sep.push_bind(hex::decode(pk).ok());
+                }
+                query.push(") OR e.delegated_by in (");
+                let mut pk_delegated_sep = query.separated(", ");
+                for pk in auth_vec.iter() {
+                    pk_delegated_sep.push_bind(hex::decode(pk).ok());
+                }
+                query.push(")");
+                push_and = true;
+            } else {
+                let mut range_authors = query.separated(" OR ");
+                for auth in auth_vec {
+                    match hex_range(auth) {
+                        Some(HexSearch::Exact(ex)) => {
+                            range_authors
+                                .push("(e.pub_key = ")
+                                .push_bind_unseparated(ex.clone())
+                                .push_unseparated(" OR e.delegated_by = ")
+                                .push_bind_unseparated(ex)
+                                .push_unseparated(")");
+                        }
+                        Some(HexSearch::Range(lower, upper)) => {
+                            range_authors
+                                .push("((e.pub_key > ")
+                                .push_bind_unseparated(lower.clone())
+                                .push_unseparated(" AND e.pub_key < ")
+                                .push_bind_unseparated(upper.clone())
+                                .push_unseparated(") OR (e.delegated_by > ")
+                                .push_bind_unseparated(lower)
+                                .push_unseparated(" AND e.delegated_by < ")
+                                .push_bind_unseparated(upper)
+                                .push_unseparated("))");
+                        }
+                        Some(HexSearch::LowerOnly(lower)) => {
+                            range_authors
+                                .push("(e.pub_key > ")
+                                .push_bind_unseparated(lower.clone())
+                                .push_unseparated(" OR e.delegated_by > ")
+                                .push_bind_unseparated(lower)
+                                .push_unseparated(")");
+                        }
+                        None => {
+                            info!("Could not parse hex range from author {:?}", auth);
+                        }
+                    }
+                    push_and = true;
+                }
             }
             query.push(")");
-            push_and = true;
-        }else {
-            let mut range_authors = query.separated(" OR ");
-            for auth in auth_vec {
-                match hex_range(auth) {
-                    Some(HexSearch::Exact(ex)) => {
-                        range_authors
-                            .push("(e.pub_key = ")
-                            .push_bind_unseparated(ex.clone())
-                            .push_unseparated(" OR e.delegated_by = ")
-                            .push_bind_unseparated(ex)
-                            .push_unseparated(")");
-                    }
-                    Some(HexSearch::Range(lower, upper)) => {
-                        range_authors
-                            .push("((e.pub_key > ")
-                            .push_bind_unseparated(lower.clone())
-                            .push_unseparated(" AND e.pub_key < ")
-                            .push_bind_unseparated(upper.clone())
-                            .push_unseparated(") OR (e.delegated_by > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(" AND e.delegated_by < ")
-                            .push_bind_unseparated(upper)
-                            .push_unseparated("))");
-                    }
-                    Some(HexSearch::LowerOnly(lower)) => {
-                        range_authors
-                            .push("(e.pub_key > ")
-                            .push_bind_unseparated(lower.clone())
-                            .push_unseparated(" OR e.delegated_by > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(")");
-                    }
-                    None => {
-                        info!("Could not parse hex range from author {:?}", auth);
-                    }
-                }
-                push_and = true;
-            }
         }
-        query.push(")");
     }
 
     // Query for Kind
@@ -520,6 +522,9 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
 
     // Query for event, allowing prefix matches
     if let Some(id_vec) = &f.ids {
+        // filter out non-hex values
+        let id_vec : Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+
         if !id_vec.is_empty() {
             if push_and {
                 query.push(" AND (");
@@ -527,9 +532,6 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 query.push("(");
             }
             push_and = true;
-
-            // filter out non-hex values
-            let id_vec : Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
 
             // shortcut ids into "IN" query
             let any_is_range = id_vec.iter().any(|pk| pk.len() != 64);
