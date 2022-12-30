@@ -441,8 +441,11 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     if let Some(auth_vec) = &f.authors {
         query.push("(");
 
+        // filter out non-hex values
+        let auth_vec : Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
+
         // shortcut authors into "IN" query
-        let any_is_range = auth_vec.iter().any(|pk| !is_hex(pk) || pk.len() != 64);
+        let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
         if !any_is_range {
             query.push("e.pub_key in (");
             let mut pk_sep = query.separated(", ");
@@ -525,8 +528,11 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             }
             push_and = true;
 
+            // filter out non-hex values
+            let id_vec : Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+
             // shortcut ids into "IN" query
-            let any_is_range = id_vec.iter().any(|pk| !is_hex(pk) || pk.len() != 64);
+            let any_is_range = id_vec.iter().any(|pk| pk.len() != 64);
             if !any_is_range {
                 query.push("id in (");
                 let mut sep = query.separated(", ");
