@@ -638,9 +638,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
         query.push(" ORDER BY e.created_at DESC LIMIT ");
-        query.push(lim);
+        query.push(lim.min(1000));
     } else {
-        query.push(" ORDER BY e.created_at ASC");
+        query.push(" ORDER BY e.created_at ASC LIMIT ");
+        query.push(1000);
     }
     Some(query)
 }
