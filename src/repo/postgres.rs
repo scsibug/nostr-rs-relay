@@ -99,7 +99,7 @@ ON CONFLICT (id) DO NOTHING"#,
                             sqlx::query(query)
                                 .bind(&id_blob)
                                 .bind(tag_name)
-                                .bind(tag_val)
+                                .bind(tag_val.as_bytes())
                                 .execute(&mut tx)
                                 .await?;
                         }
