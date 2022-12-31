@@ -8,7 +8,7 @@ use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
 use sqlx::postgres::PgRow;
-use sqlx::{Error, FromRow, Postgres, QueryBuilder, Row, Execute};
+use sqlx::{Error, Execute, FromRow, Postgres, QueryBuilder, Row};
 use std::time::{Duration, Instant};
 
 use crate::hexrange::{hex_range, HexSearch};
@@ -440,7 +440,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
         // filter out non-hex values
-        let auth_vec : Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
+        let auth_vec: Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
 
         if !auth_vec.is_empty() {
             query.push("(");
@@ -523,7 +523,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for event, allowing prefix matches
     if let Some(id_vec) = &f.ids {
         // filter out non-hex values
-        let id_vec : Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+        let id_vec: Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
 
         if !id_vec.is_empty() {
             if push_and {

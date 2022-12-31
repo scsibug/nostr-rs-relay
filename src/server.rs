@@ -23,7 +23,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
-use prometheus::{Encoder, Histogram, HistogramOpts, Registry, TextEncoder};
+use prometheus::{CounterVec, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -320,8 +320,14 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
             "Event writing response times",
         ))
         .unwrap();
+        let connections = CounterVec::new(
+            Opts::new("connections", "New connections"),
+            vec!["origin"].as_slice(),
+        )
+        .unwrap();
         registry.register(Box::new(query_sub.clone())).unwrap();
         registry.register(Box::new(write_events.clone())).unwrap();
+        registry.register(Box::new(connections.clone())).unwrap();
 
         let db_dir = &settings.database.data_directory;
         let full_path = Path::new(db_dir).join(db::DB_FILE);
@@ -329,6 +335,7 @@ pub fn start_server(settings: Settings, shutdown_rx: MpscReceiver<()>) -> Result
         let metrics = NostrMetrics {
             query_sub,
             write_events,
+            connections,
         };
 
         // create a connection pool
@@ -561,6 +568,16 @@ async fn nostr_server(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
     );
+
+    let mut metric_map: HashMap<&str, &str> = HashMap::new();
+    metric_map.insert("origin", origin.as_str());
+
+    metrics
+        .connections
+        .get_metric_with(&metric_map)
+        .unwrap()
+        .inc();
+
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
@@ -672,19 +689,23 @@ async fn nostr_server(
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} (cid: {})", id_prefix, cid);
                                 // check if the event is too far in the future.
-                                if e.is_valid_timestamp(settings.options.reject_future_seconds) {
+                                if !e.is_valid_timestamp(settings.options.reject_future_seconds) {
+                                    info!("client: {} sent a far future-dated event", cid);
+                                    if let Some(fut_sec) = settings.options.reject_future_seconds {
+                                        let msg = format!("The event created_at field is out of the acceptable range (+{}sec) for this relay.",fut_sec);
+                                        let notice = Notice::invalid(e.id, &msg);
+                                        ws_stream.send(make_notice_message(notice)).await.ok();
+                                    }
+                                } else if !conn.check_pub_rate_limit(){
+                                    info!("client: {} ({}) was rate limited for publishing too many events", cid, conn.ip());
+                                    let notice = Notice::invalid(e.id, "Rate limit exceeded, try again later");
+                                    ws_stream.send(make_notice_message(notice)).await.ok();
+                                } else {
                                     // Write this to the database.
                                     let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone() };
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
-                } else {
-                    info!("client: {} sent a far future-dated event", cid);
-                    if let Some(fut_sec) = settings.options.reject_future_seconds {
-                        let msg = format!("The event created_at field is out of the acceptable range (+{}sec) for this relay.",fut_sec);
-                        let notice = Notice::invalid(e.id, &msg);
-                        ws_stream.send(make_notice_message(notice)).await.ok();
-                    }
-                }
+                                }
                             },
                             Err(e) => {
                                 info!("client sent an invalid event (cid: {})", cid);
@@ -778,4 +799,5 @@ async fn nostr_server(
 pub struct NostrMetrics {
     pub query_sub: Histogram,
     pub write_events: Histogram,
+    pub connections: CounterVec,
 }

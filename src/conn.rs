@@ -4,6 +4,11 @@ use crate::error::Error;
 use crate::error::Result;
 
 use crate::subscription::Subscription;
+use governor::clock::DefaultClock;
+use governor::middleware::NoOpMiddleware;
+use governor::state::{InMemoryState, NotKeyed};
+use governor::{Quota, RateLimiter};
+use nonzero_ext::nonzero;
 use std::collections::HashMap;
 use tracing::{debug, trace};
 use uuid::Uuid;
@@ -21,6 +26,8 @@ pub struct ClientConn {
     subscriptions: HashMap<String, Subscription>,
     /// Per-connection maximum concurrent subscriptions
     max_subs: usize,
+    /// Publisher rate limiter
+    pub_limiter: RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>,
 }
 
 impl Default for ClientConn {
@@ -39,6 +46,7 @@ impl ClientConn {
             client_id,
             subscriptions: HashMap::new(),
             max_subs: 32,
+            pub_limiter: RateLimiter::direct(Quota::per_minute(nonzero!(60_u32))),
         }
     }
 
@@ -115,5 +123,10 @@ impl ClientConn {
             self.subscriptions.len(),
             self.get_client_prefix(),
         );
+    }
+
+    pub fn check_pub_rate_limit(&mut self) -> bool {
+        let c = self.pub_limiter.check();
+        matches!(c, Ok(_))
     }
 }
