@@ -105,6 +105,9 @@ reject_future_seconds = 1800
 # backpressure to senders if writes are slow.
 #event_persist_buffer = 4096
 
+# Whitelist to bypass rate limits for publishing events
+#rate_limit_whitelist = ["127.0.0.1"]
+
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable

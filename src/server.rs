@@ -515,7 +515,7 @@ async fn nostr_server(
     // get a broadcast channel for clients to communicate on
     let mut bcast_rx = broadcast.subscribe();
     // Track internal client state
-    let mut conn = conn::ClientConn::new(client_info.remote_ip);
+    let mut conn = conn::ClientConn::new(client_info.remote_ip, &settings);
     // subscription creation rate limiting
     let mut sub_lim_opt = None;
     // 100ms jitter when the rate limiter returns

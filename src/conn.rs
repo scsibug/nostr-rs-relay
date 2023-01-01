@@ -3,6 +3,7 @@ use crate::close::Close;
 use crate::error::Error;
 use crate::error::Result;
 
+use crate::config::Settings;
 use crate::subscription::Subscription;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
@@ -27,26 +28,30 @@ pub struct ClientConn {
     /// Per-connection maximum concurrent subscriptions
     max_subs: usize,
     /// Publisher rate limiter
-    pub_limiter: RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>,
+    pub_limiter: Option<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
 }
 
 impl Default for ClientConn {
     fn default() -> Self {
-        Self::new("unknown".to_owned())
+        Self::new("unknown".to_owned(), &Settings::default())
     }
 }
 
 impl ClientConn {
     /// Create a new, empty connection state.
     #[must_use]
-    pub fn new(client_ip: String) -> Self {
+    pub fn new(client_ip: String, config: &Settings) -> Self {
         let client_id = Uuid::new_v4();
         ClientConn {
-            client_ip,
+            client_ip: client_ip.clone(),
             client_id,
             subscriptions: HashMap::new(),
             max_subs: 32,
-            pub_limiter: RateLimiter::direct(Quota::per_minute(nonzero!(60_u32))),
+            pub_limiter: if config.limits.rate_limit_whitelist.contains(&client_ip) {
+                None
+            } else {
+                Some(RateLimiter::direct(Quota::per_minute(nonzero!(60_u32))))
+            },
         }
     }
 
@@ -125,8 +130,12 @@ impl ClientConn {
         );
     }
 
+    /// False if over limit
     pub fn check_pub_rate_limit(&mut self) -> bool {
-        let c = self.pub_limiter.check();
-        matches!(c, Ok(_))
+        if let Some(limiter) = &self.pub_limiter {
+            limiter.check().is_ok()
+        } else {
+            true
+        }
     }
 }
