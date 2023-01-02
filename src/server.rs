@@ -79,6 +79,7 @@ async fn handle_web_request(
                             Ok(upgraded) => {
                                 // set WebSocket configuration options
                                 let config = WebSocketConfig {
+                                    max_send_queue: Some(1024),
                                     max_message_size: settings.limits.max_ws_message_bytes,
                                     max_frame_size: settings.limits.max_ws_frame_bytes,
                                     ..Default::default()
