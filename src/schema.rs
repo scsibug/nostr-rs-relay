@@ -371,7 +371,6 @@ fn mig_5_to_6(conn: &mut PooledConnection) -> Result<usize> {
 
 fn mig_6_to_7(conn: &mut PooledConnection) -> Result<usize> {
     info!("database schema needs update from 6->7");
-    // only change is adding a hidden column to events.
     let upgrade_sql = r##"
 ALTER TABLE event ADD delegated_by BLOB;
 CREATE INDEX IF NOT EXISTS delegated_by_index ON event(delegated_by);
