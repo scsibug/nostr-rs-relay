@@ -20,7 +20,7 @@ pragma mmap_size = 17179869184; -- cap mmap at 16GB
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 11;
+pub const DB_VERSION: usize = 12;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -170,6 +170,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             }
             if curr_version == 10 {
                 curr_version = mig_10_to_11(conn)?;
+            }
+            if curr_version == 11 {
+                curr_version = mig_11_to_12(conn)?;
             }
 
             if curr_version == DB_VERSION {
@@ -467,4 +470,32 @@ PRAGMA user_version = 11;
         }
     }
     Ok(11)
+}
+
+fn mig_11_to_12(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 11->12");
+    let start = Instant::now();
+    let tx = conn.transaction()?;
+    {
+        // Lookup every replaceable event
+        let mut stmt = tx.prepare("select kind,author from event where kind in (0,3,41) or (kind>=10000 and kind<20000) order by id;")?;
+        let mut replaceable_rows = stmt.query([])?;
+        while let Some(row) = replaceable_rows.next()? {
+            // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
+            let event_kind: u64 = row.get(0)?;
+            let event_author: Vec<u8> = row.get(1)?;
+            tx.execute(
+                "UPDATE event SET hidden=TRUE WHERE hidden!=TRUE and kind=? and author=? and id NOT IN (SELECT id FROM event WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
+                params![event_kind, event_author, event_kind, event_author],
+            )?;
+        }
+        tx.execute("PRAGMA user_version = 12;", [])?;
+    }
+    tx.commit()?;
+    info!("database schema upgraded v11 -> v12 in {:?}", start.elapsed());
+    // vacuum after large table modification
+    let start = Instant::now();
+    conn.execute("VACUUM;", [])?;
+    info!("vacuumed DB after hidden event cleanup in {:?}", start.elapsed());
+    Ok(12)
 }

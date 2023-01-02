@@ -415,9 +415,11 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // event with the same kind from the same author that was issued
     // earlier than this.
     if e.kind == 0 || e.kind == 3 || e.kind == 41 || (e.kind >= 10000 && e.kind < 20000) {
+	let author = hex::decode(&e.pubkey).ok();
+	// this is a backwards check - hide any events that were older.
         let update_count = tx.execute(
-            "UPDATE event SET hidden=TRUE WHERE id!=? AND kind=? AND author=? AND created_at <= ? and hidden!=TRUE",
-            params![ev_id, e.kind, hex::decode(&e.pubkey).ok(), e.created_at],
+            "UPDATE event SET hidden=TRUE WHERE hidden!=TRUE and kind=? and author=? and id NOT IN (SELECT id FROM event WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
+            params![e.kind, author, e.kind, author],
         )?;
         if update_count > 0 {
             info!(
