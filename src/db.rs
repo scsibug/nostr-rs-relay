@@ -44,10 +44,6 @@ pub const DB_FILE: &str = "nostr.db";
 /// How frequently to attempt checkpointing
 pub const CHECKPOINT_FREQ_SEC: u64 = 60;
 
-/// How many persisted events before we pause for backups.
-/// It isn't clear this is enough to make the online backup API work yet.
-pub const EVENT_COUNT_BACKUP_PAUSE_TRIGGER: usize = 1000;
-
 /// Build a database connection pool.
 /// # Panics
 ///
@@ -184,10 +180,6 @@ pub async fn db_writer(
         let rps_setting = settings.limits.messages_per_sec;
         let mut most_recent_rate_limit = Instant::now();
         let mut lim_opt = None;
-        // Constant writing has interfered with online backups.  Keep
-        // track of how long since we've given the backups a chance to
-        // run.
-        let mut backup_pause_counter: usize = 0;
         let clock = governor::clock::QuantaClock::default();
         if let Some(rps) = rps_setting {
             if rps > 0 {
@@ -339,12 +331,6 @@ pub async fn db_writer(
                         let msg = "relay experienced an error trying to publish the latest event";
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                     }
-                }
-                backup_pause_counter += 1;
-                if backup_pause_counter > EVENT_COUNT_BACKUP_PAUSE_TRIGGER {
-                    info!("pausing db write thread for a moment...");
-                    thread::sleep(Duration::from_millis(500));
-                    backup_pause_counter = 0
                 }
             }
 
