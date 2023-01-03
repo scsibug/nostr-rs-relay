@@ -14,7 +14,6 @@ use tracing::{debug, error, info};
 /// Startup DB Pragmas
 pub const STARTUP_SQL: &str = r##"
 PRAGMA main.synchronous = NORMAL;
-PRAGMA auto_vacuum = FULL;
 PRAGMA foreign_keys = ON;
 PRAGMA journal_size_limit = 32768;
 pragma mmap_size = 17179869184; -- cap mmap at 16GB
@@ -28,7 +27,7 @@ const INIT_SQL: &str = formatcp!(
     r##"
 -- Database settings
 PRAGMA encoding = "UTF-8";
-PRAGMA journal_mode=WAL;
+PRAGMA journal_mode = WAL;
 PRAGMA auto_vacuum = FULL;
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;

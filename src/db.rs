@@ -364,6 +364,9 @@ pub async fn db_writer(
 
 /// Persist an event to the database, returning rows added.
 pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
+    // enable auto vacuum
+    conn.execute_batch("pragma auto_vacuum = FULL")?;
+
     // start transaction
     let tx = conn.transaction()?;
     // get relevant fields from event and convert to blobs.
