@@ -68,8 +68,25 @@ http {
         server_name relay.example.com;
         ssl_certificate /etc/letsencrypt/live/relay.example.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/relay.example.com/privkey.pem;
-        ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_protocols TLSv1.3 TLSv1.2;
+        ssl_prefer_server_ciphers on;
+        ssl_ecdh_curve secp521r1:secp384r1;
+        ssl_ciphers EECDH+AESGCM:EECDH+AES256;
+
+        # Optional Diffie-Helmann parameters
+        # Generate with openssl dhparam -out /etc/ssl/certs/dhparam.pem 4096
+        #ssl_dhparam /etc/ssl/certs/dhparam.pem;
+
+        ssl_session_cache shared:TLS:2m;
+        ssl_buffer_size 4k;
+
+        # OCSP stapling
+        ssl_stapling on;
+        ssl_stapling_verify on;
+        resolver 1.1.1.1 1.0.0.1 [2606:4700:4700::1111] [2606:4700:4700::1001]; # Cloudflare
+
+        # Set HSTS to 365 days
+        add_header Strict-Transport-Security 'max-age=31536000; includeSubDomains; preload' always;
         keepalive_timeout 70;
 
         location / {
