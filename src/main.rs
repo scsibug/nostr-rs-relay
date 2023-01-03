@@ -10,12 +10,40 @@ use tracing::info;
 
 use console_subscriber::ConsoleLayer;
 
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct CargoToml {
+    package: Package,
+}
+
+#[derive(Deserialize)]
+struct Package {
+    name: String,
+    version: String,
+}
+
 /// Return a requested DB name from command line arguments.
 fn db_from_args(args: &[String]) -> Option<String> {
     if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
         return args.get(2).map(std::clone::Clone::clone);
     }
     None
+}
+
+fn print_version() {
+    let contents = std::fs::read_to_string("Cargo.toml").unwrap();
+    let cargo_toml: CargoToml = toml::from_str(&contents).unwrap();
+    let version = &cargo_toml.package.version;
+    println!("{} v{}", &cargo_toml.package.name, version);
+}
+
+fn print_help() {
+    println!("Usage: nostr-rs-relay [OPTION]...\n");
+    println!("Options:");
+    println!("  --help              Show this help message and exit");
+    println!("  --version           Show version information and exit");
+    println!("  --db <directory>    Use the <directory> as the location of the database");
 }
 
 /// Start running a Nostr relay server.
@@ -25,6 +53,21 @@ fn main() {
     info!("Starting up from main");
     // get database directory from args
     let args: Vec<String> = env::args().collect();
+
+    let help_flag: bool = args.contains(&"--help".to_owned());
+    // if --help flag was passed, display help and exit
+    if help_flag {
+        print_help();
+        return;
+    }
+
+    let version_flag: bool = args.contains(&"--version".to_owned());
+    // if --version flag was passed, display version and exit
+    if version_flag {
+        print_version();
+        return;
+    }
+
     let db_dir: Option<String> = db_from_args(&args);
     // configure settings from config.toml
     // replace default settings with those read from config.toml
