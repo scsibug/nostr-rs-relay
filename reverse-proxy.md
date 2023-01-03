@@ -72,6 +72,10 @@ http {
         ssl_prefer_server_ciphers on;
         ssl_ecdh_curve secp521r1:secp384r1;
         ssl_ciphers EECDH+AESGCM:EECDH+AES256;
+        
+        # Optional Diffie-Helmann parameters
+        # Generate with openssl dhparam -out /etc/ssl/certs/dhparam.pem 4096
+        #ssl_dhparam /etc/ssl/certs/dhparam.pem;
 
         ssl_session_cache shared:TLS:2m;
         ssl_buffer_size 4k;
