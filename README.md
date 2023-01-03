@@ -19,7 +19,7 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
   * Hide old metadata events
   * Id/Author prefix search
 - [x] NIP-02: [Contact List and Petnames](https://github.com/nostr-protocol/nips/blob/master/02.md)
-- [ ] NIP-03: [OpenTimestamps Attestations for Events](https://github.com/nostr-protocol/nips/blob/master/03.md)
+- [x] NIP-03: [OpenTimestamps Attestations for Events](https://github.com/nostr-protocol/nips/blob/master/03.md)
 - [x] NIP-05: [Mapping Nostr keys to DNS-based internet identifiers](https://github.com/nostr-protocol/nips/blob/master/05.md)
 - [x] NIP-09: [Event Deletion](https://github.com/nostr-protocol/nips/blob/master/09.md)
 - [x] NIP-11: [Relay Information Document](https://github.com/nostr-protocol/nips/blob/master/11.md)

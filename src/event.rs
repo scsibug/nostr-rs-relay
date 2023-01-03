@@ -50,6 +50,9 @@ pub struct Event {
     // Optimization for tag search, built on demand.
     #[serde(skip)]
     pub tagidx: Option<HashMap<char, HashSet<String>>>,
+     // OpenTimestamps field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ots: Option<String>,
 }
 
 /// Simple tag type for array of array of strings.
@@ -113,6 +116,23 @@ impl Event {
             content: "".to_owned(),
             sig: "0".to_owned(),
             tagidx: None,
+            ots: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn simple_ots_event() -> Event {
+        Event {
+            id: "0".to_owned(),
+            pubkey: "0".to_owned(),
+            delegated_by: None,
+            created_at: 0,
+            kind: 0,
+            tags: vec![],
+            content: "".to_owned(),
+            sig: "0".to_owned(),
+            tagidx: None,
+            ots: Some("AE9wZW5UaW1lc3RhbXBzAABQcm9vZgC/ieLohOiSlAEIlcslK57StvtHv7UZb9moS2Ft/aKjkP130Ca/S9kXVbPwEENkUKzG4B2LijeJkgia4wMI8CBfhcVesMh/qERUKMDpl00rVnTw4/97UNIlJDyiBIJpbQjxBGO0sfLwCIfm/G5fTq7OAIPf4w0u+QyOLi1odHRwczovL2FsaWNlLmJ0Yy5jYWxlbmRhci5vcGVudGltZXN0YW1wcy5vcmc=".to_string()),
         }
     }
 
@@ -403,6 +423,28 @@ mod tests {
     }
 
     #[test]
+    fn event_serialize_ots() -> Result<()> {
+        // serialize an event to JSON string
+        let event = Event::simple_ots_event();
+        let j = serde_json::to_string(&event)?;
+        assert_eq!(j, "{\"id\":\"0\",\"pubkey\":\"0\",\"created_at\":0,\"kind\":0,\"tags\":[],\"content\":\"\",\"sig\":\"0\",\"ots\":\"AE9wZW5UaW1lc3RhbXBzAABQcm9vZgC/ieLohOiSlAEIlcslK57StvtHv7UZb9moS2Ft/aKjkP130Ca/S9kXVbPwEENkUKzG4B2LijeJkgia4wMI8CBfhcVesMh/qERUKMDpl00rVnTw4/97UNIlJDyiBIJpbQjxBGO0sfLwCIfm/G5fTq7OAIPf4w0u+QyOLi1odHRwczovL2FsaWNlLmJ0Yy5jYWxlbmRhci5vcGVudGltZXN0YW1wcy5vcmc=\"}");
+        Ok(())
+    }
+
+    #[test]
+    fn event_deserialize_ots() -> Result<()> {
+        let raw_json = r#"{"id":"ed8bb025961c09adb678a3d7072306f10e3f7aec3331c9e6375dbd711cf9d8dd","pubkey":"cf2053391f2f75ed272aa8ccf2f91545217e6bf9d3c7ce5705114deae0a37d58","created_at":1672787196,"kind":1,"tags":[],"content":"hello world","sig":"60cfe33bc25e683667b37272e6a01570949f2cf53d5eb43625e1af7b9f2a8a2431c0ae88ce7917deb9c8168624a28ed9eeff1e4bc25d1ab78f14a5ed418916df","ots":"AE9wZW5UaW1lc3RhbXBzAABQcm9vZgC/ieLohOiSlAEI7YuwJZYcCa22eKPXByMG8Q4/euwzMcnmN129cRz52N3wEOaNbbHPeFCEnT/duoYKZ8cI8CAK/5nWQvRNFBBJ+6tSuUnQ9E+1apUmlT/P6e469PVrJwjxIMj5vkt8DNpRDnAJ7y8aagA7cg9AF54FRwYhGx28QbbCCPEEY7S0/fAIifED+w3mDC0Ag9/jDS75DI4uLWh0dHBzOi8vYWxpY2UuYnRjLmNhbGVuZGFyLm9wZW50aW1lc3RhbXBzLm9yZw=="}"#;
+        let e: Event = serde_json::from_str(raw_json)?;
+        assert_eq!(e.kind, 1);
+        assert_eq!(e.tags.len(), 0);
+        assert!(e.ots.is_some());
+        assert_eq!(e.ots.as_ref().unwrap(), "AE9wZW5UaW1lc3RhbXBzAABQcm9vZgC/ieLohOiSlAEI7YuwJZYcCa22eKPXByMG8Q4/euwzMcnmN129cRz52N3wEOaNbbHPeFCEnT/duoYKZ8cI8CAK/5nWQvRNFBBJ+6tSuUnQ9E+1apUmlT/P6e469PVrJwjxIMj5vkt8DNpRDnAJ7y8aagA7cg9AF54FRwYhGx28QbbCCPEEY7S0/fAIifED+w3mDC0Ag9/jDS75DI4uLWh0dHBzOi8vYWxpY2UuYnRjLmNhbGVuZGFyLm9wZW50aW1lc3RhbXBzLm9yZw==");
+        let orig = serde_json::to_string(&e)?;
+        assert_eq!(raw_json, orig);
+        Ok(())
+    }
+
+    #[test]
     fn event_canonical() {
         let e = Event {
             id: "999".to_owned(),
@@ -414,6 +456,7 @@ mod tests {
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
             tagidx: None,
+            ots: None,
         };
         let c = e.to_canonical();
         let expected = Some(r#"[0,"012345",501234,1,[],"this is a test"]"#.to_owned());
@@ -442,6 +485,7 @@ mod tests {
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
             tagidx: None,
+            ots: None,
         };
         let v = e.tag_values_by_name("e");
         assert_eq!(v, vec!["foo", "bar", "baz"]);
@@ -468,6 +512,7 @@ mod tests {
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
             tagidx: None,
+            ots: None,
         };
         let v = e.tag_values_by_name("x");
         // asking for tags that don't exist just returns zero-length vector
@@ -493,6 +538,7 @@ mod tests {
             content: "this is a test".to_owned(),
             sig: "abcde".to_owned(),
             tagidx: None,
+            ots: None,
         };
         let c = e.to_canonical();
         let expected_json = r###"[0,"012345",501234,1,[["#e","aoeu"],["#p","aaaa","ws://example.com"]],"this is a test"]"###;
