@@ -10,19 +10,6 @@ use tracing::info;
 
 use console_subscriber::ConsoleLayer;
 
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct CargoToml {
-    package: Package,
-}
-
-#[derive(Deserialize)]
-struct Package {
-    name: String,
-    version: String,
-}
-
 /// Return a requested DB name from command line arguments.
 fn db_from_args(args: &[String]) -> Option<String> {
     if args.len() == 3 && args.get(1) == Some(&"--db".to_owned()) {
@@ -32,10 +19,7 @@ fn db_from_args(args: &[String]) -> Option<String> {
 }
 
 fn print_version() {
-    let contents = std::fs::read_to_string("Cargo.toml").unwrap();
-    let cargo_toml: CargoToml = toml::from_str(&contents).unwrap();
-    let version = &cargo_toml.package.version;
-    println!("{} v{}", &cargo_toml.package.name, version);
+    println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 }
 
 fn print_help() {
