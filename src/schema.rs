@@ -29,6 +29,7 @@ const INIT_SQL: &str = formatcp!(
 -- Database settings
 PRAGMA encoding = "UTF-8";
 PRAGMA journal_mode=WAL;
+PRAGMA auto_vacuum = FULL;
 PRAGMA main.synchronous=NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA application_id = 1654008667;
