@@ -548,34 +548,9 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
                 }
             }
         }
-        // take each author and convert to a hexsearch
-        let mut del_searches: Vec<String> = vec![];
-        for auth in authvec {
-            match hex_range(auth) {
-                Some(HexSearch::Exact(ex)) => {
-                    del_searches.push("delegated_by=?".to_owned());
-                    params.push(Box::new(ex));
-                }
-                Some(HexSearch::Range(lower, upper)) => {
-                    del_searches.push(
-                        "(delegated_by>? AND delegated_by<?)".to_owned(),
-                    );
-                    params.push(Box::new(lower));
-                    params.push(Box::new(upper));
-                }
-                Some(HexSearch::LowerOnly(lower)) => {
-                    del_searches.push("delegated_by>?".to_owned());
-                    params.push(Box::new(lower));
-                }
-                None => {
-                    info!("Could not parse hex range from author {:?}", auth);
-                }
-            }
-        }
         if !authvec.is_empty() {
-	    // combine auth_searches and del_searches
-	    let comb_clause = format!("({} OR {})", auth_searches.join(" OR "), del_searches.join(" OR "));
-            filter_components.push(comb_clause);
+	    let auth_clause = format!("({})", auth_searches.join(" OR "));
+            filter_components.push(auth_clause);
         } else {
 	    filter_components.push("false".to_owned());
 	}
