@@ -783,7 +783,7 @@ pub async fn db_query(
         // if the queue time was very long (>5 seconds), spare the DB and abort.
         if db_queue_time > Duration::from_secs(5) {
             info!(
-                "shedding DB query load from {:?} (cid: {}, sub: {:?})",
+                "shedding DB query load queued for {:?} (cid: {}, sub: {:?})",
                 db_queue_time, client_id, sub.id
             );
             return Ok(());
