@@ -11,6 +11,4 @@ pub struct CLIArgs {
         required = false
     )]
     pub db: String,
-
-
 }

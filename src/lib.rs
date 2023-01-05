@@ -15,4 +15,3 @@ pub mod subscription;
 pub mod utils;
 // Public API for creating relays programatically
 pub mod server;
-
