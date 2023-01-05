@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod close;
 pub mod config;
 pub mod conn;
@@ -14,3 +15,4 @@ pub mod subscription;
 pub mod utils;
 // Public API for creating relays programatically
 pub mod server;
+
