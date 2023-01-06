@@ -517,8 +517,8 @@ fn override_index(f: &ReqFilter) -> Option<String> {
     None
 }
 
-/// Create a dynamic SQL subquery and params from a subscription filter.
-fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
+/// Create a dynamic SQL subquery and params from a subscription filter (and optional explicit index used)
+fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<String>) {
     // build a dynamic SQL query.  all user-input is either an integer
     // (sqli-safe), or a string that is filtered to only contain
     // hexadecimal characters.  Strings that require escaping (tag
@@ -535,7 +535,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // check if the index needs to be overriden
     let idx_name = override_index(&f);
     if let Some(n) = &idx_name {
-	info!("using explicit index: {:?}", n);
+	debug!("using explicit index: {:?}", n);
     }
     let idx_stmt = idx_name.map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
     let mut query = format!("SELECT e.content, e.created_at FROM event e {}", idx_stmt);
@@ -672,19 +672,23 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     } else {
         query.push_str(" ORDER BY e.created_at ASC")
     }
-    (query, params)
+    (query, params, idx_name)
 }
 
 /// Create a dynamic SQL query string and params from a subscription.
-fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
+fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>, Vec<String>) {
     // build a dynamic SQL query for an entire subscription, based on
     // SQL subqueries for filters.
     let mut subqueries: Vec<String> = Vec::new();
+    let indexes = vec![];
     // subquery params
     let mut params: Vec<Box<dyn ToSql>> = vec![];
     // for every filter in the subscription, generate a subquery
     for f in sub.filters.iter() {
-        let (f_subquery, mut f_params) = query_from_filter(f);
+        let (f_subquery, mut f_params, index) = query_from_filter(f);
+	if let Some(i) = index {
+	    indexes.push(i);
+	}
         subqueries.push(f_subquery);
         params.append(&mut f_params);
     }
@@ -694,7 +698,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>) {
         .map(|s| format!("SELECT distinct content, created_at FROM ({})", s))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
-    (query, params)
+    (query, params,indexes)
 }
 
 /// Check if the pool is fully utilized
@@ -814,8 +818,9 @@ pub async fn db_query(
         let start = Instant::now();
         let mut row_count: usize = 0;
         // generate SQL query
-        let (q, p) = query_from_sub(&sub);
+        let (q, p, idxs) = query_from_sub(&sub);
         let sql_gen_elapsed = start.elapsed();
+
         if sql_gen_elapsed > Duration::from_millis(10) {
             debug!("SQL (slow) generated in {:?}", start.elapsed());
         }
@@ -840,8 +845,8 @@ pub async fn db_query(
                 slow_first_event = first_event_elapsed >= slow_cutoff;
                 if first_result {
                     debug!(
-                        "first result in {:?} (cid: {}, sub: {:?})",
-                        first_event_elapsed, client_id, sub.id
+                        "first result in {:?} (cid: {}, sub: {:?}) [used indexes: {:?}]",
+                        first_event_elapsed, client_id, sub.id, idxs
                     );
                     first_result = false;
                 }
