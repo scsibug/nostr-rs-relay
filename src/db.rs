@@ -510,6 +510,7 @@ fn override_index(f: &ReqFilter) -> Option<String> {
 	    ks.len() > 1 &&
 	    f.since.is_none() &&
 	    f.until.is_none() &&
+	    f.tags.is_none() &&
 	    f.authors.is_none() {
 		return Some("kind_created_at_index".into());
 	    }
@@ -529,15 +530,12 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         let empty_query = "SELECT e.content, e.created_at FROM event e WHERE 1=0".to_owned();
         // query parameters for SQLite
         let empty_params: Vec<Box<dyn ToSql>> = vec![];
-        return (empty_query, empty_params);
+        return (empty_query, empty_params, None);
     }
 
     // check if the index needs to be overriden
     let idx_name = override_index(&f);
-    if let Some(n) = &idx_name {
-	debug!("using explicit index: {:?}", n);
-    }
-    let idx_stmt = idx_name.map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
+    let idx_stmt = idx_name.as_ref().map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
     let mut query = format!("SELECT e.content, e.created_at FROM event e {}", idx_stmt);
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
@@ -680,7 +678,7 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>, Vec<Strin
     // build a dynamic SQL query for an entire subscription, based on
     // SQL subqueries for filters.
     let mut subqueries: Vec<String> = Vec::new();
-    let indexes = vec![];
+    let mut indexes = vec![];
     // subquery params
     let mut params: Vec<Box<dyn ToSql>> = vec![];
     // for every filter in the subscription, generate a subquery
