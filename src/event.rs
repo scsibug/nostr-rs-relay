@@ -176,11 +176,11 @@ impl Event {
     }
 
     /// Update delegation status
-    fn update_delegation(&mut self) {
+    pub fn update_delegation(&mut self) {
         self.delegated_by = self.delegated_author();
     }
     /// Build an event tag index
-    fn build_index(&mut self) {
+    pub fn build_index(&mut self) {
         // if there are no tags; just leave the index as None
         if self.tags.is_empty() {
             return;

@@ -95,6 +95,20 @@ pub fn curr_db_version(conn: &mut Connection) -> Result<usize> {
     Ok(curr_version)
 }
 
+/// Determine event count
+pub fn db_event_count(conn: &mut Connection) -> Result<usize> {
+    let query = "SELECT count(*) FROM event;";
+    let count = conn.query_row(query, [], |row| row.get(0))?;
+    Ok(count)
+}
+
+/// Determine tag count
+pub fn db_tag_count(conn: &mut Connection) -> Result<usize> {
+    let query = "SELECT count(*) FROM tag;";
+    let count = conn.query_row(query, [], |row| row.get(0))?;
+    Ok(count)
+}
+
 fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
     match conn.execute_batch(INIT_SQL) {
         Ok(()) => {
@@ -205,6 +219,62 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     debug!("SQLite PRAGMA startup completed");
     Ok(())
 }
+
+pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
+    // Check how many events we have to process
+    let count = db_event_count(conn)?;
+    let update_each_percent = 0.05;
+    let mut percent_done = 0.0;
+    let mut events_processed = 0;
+    let start = Instant::now();
+    let tx = conn.transaction()?;
+    {
+        // Clear out table
+        tx.execute("DELETE FROM tag;", [])?;
+        let mut stmt = tx.prepare("select id, content from event order by id;")?;
+        let mut tag_rows = stmt.query([])?;
+        while let Some(row) = tag_rows.next()? {
+	    if (events_processed as f32)/(count as f32) > percent_done {
+		info!("Tag update {}% complete...", (100.0*percent_done).round());
+		percent_done += update_each_percent;
+	    }
+            // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
+            let event_id: u64 = row.get(0)?;
+            let event_json: String = row.get(1)?;
+            let event: Event = serde_json::from_str(&event_json)?;
+            // look at each event, and each tag, creating new tag entries if appropriate.
+            for t in event.tags.iter().filter(|x| x.len() > 1) {
+                let tagname = t.get(0).unwrap();
+                let tagnamechar_opt = single_char_tagname(tagname);
+                if tagnamechar_opt.is_none() {
+                    continue;
+                }
+                // safe because len was > 1
+                let tagval = t.get(1).unwrap();
+                // insert as BLOB if we can restore it losslessly.
+                // this means it needs to be even length and lowercase.
+                if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
+                    tx.execute(
+                        "INSERT INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3);",
+                        params![event_id, tagname, hex::decode(tagval).ok()],
+                    )?;
+                } else {
+                    // otherwise, insert as text
+                    tx.execute(
+                        "INSERT INTO tag (event_id, name, value) VALUES (?1, ?2, ?3);",
+                        params![event_id, tagname, &tagval],
+                    )?;
+                }
+            }
+	    events_processed += 1;
+        }
+    }
+    tx.commit()?;
+    info!("rebuilt tags in {:?}", start.elapsed());
+    Ok(())
+}
+
+
 
 //// Migration Scripts
 
@@ -337,7 +407,6 @@ fn mig_5_to_6(conn: &mut PooledConnection) -> Result<usize> {
         let mut stmt = tx.prepare("select id, content from event order by id;")?;
         let mut tag_rows = stmt.query([])?;
         while let Some(row) = tag_rows.next()? {
-            // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_id: u64 = row.get(0)?;
             let event_json: String = row.get(1)?;
             let event: Event = serde_json::from_str(&event_json)?;
