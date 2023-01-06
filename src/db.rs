@@ -501,6 +501,22 @@ fn repeat_vars(count: usize) -> String {
     s
 }
 
+/// Decide if there is an index that should be used explicitly
+fn override_index(f: &ReqFilter) -> Option<String> {
+    // queries for multiple kinds default to kind_index, which is
+    // significantly slower than kind_created_at_index.
+    if let Some(ks) = &f.kinds {
+	if f.ids.is_none() &&
+	    ks.len() > 1 &&
+	    f.since.is_none() &&
+	    f.until.is_none() &&
+	    f.authors.is_none() {
+		return Some("kind_created_at_index".into());
+	    }
+    }
+    None
+}
+
 /// Create a dynamic SQL subquery and params from a subscription filter.
 fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
     // build a dynamic SQL query.  all user-input is either an integer
@@ -516,7 +532,13 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>) {
         return (empty_query, empty_params);
     }
 
-    let mut query = "SELECT e.content, e.created_at FROM event e".to_owned();
+    // check if the index needs to be overriden
+    let idx_name = override_index(&f);
+    if let Some(n) = &idx_name {
+	info!("using explicit index: {:?}", n);
+    }
+    let idx_stmt = idx_name.map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
+    let mut query = format!("SELECT e.content, e.created_at FROM event e {}", idx_stmt);
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
