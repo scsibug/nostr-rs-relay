@@ -534,7 +534,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     }
 
     // check if the index needs to be overriden
-    let idx_name = override_index(&f);
+    let idx_name = override_index(f);
     let idx_stmt = idx_name.as_ref().map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
     let mut query = format!("SELECT e.content, e.created_at FROM event e {}", idx_stmt);
     // query parameters for SQLite
@@ -859,7 +859,7 @@ pub async fn db_query(
 		// check if a checkpoint is trying to run, and abort
 		if row_count % 100 == 0 {
 		    {
-			if let Err(_) = safe_to_read.try_lock() {
+			if safe_to_read.try_lock().is_err() {
 			    // lock was held, abort this query
 			    debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
 			    return Ok(());
@@ -889,7 +889,7 @@ pub async fn db_query(
                             return ok;
                         }
 			// check if a checkpoint is trying to run, and abort
-			if let Err(_) = safe_to_read.try_lock() {
+			if safe_to_read.try_lock().is_err() {
 			    // lock was held, abort this query
 			    debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
 			    return Ok(());
