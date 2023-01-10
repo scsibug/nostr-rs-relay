@@ -559,6 +559,7 @@ fn mig_11_to_12(conn: &mut PooledConnection) -> Result<usize> {
         // Lookup every replaceable event
         let mut stmt = tx.prepare("select kind,author from event where kind in (0,3,41) or (kind>=10000 and kind<20000) order by id;")?;
         let mut replaceable_rows = stmt.query([])?;
+	info!("updating replaceable events; this could take awhile...");
         while let Some(row) = replaceable_rows.next()? {
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_kind: u64 = row.get(0)?;
