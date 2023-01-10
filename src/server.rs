@@ -433,6 +433,9 @@ fn convert_to_msg(msg: String, max_bytes: Option<usize>) -> Result<NostrMessage>
     let parsed_res: Result<NostrMessage> = serde_json::from_str(&msg).map_err(|e| e.into());
     match parsed_res {
         Ok(m) => {
+	    if let NostrMessage::SubMsg(_) = m {
+		debug!("REQ: {:?}",msg);
+	    };
             if let NostrMessage::EventMsg(_) = m {
                 if let Some(max_size) = max_bytes {
                     // check length, ensure that some max size is set.
