@@ -447,8 +447,8 @@ fn convert_to_msg(msg: String, max_bytes: Option<usize>) -> Result<NostrMessage>
             Ok(m)
         }
         Err(e) => {
-            debug!("proto parse error: {:?}", e);
-            debug!("parse error on message: {}", msg.trim());
+            trace!("proto parse error: {:?}", e);
+            trace!("parse error on message: {:?}", msg.trim());
             Err(Error::ProtoParseError)
         }
     }
