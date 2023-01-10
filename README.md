@@ -148,3 +148,8 @@ To chat about `nostr-rs-relay` on `nostr` itself; visit our channel on [anigma](
 License
 ---
 This project is MIT licensed.
+
+External Documentation and Links
+---
+
+* [BlockChainCaffe's Nostr Relay Setup Guide](https://github.com/BlockChainCaffe/Nostr-Relay-Setup-Guide)
