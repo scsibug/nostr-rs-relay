@@ -434,7 +434,8 @@ fn convert_to_msg(msg: String, max_bytes: Option<usize>) -> Result<NostrMessage>
     match parsed_res {
         Ok(m) => {
 	    if let NostrMessage::SubMsg(_) = m {
-		debug!("REQ: {:?}",msg);
+		// note; this only prints the first 16k of a REQ and then truncates.
+		trace!("REQ: {:?}",msg);
 	    };
             if let NostrMessage::EventMsg(_) = m {
                 if let Some(max_size) = max_bytes {
