@@ -14,22 +14,25 @@ use console_subscriber::ConsoleLayer;
 
 /// Start running a Nostr relay server.
 fn main() {
+    // configure settings from config.toml
+    // replace default settings with those read from config.toml
+    let mut settings = config::Settings::new();
+
     // setup tracing
-    let _trace_sub = tracing_subscriber::fmt::try_init();
+    if settings.diagnostics.tracing {
+        // enable tracing with tokio-console
+        ConsoleLayer::builder().with_default_env().init();
+    } else {
+	// standard logging
+	tracing_subscriber::fmt::try_init().unwrap();
+    }
     info!("Starting up from main");
 
     let args = CLIArgs::parse();
 
     // get database directory from args
     let db_dir = args.db;
-    // configure settings from config.toml
-    // replace default settings with those read from config.toml
-    let mut settings = config::Settings::new();
 
-    if settings.diagnostics.tracing {
-        // enable tracing with tokio-console
-        ConsoleLayer::builder().with_default_env().init();
-    }
     // update with database location
     if db_dir.len() > 0 {
         settings.database.data_directory = db_dir;

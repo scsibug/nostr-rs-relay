@@ -18,7 +18,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 
 [diagnostics]
 # Enable tokio tracing (for use with tokio-console)
-#tracing = true
+#tracing = false
 
 [database]
 # Directory for SQLite files.  Defaults to the current directory.  Can
