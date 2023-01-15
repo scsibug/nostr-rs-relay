@@ -523,6 +523,10 @@ fn override_index(f: &ReqFilter) -> Option<String> {
 		return Some("kind_created_at_index".into());
 	    }
     }
+    // if there is an author, it is much better to force the authors index.
+    if let Some(ks) = &f.authors {
+	return Some("author_index".into());
+    }
     None
 }
 
