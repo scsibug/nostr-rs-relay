@@ -314,8 +314,9 @@ pub async fn db_writer(
                             notice_tx.try_send(Notice::duplicate(event.id)).ok();
                         } else {
                             info!(
-                                "persisted event: {:?} from: {:?} in: {:?}",
+                                "persisted event: {:?} (kind={}) from: {:?} in: {:?}",
                                 event.get_event_id_prefix(),
+				event.kind,
                                 event.get_author_prefix(),
                                 start.elapsed()
                             );

@@ -626,7 +626,6 @@ fn mig_14_to_15(conn: &mut PooledConnection) -> Result<usize> {
     let upgrade_sql = r##"
 CREATE INDEX IF NOT EXISTS author_created_at_index ON event(author,created_at);
 CREATE INDEX IF NOT EXISTS author_kind_index ON event(author,kind);
-pragma optimize;
 PRAGMA user_version = 15;
 "##;
     match conn.execute_batch(upgrade_sql) {
@@ -636,6 +635,18 @@ PRAGMA user_version = 15;
         Err(err) => {
             error!("update failed: {}", err);
             panic!("database could not be upgraded");
+        }
+    }
+    // clear out hidden events
+    let clear_hidden_sql = r##"DELETE FROM event WHERE HIDDEN=true;"##;
+    info!("removing hidden events; this may take awhile...");
+    match conn.execute_batch(clear_hidden_sql) {
+	Ok(()) => {
+	    info!("all hidden events removed");
+	},
+	Err(err) => {
+            error!("delete failed: {}", err);
+            panic!("could not remove hidden events");
         }
     }
     Ok(15)
