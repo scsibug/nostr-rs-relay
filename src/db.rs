@@ -422,19 +422,19 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
             }
         }
     }
-    // if this event is replaceable update, hide every other replaceable
+    // if this event is replaceable update, remove other replaceable
     // event with the same kind from the same author that was issued
     // earlier than this.
     if e.is_replaceable() {
 	let author = hex::decode(&e.pubkey).ok();
 	// this is a backwards check - hide any events that were older.
         let update_count = tx.execute(
-            "UPDATE event SET hidden=TRUE WHERE hidden!=TRUE and kind=? and author=? and id NOT IN (SELECT id FROM event WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
+            "DELETE FROM event WHERE kind=? and author=? and id NOT IN (SELECT id FROM event INDEXED BY author_kind_index WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
             params![e.kind, author, e.kind, author],
         )?;
         if update_count > 0 {
             info!(
-                "hid {} older replaceable kind {} events for author: {:?}",
+                "removed {} older replaceable kind {} events for author: {:?}",
                 update_count,
                 e.kind,
                 e.get_author_prefix()
