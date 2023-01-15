@@ -307,7 +307,6 @@ pub async fn db_writer(
                 );
                 event_write = true
             } else {
-                log_pool_stats("writer", &pool);
                 match write_event(&mut pool.get()?, &event) {
                     Ok(updated) => {
                         if updated == 0 {
@@ -374,8 +373,15 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     let pubkey_blob: Option<Vec<u8>> = hex::decode(&e.pubkey).ok();
     let delegator_blob: Option<Vec<u8>> = e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
     let event_str = serde_json::to_string(&e).ok();
-    // check for replaceable events that would hide this one.
-
+    // check for replaceable events that would hide this one; we won't even attempt to insert these.
+    if e.is_replaceable() {
+        let repl_count = tx.query_row(
+	    "SELECT e.id FROM event e INDEXED BY author_index WHERE e.author=? AND e.kind=? AND e.created_at > ? LIMIT 1;",
+	    params![pubkey_blob, e.kind, e.created_at], |row| row.get::<usize, usize>(0));
+	if repl_count.ok().is_some() {
+	    return Ok(0);
+	}
+    }
     // ignore if the event hash is a duplicate.
     let mut ins_count = tx.execute(
         "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
