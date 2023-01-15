@@ -374,6 +374,8 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     let pubkey_blob: Option<Vec<u8>> = hex::decode(&e.pubkey).ok();
     let delegator_blob: Option<Vec<u8>> = e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
     let event_str = serde_json::to_string(&e).ok();
+    // check for replaceable events that would hide this one.
+
     // ignore if the event hash is a duplicate.
     let mut ins_count = tx.execute(
         "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
@@ -417,7 +419,7 @@ pub fn write_event(conn: &mut PooledConnection, e: &Event) -> Result<usize> {
     // if this event is replaceable update, hide every other replaceable
     // event with the same kind from the same author that was issued
     // earlier than this.
-    if e.kind == 0 || e.kind == 3 || e.kind == 41 || (e.kind >= 10000 && e.kind < 20000) {
+    if e.is_replaceable() {
 	let author = hex::decode(&e.pubkey).ok();
 	// this is a backwards check - hide any events that were older.
         let update_count = tx.execute(

@@ -120,6 +120,11 @@ impl Event {
         self.kind == 0
     }
 
+    /// Should this event be replaced with newer timestamps from same author?
+    pub fn is_replaceable(&self) -> bool {
+	self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
+    }
+
     /// Pull a NIP-05 Name out of the event, if one exists
     pub fn get_nip05_addr(&self) -> Option<nip05::Nip05Name> {
         if self.is_kind_metadata() {
@@ -499,4 +504,17 @@ mod tests {
         let expected = Some(expected_json.to_owned());
         assert_eq!(c, expected);
     }
+
+    #[test]
+    fn replaceable_event() {
+	let mut event = Event::simple_event();
+	event.kind=0;
+	assert!(event.is_replaceable());
+	event.kind=3;
+	assert!(event.is_replaceable());
+	event.kind=12000;
+	assert!(event.is_replaceable());
+
+    }
+
 }

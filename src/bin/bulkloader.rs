@@ -160,7 +160,7 @@ fn write_event(tx: &Transaction, e: Event) -> Result<usize> {
             )?;
         }
     }
-    if e.kind == 0 || e.kind == 3 || e.kind == 41 || (e.kind >= 10000 && e.kind < 20000) {
+    if e.is_replaceable() {
 	//let query = "SELECT id FROM event WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1;";
 	//let count: usize = tx.query_row(query, params![e.kind, pubkey_blob], |row| row.get(0))?;
 	//info!("found {} rows that /would/ be preserved", count);
