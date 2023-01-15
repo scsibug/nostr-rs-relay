@@ -20,7 +20,7 @@ pragma mmap_size = 17179869184; -- cap mmap at 16GB
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 14;
+pub const DB_VERSION: usize = 15;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -56,6 +56,8 @@ CREATE INDEX IF NOT EXISTS delegated_by_index ON event(delegated_by);
 CREATE INDEX IF NOT EXISTS event_composite_index ON event(kind,created_at);
 CREATE INDEX IF NOT EXISTS kind_author_index ON event(kind,author);
 CREATE INDEX IF NOT EXISTS kind_created_at_index ON event(kind,created_at);
+CREATE INDEX IF NOT EXISTS author_created_at_index ON event(author,created_at);
+CREATE INDEX IF NOT EXISTS author_kind_index ON event(author,kind);
 
 -- Tag Table
 -- Tag values are stored as either a BLOB (if they come in as a
@@ -158,19 +160,15 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             if curr_version == 1 {
                 curr_version = mig_1_to_2(conn)?;
             }
-
             if curr_version == 2 {
                 curr_version = mig_2_to_3(conn)?;
             }
-
             if curr_version == 3 {
                 curr_version = mig_3_to_4(conn)?;
             }
-
             if curr_version == 4 {
                 curr_version = mig_4_to_5(conn)?;
             }
-
             if curr_version == 5 {
                 curr_version = mig_5_to_6(conn)?;
             }
@@ -197,6 +195,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
             }
             if curr_version == 13 {
                 curr_version = mig_13_to_14(conn)?;
+            }
+            if curr_version == 14 {
+                curr_version = mig_14_to_15(conn)?;
             }
 
             if curr_version == DB_VERSION {
@@ -618,4 +619,24 @@ PRAGMA user_version = 14;
         }
     }
     Ok(14)
+}
+
+fn mig_14_to_15(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 14->15");
+    let upgrade_sql = r##"
+CREATE INDEX IF NOT EXISTS author_created_at_index ON event(author,created_at);
+CREATE INDEX IF NOT EXISTS author_kind_index ON event(author,kind);
+pragma optimize;
+PRAGMA user_version = 15;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v14 -> v15");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(15)
 }

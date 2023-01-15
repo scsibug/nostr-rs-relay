@@ -524,8 +524,19 @@ fn override_index(f: &ReqFilter) -> Option<String> {
 	    }
     }
     // if there is an author, it is much better to force the authors index.
-    if let Some(ks) = &f.authors {
-	return Some("author_index".into());
+    if let Some(_) = &f.authors {
+	if f.since.is_none() && f.until.is_none() {
+	    if f.kinds.is_none() {
+		// with no use of kinds/created_at, just author
+		return Some("author_index".into());
+	    } else {
+		// prefer author_kind if there are kinds
+		return Some("author_kind_index".into());
+	    }
+	} else {
+	    // finally, prefer author_created_at if time is provided
+	    return Some("author_created_at_index".into());
+	}
     }
     None
 }
