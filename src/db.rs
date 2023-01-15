@@ -210,8 +210,8 @@ pub async fn db_writer(
                 // TODO: incorporate delegated pubkeys
                 // if the event address is not in allowed_addrs.
                 if !allowed_addrs.contains(&event.pubkey) {
-                    info!(
-                        "Rejecting event {}, unauthorized author",
+                    debug!(
+                        "rejecting event: {}, unauthorized author",
                         event.get_event_id_prefix()
                     );
                     notice_tx
@@ -228,9 +228,10 @@ pub async fn db_writer(
             let kinds_blacklist = &settings.limits.event_kind_blacklist.clone();
             if let Some(event_kind_blacklist) = kinds_blacklist {
                 if event_kind_blacklist.contains(&event.kind) {
-                    info!(
-                        "Rejecting event {}, blacklisted kind",
-                        &event.get_event_id_prefix()
+                    debug!(
+                        "rejecting event: {}, blacklisted kind: {}",
+                        &event.get_event_id_prefix(),
+			&event.kind
                     );
                     notice_tx
                         .try_send(Notice::blocked(
@@ -314,7 +315,7 @@ pub async fn db_writer(
                             notice_tx.try_send(Notice::duplicate(event.id)).ok();
                         } else {
                             info!(
-                                "persisted event: {:?} (kind={}) from: {:?} in: {:?}",
+                                "persisted event: {:?} (kind: {}) from: {:?} in: {:?}",
                                 event.get_event_id_prefix(),
 				event.kind,
                                 event.get_author_prefix(),
