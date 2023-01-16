@@ -24,7 +24,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command
 # line option.
-data_directory = "."
+#data_directory = "."
 
 
 # Use an in-memory database instead of 'nostr.db'.

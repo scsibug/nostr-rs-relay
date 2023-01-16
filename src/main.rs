@@ -31,13 +31,12 @@ fn main() {
     let args = CLIArgs::parse();
 
     // get database directory from args
-    let db_dir = args.db;
+    let db_dir_arg = args.db;
 
-    // update with database location
-    if db_dir.len() > 0 {
+    // update with database location from args, if provided
+    if let Some(db_dir) = db_dir_arg {
         settings.database.data_directory = db_dir;
     }
-
     let (_, ctrl_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
     // run this in a new thread
     let handle = thread::spawn(|| {
