@@ -22,7 +22,7 @@ dated file, and then compress to minimize size:
 
 ```console
 BACKUP_FILE=/var/backups/nostr/`date +%Y%m%d_%H%M`.db
-sqlite3 -readonly /apps/nostr-relay/nostr.db ".backup $BACKUP_FILE
+sqlite3 -readonly /apps/nostr-relay/nostr.db ".backup $BACKUP_FILE"
 sqlite3 $BACKUP_FILE "vacuum;"
 bzip2 -9 $BACKUP_FILE
 ```
