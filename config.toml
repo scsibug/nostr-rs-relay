@@ -63,9 +63,13 @@ reject_future_seconds = 1800
 
 [limits]
 # Limit events created per second, averaged over one minute.  Must be
-# an integer.  If not set (or set to 0), defaults to unlimited.  Note:
+# an integer.  If not set (or set to 0), there is no limit.  Note:
 # this is for the server as a whole, not per-connection.
-# messages_per_sec = 0
+#
+# Limiting event creation is highly recommended if your relay is
+# public!
+#
+messages_per_sec = 5
 
 # Limit client subscriptions created per second, averaged over one
 # minute.  Must be an integer.  If not set (or set to 0), defaults to
