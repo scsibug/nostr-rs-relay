@@ -28,17 +28,14 @@ jobs:
 
       - name: Lint
         run: |
-          cd nostr-rs-relay
           cargo fmt -- --check
           cargo clippy -- -D warnings          
 
       - name: Test
         run: |
-          cd nostr-rs-relay
           cargo check
           cargo test --all          
 
       - name: Build
         run: |
-          cd nostr-rs-relay
           cargo build --release 
