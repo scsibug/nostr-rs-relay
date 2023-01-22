@@ -21,13 +21,17 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 #tracing = false
 
 [database]
+# Database engine (sqlite/postgres).  Defaults to sqlite.
+# Support for postgres is currently experimental.
+#engine = "sqlite"
+
 # Directory for SQLite files.  Defaults to the current directory.  Can
 # also be specified (and overriden) with the "--db dirname" command
 # line option.
 #data_directory = "."
 
-
 # Use an in-memory database instead of 'nostr.db'.
+# Requires sqlite engine.
 # Caution; this will not survive a process restart!
 #in_memory = false
 
@@ -39,6 +43,10 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Maximum number of SQLite reader connections.  Recommend setting this
 # to approx the number of cores.
 #max_conn = 8
+
+# Database connection string.  Required for postgres; not used for
+# sqlite.
+#connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
 [network]
 # Bind to this network address

@@ -22,6 +22,7 @@ pub struct Database {
     pub in_memory: bool,
     pub min_conn: u32,
     pub max_conn: u32,
+    pub connection: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,6 +212,7 @@ impl Default for Settings {
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 8,
+		connection: "".to_owned(),
             },
             network: Network {
                 port: 8080,

@@ -9,9 +9,14 @@ use governor::{Quota, RateLimiter};
 use r2d2;
 use std::sync::Arc;
 use std::thread;
+use sqlx::pool::PoolOptions;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::ConnectOptions;
 use crate::repo::sqlite::SqliteRepo;
+use crate::repo::postgres::{PostgresRepo,PostgresPool,PostgresRepoSettings};
 use crate::repo::NostrRepo;
-use std::time::Instant;
+use std::time::{Instant, Duration};
+use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -33,6 +38,7 @@ pub const DB_FILE: &str = "nostr.db";
 pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
         "sqlite" => {Arc::new(build_sqlite_pool(settings, metrics).await)},
+        "postgres" => {Arc::new(build_postgres_pool(settings, metrics).await)},
         _ => panic!("Unknown database engine"),
     }
 }
@@ -42,6 +48,23 @@ async fn build_sqlite_pool(settings: &Settings, metrics: NostrMetrics) -> Sqlite
     repo.start().await.ok();
     repo.migrate_up().await.ok();
     repo
+}
+
+async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> PostgresRepo {
+    let mut options: PgConnectOptions = settings.database.connection.as_str().parse().unwrap();
+    options.log_statements(LevelFilter::Debug);
+    options.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
+
+    let pool: PostgresPool = PoolOptions::new()
+        .max_connections(settings.database.max_conn)
+        .min_connections(settings.database.min_conn)
+        .idle_timeout(Duration::from_secs(60))
+        .connect_with(options)
+        .await
+        .unwrap();
+    PostgresRepo::new(pool, metrics, PostgresRepoSettings {
+        cleanup_contact_list: true
+    })
 }
 
 /// Spawn a database writer that persists events to the `SQLite` store.

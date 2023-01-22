@@ -48,6 +48,10 @@ pub enum Error {
     DatabaseDirError,
     #[error("Database Connection Pool Error")]
     DatabasePoolError(r2d2::Error),
+    #[error("SQL error")]
+    SqlxError(sqlx::Error),
+    #[error("Database Connection Pool Error")]
+    SqlxDatabasePoolError(sqlx::Error),
     #[error("Custom Error : {0}")]
     CustomError(String),
     #[error("Task join error")]
@@ -97,6 +101,12 @@ impl From<rusqlite::Error> for Error {
     /// Wrap SQL error
     fn from(r: rusqlite::Error) -> Self {
         Error::SqlError(r)
+    }
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(d: sqlx::Error) -> Self {
+        Error::SqlxDatabasePoolError(d)
     }
 }
 

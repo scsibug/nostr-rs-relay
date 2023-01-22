@@ -9,6 +9,8 @@ use rand::Rng;
 
 pub mod sqlite;
 pub mod sqlite_migration;
+pub mod postgres;
+pub mod postgres_migration;
 
 #[async_trait]
 pub trait NostrRepo: Send + Sync {
