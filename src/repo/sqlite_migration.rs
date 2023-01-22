@@ -113,7 +113,7 @@ pub fn db_tag_count(conn: &mut Connection) -> Result<usize> {
     Ok(count)
 }
 
-fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
+fn mig_init(conn: &mut PooledConnection) -> usize {
     match conn.execute_batch(INIT_SQL) {
         Ok(()) => {
             info!(
@@ -126,11 +126,11 @@ fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
             panic!("database could not be initialized");
         }
     }
-    Ok(DB_VERSION)
+    DB_VERSION
 }
 
 /// Upgrade DB to latest version, and execute pragma settings
-pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
+pub fn upgrade_db(conn: &mut PooledConnection) -> Result<usize> {
     // check the version.
     let mut curr_version = curr_db_version(conn)?;
     info!("DB version = {:?}", curr_version);
@@ -141,11 +141,11 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     );
     debug!(
         "SQLite max table/blob/text length: {} MB",
-        (conn.limit(Limit::SQLITE_LIMIT_LENGTH) as f64 / (1024 * 1024) as f64).floor()
+        (f64::from(conn.limit(Limit::SQLITE_LIMIT_LENGTH)) / f64::from(1024 * 1024)).floor()
     );
     debug!(
         "SQLite max SQL length: {} MB",
-        (conn.limit(Limit::SQLITE_LIMIT_SQL_LENGTH) as f64 / (1024 * 1024) as f64).floor()
+        (f64::from(conn.limit(Limit::SQLITE_LIMIT_SQL_LENGTH)) / f64::from(1024 * 1024)).floor()
     );
 
     match curr_version.cmp(&DB_VERSION) {
@@ -153,7 +153,7 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
         Ordering::Less => {
             // initialize from scratch
             if curr_version == 0 {
-                curr_version = mig_init(conn)?;
+                curr_version = mig_init(conn);
             }
             // for initialized but out-of-date schemas, proceed to
             // upgrade sequentially until we are current.
@@ -223,7 +223,7 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     // Setup PRAGMA
     conn.execute_batch(STARTUP_SQL)?;
     debug!("SQLite PRAGMA startup completed");
-    Ok(())
+    Ok(DB_VERSION)
 }
 
 pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {

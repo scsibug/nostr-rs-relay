@@ -37,7 +37,7 @@ impl From<config::Info> for RelayInfo {
             contact: i.contact,
             supported_nips: Some(vec![1, 2, 9, 11, 12, 15, 16, 20, 22]),
             software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
-            version: CARGO_PKG_VERSION.map(|x| x.to_owned()),
+            version: CARGO_PKG_VERSION.map(std::borrow::ToOwned::to_owned),
         }
     }
 }

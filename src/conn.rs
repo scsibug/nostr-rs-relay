@@ -14,7 +14,7 @@ const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
 /// State for a client connection
 pub struct ClientConn {
     /// Client IP (either from socket, or configured proxy header
-    client_ip: String,
+    client_ip_addr: String,
     /// Unique client identifier generated at connection time
     client_id: Uuid,
     /// The current set of active client subscriptions
@@ -32,22 +32,22 @@ impl Default for ClientConn {
 impl ClientConn {
     /// Create a new, empty connection state.
     #[must_use]
-    pub fn new(client_ip: String) -> Self {
+    pub fn new(client_ip_addr: String) -> Self {
         let client_id = Uuid::new_v4();
         ClientConn {
-            client_ip,
+            client_ip_addr,
             client_id,
             subscriptions: HashMap::new(),
             max_subs: 32,
         }
     }
 
-    pub fn subscriptions(&self) -> &HashMap<String, Subscription> {
+    #[must_use] pub fn subscriptions(&self) -> &HashMap<String, Subscription> {
         &self.subscriptions
     }
 
     /// Check if the given subscription already exists
-    pub fn has_subscription(&self, sub: &Subscription) -> bool {
+    #[must_use] pub fn has_subscription(&self, sub: &Subscription) -> bool {
         self.subscriptions.values().any(|x| x == sub)
     }
 
@@ -60,7 +60,7 @@ impl ClientConn {
 
     #[must_use]
     pub fn ip(&self) -> &str {
-        &self.client_ip
+        &self.client_ip_addr
     }
 
     /// Add a new subscription for this connection.

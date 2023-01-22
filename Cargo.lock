@@ -1191,6 +1191,7 @@ name = "nostr-rs-relay"
 version = "0.7.17"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bitcoin_hashes",
  "clap",
  "config",

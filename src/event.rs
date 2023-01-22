@@ -1,6 +1,6 @@
 //! Event parsing and validation
 use crate::delegation::validate_delegation;
-use crate::error::Error::*;
+use crate::error::Error::{CommandUnknownError, EventCouldNotCanonicalize, EventInvalidId, EventInvalidSignature, EventMalformedPubkey};
 use crate::error::Result;
 use crate::nip05;
 use crate::utils::unix_time;
@@ -28,7 +28,7 @@ pub struct EventCmd {
 }
 
 impl EventCmd {
-    pub fn event_id(&self) -> &str {
+    #[must_use] pub fn event_id(&self) -> &str {
         &self.event.id
     }
 }
@@ -65,7 +65,7 @@ where
 }
 
 /// Attempt to form a single-char tag name.
-pub fn single_char_tagname(tagname: &str) -> Option<char> {
+#[must_use] pub fn single_char_tagname(tagname: &str) -> Option<char> {
     // We return the tag character if and only if the tagname consists
     // of a single char.
     let mut tagnamechars = tagname.chars();
@@ -87,22 +87,22 @@ pub fn single_char_tagname(tagname: &str) -> Option<char> {
 impl From<EventCmd> for Result<Event> {
     fn from(ec: EventCmd) -> Result<Event> {
         // ensure command is correct
-        if ec.cmd != "EVENT" {
-            Err(CommandUnknownError)
-        } else {
-            ec.event.validate().map(|_| {
+        if ec.cmd == "EVENT" {
+	    ec.event.validate().map(|_| {
                 let mut e = ec.event;
                 e.build_index();
                 e.update_delegation();
                 e
             })
+        } else {
+	    Err(CommandUnknownError)
         }
     }
 }
 
 impl Event {
     #[cfg(test)]
-    pub fn simple_event() -> Event {
+    #[must_use] pub fn simple_event() -> Event {
         Event {
             id: "0".to_owned(),
             pubkey: "0".to_owned(),
@@ -116,17 +116,17 @@ impl Event {
         }
     }
 
-    pub fn is_kind_metadata(&self) -> bool {
+    #[must_use] pub fn is_kind_metadata(&self) -> bool {
         self.kind == 0
     }
 
     /// Should this event be replaced with newer timestamps from same author?
-    pub fn is_replaceable(&self) -> bool {
+    #[must_use] pub fn is_replaceable(&self) -> bool {
 	self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
     }
 
     /// Pull a NIP-05 Name out of the event, if one exists
-    pub fn get_nip05_addr(&self) -> Option<nip05::Nip05Name> {
+    #[must_use] pub fn get_nip05_addr(&self) -> Option<nip05::Nip05Name> {
         if self.is_kind_metadata() {
             // very quick check if we should attempt to parse this json
             if self.content.contains("\"nip05\"") {
@@ -143,7 +143,7 @@ impl Event {
     // is this event delegated (properly)?
     // does the signature match, and are conditions valid?
     // if so, return an alternate author for the event
-    pub fn delegated_author(&self) -> Option<String> {
+    #[must_use] pub fn delegated_author(&self) -> Option<String> {
         // is there a delegation tag?
         let delegation_tag: Vec<String> = self
             .tags
@@ -151,8 +151,7 @@ impl Event {
             .filter(|x| x.len() == 4)
             .filter(|x| x.get(0).unwrap() == "delegation")
             .take(1)
-            .next()?
-            .to_vec(); // get first tag
+            .next()?.clone(); // get first tag
 
         //let delegation_tag = self.tag_values_by_name("delegation");
         // delegation tags should have exactly 3 elements after the name (pubkey, condition, sig)
@@ -212,24 +211,24 @@ impl Event {
     }
 
     /// Create a short event identifier, suitable for logging.
-    pub fn get_event_id_prefix(&self) -> String {
+    #[must_use] pub fn get_event_id_prefix(&self) -> String {
         self.id.chars().take(8).collect()
     }
-    pub fn get_author_prefix(&self) -> String {
+    #[must_use] pub fn get_author_prefix(&self) -> String {
         self.pubkey.chars().take(8).collect()
     }
 
     /// Retrieve tag initial values across all tags matching the name
-    pub fn tag_values_by_name(&self, tag_name: &str) -> Vec<String> {
+    #[must_use] pub fn tag_values_by_name(&self, tag_name: &str) -> Vec<String> {
         self.tags
             .iter()
             .filter(|x| x.len() > 1)
             .filter(|x| x.get(0).unwrap() == tag_name)
-            .map(|x| x.get(1).unwrap().to_owned())
+            .map(|x| x.get(1).unwrap().clone())
             .collect()
     }
 
-    pub fn is_valid_timestamp(&self, reject_future_seconds: Option<usize>) -> bool {
+    #[must_use] pub fn is_valid_timestamp(&self, reject_future_seconds: Option<usize>) -> bool {
         if let Some(allowable_future) = reject_future_seconds {
             let curr_time = unix_time();
             // calculate difference, plus how far future we allow
@@ -291,7 +290,7 @@ impl Event {
         let id = Number::from(0_u64);
         c.push(serde_json::Value::Number(id));
         // public key
-        c.push(Value::String(self.pubkey.to_owned()));
+        c.push(Value::String(self.pubkey.clone()));
         // creation time
         let created_at = Number::from(self.created_at);
         c.push(serde_json::Value::Number(created_at));
@@ -301,7 +300,7 @@ impl Event {
         // tags
         c.push(self.tags_to_canonical());
         // content
-        c.push(Value::String(self.content.to_owned()));
+        c.push(Value::String(self.content.clone()));
         serde_json::to_string(&Value::Array(c)).ok()
     }
 
@@ -309,11 +308,11 @@ impl Event {
     fn tags_to_canonical(&self) -> Value {
         let mut tags = Vec::<Value>::new();
         // iterate over self tags,
-        for t in self.tags.iter() {
+        for t in &self.tags {
             // each tag is a vec of strings
             let mut a = Vec::<Value>::new();
             for v in t.iter() {
-                a.push(serde_json::Value::String(v.to_owned()));
+                a.push(serde_json::Value::String(v.clone()));
             }
             tags.push(serde_json::Value::Array(a));
         }
@@ -321,7 +320,7 @@ impl Event {
     }
 
     /// Determine if the given tag and value set intersect with tags in this event.
-    pub fn generic_tag_val_intersect(&self, tagname: char, check: &HashSet<String>) -> bool {
+    #[must_use] pub fn generic_tag_val_intersect(&self, tagname: char, check: &HashSet<String>) -> bool {
         match &self.tagidx {
             // check if this is indexable tagname
             Some(idx) => match idx.get(&tagname) {
@@ -413,7 +412,7 @@ mod tests {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
             delegated_by: None,
-            created_at: 501234,
+            created_at: 501_234,
             kind: 1,
             tags: vec![],
             content: "this is a test".to_owned(),
@@ -431,7 +430,7 @@ mod tests {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
             delegated_by: None,
-            created_at: 501234,
+            created_at: 501_234,
             kind: 1,
             tags: vec![
                 vec!["j".to_owned(), "abc".to_owned()],
@@ -458,7 +457,7 @@ mod tests {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
             delegated_by: None,
-            created_at: 501234,
+            created_at: 501_234,
             kind: 1,
             tags: vec![
                 vec!["j".to_owned(), "abc".to_owned()],
@@ -485,7 +484,7 @@ mod tests {
             id: "999".to_owned(),
             pubkey: "012345".to_owned(),
             delegated_by: None,
-            created_at: 501234,
+            created_at: 501_234,
             kind: 1,
             tags: vec![
                 vec!["#e".to_owned(), "aoeu".to_owned()],

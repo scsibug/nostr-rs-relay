@@ -5,16 +5,14 @@
 //! consumes a stream of metadata events, and keeps a database table
 //! updated with the current NIP-05 verification status.
 use crate::config::VerifiedUsers;
-use crate::db;
 use crate::error::{Error, Result};
 use crate::event::Event;
-use crate::utils::unix_time;
+use crate::repo::NostrRepo;
+use std::sync::Arc;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
-use rand::Rng;
-use rusqlite::params;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
@@ -23,14 +21,12 @@ use tracing::{debug, info, warn};
 
 /// NIP-05 verifier state
 pub struct Verifier {
+    /// Repository for saving/retrieving events and records
+    repo: Arc<dyn NostrRepo>,
     /// Metadata events for us to inspect
     metadata_rx: tokio::sync::broadcast::Receiver<Event>,
     /// Newly validated events get written and then broadcast on this channel to subscribers
     event_tx: tokio::sync::broadcast::Sender<Event>,
-    /// SQLite read query pool
-    read_pool: db::SqlitePool,
-    /// SQLite write query pool
-    write_pool: db::SqlitePool,
     /// Settings
     settings: crate::config::Settings,
     /// HTTP client
@@ -52,7 +48,7 @@ pub struct Nip05Name {
 
 impl Nip05Name {
     /// Does this name represent the entire domain?
-    pub fn is_domain_only(&self) -> bool {
+    #[must_use] pub fn is_domain_only(&self) -> bool {
         self.local == "_"
     }
 
@@ -73,16 +69,11 @@ impl std::convert::TryFrom<&str> for Nip05Name {
     fn try_from(inet: &str) -> Result<Self, Self::Error> {
         // break full name at the @ boundary.
         let components: Vec<&str> = inet.split('@').collect();
-        if components.len() != 2 {
-            Err(Error::CustomError("too many/few components".to_owned()))
-        } else {
-            // check if local name is valid
+        if components.len() == 2 {
+	    // check if local name is valid
             let local = components[0];
             let domain = components[1];
-            if local
-                .chars()
-                .all(|x| x.is_alphanumeric() || x == '_' || x == '-' || x == '.')
-            {
+            if local.chars().all(|x| x.is_alphanumeric() || x == '_' || x == '-' || x == '.') {
                 if domain
                     .chars()
                     .all(|x| x.is_alphanumeric() || x == '-' || x == '.')
@@ -101,6 +92,8 @@ impl std::convert::TryFrom<&str> for Nip05Name {
                     "invalid character in local part".to_owned(),
                 ))
             }
+        } else {
+	    Err(Error::CustomError("too many/few components".to_owned()))
         }
     }
 }
@@ -111,55 +104,30 @@ impl std::fmt::Display for Nip05Name {
     }
 }
 
-// Current time, with a slight foward jitter in seconds
-fn now_jitter(sec: u64) -> u64 {
-    // random time between now, and 10min in future.
-    let mut rng = rand::thread_rng();
-    let jitter_amount = rng.gen_range(0..sec);
-    let now = unix_time();
-    now.saturating_add(jitter_amount)
-}
-
 /// Check if the specified username and address are present and match in this response body
-fn body_contains_user(username: &str, address: &str, bytes: hyper::body::Bytes) -> Result<bool> {
+fn body_contains_user(username: &str, address: &str, bytes: &hyper::body::Bytes) -> Result<bool> {
     // convert the body into json
     let body: serde_json::Value = serde_json::from_slice(&bytes)?;
     // ensure we have a names object.
     let names_map = body
         .as_object()
         .and_then(|x| x.get("names"))
-        .and_then(|x| x.as_object())
+        .and_then(serde_json::Value::as_object)
         .ok_or_else(|| Error::CustomError("not a map".to_owned()))?;
     // get the pubkey for the requested user
-    let check_name = names_map.get(username).and_then(|x| x.as_str());
+    let check_name = names_map.get(username).and_then(serde_json::Value::as_str);
     // ensure the address is a match
-    Ok(check_name.map(|x| x == address).unwrap_or(false))
+    Ok(check_name.map_or(false, |x| x == address))
 }
 
 impl Verifier {
     pub fn new(
+	repo: Arc<dyn NostrRepo>,
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
         settings: crate::config::Settings,
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
-        // build a database connection for reading and writing.
-        let write_pool = db::build_pool(
-            "nip05 writer",
-            &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-            1,    // min conns
-            4,    // max conns
-            true, // wait for DB
-        );
-        let read_pool = db::build_pool(
-            "nip05 reader",
-            &settings,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            1,    // min conns
-            8,    // max conns
-            true, // wait for DB
-        );
         // setup hyper client
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
@@ -175,10 +143,9 @@ impl Verifier {
         // duration.
         let reverify_interval = tokio::time::interval(http_wait_duration);
         Ok(Verifier {
+	    repo,
             metadata_rx,
             event_tx,
-            read_pool,
-            write_pool,
             settings,
             client,
             wait_after_finish,
@@ -246,44 +213,40 @@ impl Verifier {
 
         let response_fut = self.client.request(req);
 
-        // HTTP request with timeout
-        match tokio::time::timeout(Duration::from_secs(5), response_fut).await {
-            Ok(response_res) => {
-                // limit size of verification document to 1MB.
-                const MAX_ALLOWED_RESPONSE_SIZE: u64 = 1024 * 1024;
-                let response = response_res?;
-                // determine content length from response
-                let response_content_length = match response.body().size_hint().upper() {
-                    Some(v) => v,
-                    None => MAX_ALLOWED_RESPONSE_SIZE + 1, // reject missing content length
-                };
-                // TODO: test how hyper handles the client providing an inaccurate content-length.
-                if response_content_length <= MAX_ALLOWED_RESPONSE_SIZE {
-                    let (parts, body) = response.into_parts();
-                    // TODO: consider redirects
-                    if parts.status == http::StatusCode::OK {
-                        // parse body, determine if the username / key / address is present
-                        let body_bytes = hyper::body::to_bytes(body).await?;
-                        let body_matches = body_contains_user(&nip.local, pubkey, body_bytes)?;
-                        if body_matches {
-                            return Ok(UserWebVerificationStatus::Verified);
-                        }
-                        // successful response, parsed as a nip-05
-                        // document, but this name/pubkey was not
-                        // present.
-                        return Ok(UserWebVerificationStatus::Unverified);
+        if let Ok(response_res) = tokio::time::timeout(Duration::from_secs(5), response_fut).await {
+            // limit size of verification document to 1MB.
+            const MAX_ALLOWED_RESPONSE_SIZE: u64 = 1024 * 1024;
+            let response = response_res?;
+            // determine content length from response
+            let response_content_length = match response.body().size_hint().upper() {
+                Some(v) => v,
+                None => MAX_ALLOWED_RESPONSE_SIZE + 1, // reject missing content length
+            };
+            // TODO: test how hyper handles the client providing an inaccurate content-length.
+            if response_content_length <= MAX_ALLOWED_RESPONSE_SIZE {
+                let (parts, body) = response.into_parts();
+                // TODO: consider redirects
+                if parts.status == http::StatusCode::OK {
+                    // parse body, determine if the username / key / address is present
+                    let body_bytes = hyper::body::to_bytes(body).await?;
+                    let body_matches = body_contains_user(&nip.local, pubkey, &body_bytes)?;
+                    if body_matches {
+                        return Ok(UserWebVerificationStatus::Verified);
                     }
-                } else {
-                    info!(
-                        "content length missing or exceeded limits for account: {:?}",
-                        nip.to_string()
-                    );
+                    // successful response, parsed as a nip-05
+                    // document, but this name/pubkey was not
+                    // present.
+                    return Ok(UserWebVerificationStatus::Unverified);
                 }
+            } else {
+                info!(
+                    "content length missing or exceeded limits for account: {:?}",
+                    nip.to_string()
+                );
             }
-            Err(_) => {
-                info!("timeout verifying account {:?}", nip);
-                return Ok(UserWebVerificationStatus::Unknown);
-            }
+        } else {
+            info!("timeout verifying account {:?}", nip);
+            return Ok(UserWebVerificationStatus::Unknown);
         }
         Ok(UserWebVerificationStatus::Unknown)
     }
@@ -309,7 +272,7 @@ impl Verifier {
                         if let Some(naddr) = e.get_nip05_addr() {
                             info!("got metadata event for ({:?},{:?})", naddr.to_string() ,e.get_author_prefix());
                             // Process a new author, checking if they are verified:
-                            let check_verified = get_latest_user_verification(self.read_pool.get().expect("could not get connection"), &e.pubkey).await;
+                            let check_verified = self.repo.get_latest_user_verification(&e.pubkey).await;
                             // ensure the event we got is more recent than the one we have, otherwise we can ignore it.
                             if let Ok(last_check) = check_verified {
                                 if e.created_at <= last_check.event_created {
@@ -370,7 +333,7 @@ impl Verifier {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|x| x.as_secs())
             .unwrap_or(0);
-        let vr = get_oldest_user_verification(self.read_pool.get()?, earliest_epoch).await;
+        let vr = self.repo.get_oldest_user_verification(earliest_epoch).await;
         match vr {
             Ok(ref v) => {
                 let new_status = self.get_web_verification(&v.name, &v.address).await;
@@ -378,8 +341,10 @@ impl Verifier {
                     UserWebVerificationStatus::Verified => {
                         // freshly verified account, update the
                         // timestamp.
-                        self.update_verification_record(self.write_pool.get()?, v)
+                        self.repo.update_verification_timestamp(v.rowid)
                             .await?;
+			info!("verification updated for {}", v.to_string());
+
                     }
                     UserWebVerificationStatus::DomainNotAllowed
                     | UserWebVerificationStatus::Unknown => {
@@ -394,18 +359,19 @@ impl Verifier {
                                 "giving up on verifying {:?} after {} failures",
                                 v.name, v.failure_count
                             );
-                            self.delete_verification_record(self.write_pool.get()?, v)
+                            self.repo.delete_verification(v.rowid)
                                 .await?;
                         } else {
                             // record normal failure, incrementing failure count
-                            self.fail_verification_record(self.write_pool.get()?, v)
-                                .await?;
+			    info!("verification failed for {}", v.to_string());
+			    self.repo.fail_verification(v.rowid).await?;
                         }
                     }
                     UserWebVerificationStatus::Unverified => {
                         // domain has removed the verification, drop
                         // the record on our side.
-                        self.delete_verification_record(self.write_pool.get()?, v)
+			info!("verification rescinded for {}", v.to_string());
+			self.repo.delete_verification(v.rowid)
                             .await?;
                     }
                 }
@@ -426,80 +392,6 @@ impl Verifier {
         Ok(())
     }
 
-    /// Reset the verification timestamp on a VerificationRecord
-    pub async fn update_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        tokio::task::spawn_blocking(move || {
-            // add some jitter to the verification to prevent everything from stacking up together.
-            let verif_time = now_jitter(600);
-            let tx = conn.transaction()?;
-            {
-                // update verification time and reset any failure count
-                let query =
-                    "UPDATE user_verification SET verified_at=?, failure_count=0 WHERE id=?";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![verif_time, vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification updated for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-    /// Reset the failure timestamp on a VerificationRecord
-    pub async fn fail_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        let fail_count = vr.failure_count.saturating_add(1);
-        tokio::task::spawn_blocking(move || {
-            // add some jitter to the verification to prevent everything from stacking up together.
-            let fail_time = now_jitter(600);
-            let tx = conn.transaction()?;
-            {
-                let query = "UPDATE user_verification SET failed_at=?, failure_count=? WHERE id=?";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![fail_time, fail_count, vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification failed for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-    /// Delete a VerificationRecord that is no longer valid
-    pub async fn delete_verification_record(
-        &mut self,
-        mut conn: db::PooledConnection,
-        vr: &VerificationRecord,
-    ) -> Result<()> {
-        let vr_id = vr.rowid;
-        let vr_str = vr.to_string();
-        tokio::task::spawn_blocking(move || {
-            let tx = conn.transaction()?;
-            {
-                let query = "DELETE FROM user_verification WHERE id=?;";
-                let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![vr_id])?;
-            }
-            tx.commit()?;
-            info!("verification rescinded for {}", vr_str);
-            let ok: Result<()> = Ok(());
-            ok
-        })
-        .await?
-    }
-
     /// Persist an event, create a verification record, and broadcast.
     // TODO: have more event-writing logic handled in the db module.
     // Right now, these events avoid the rate limit.  That is
@@ -513,27 +405,27 @@ impl Verifier {
         // disabled/passive, the event has already been persisted.
         let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
-            match db::write_event(&mut self.write_pool.get()?, event) {
-                Ok(updated) => {
-                    if updated != 0 {
-                        info!(
-                            "persisted event (new verified pubkey): {:?} in {:?}",
-                            event.get_event_id_prefix(),
-                            start.elapsed()
-                        );
-                        self.event_tx.send(event.clone()).ok();
-                    }
-                }
-                Err(err) => {
-                    warn!("event insert failed: {:?}", err);
-                    if let Error::SqlError(r) = err {
-                        warn!("because: : {:?}", r);
-                    }
-                }
-            }
+             match self.repo.write_event(event).await {
+                 Ok(updated) => {
+                     if updated != 0 {
+                         info!(
+                             "persisted event (new verified pubkey): {:?} in {:?}",
+                             event.get_event_id_prefix(),
+                             start.elapsed()
+                         );
+                         self.event_tx.send(event.clone()).ok();
+                     }
+                 }
+                 Err(err) => {
+                     warn!("event insert failed: {:?}", err);
+                     if let Error::SqlError(r) = err {
+                         warn!("because: : {:?}", r);
+                     }
+                 }
+             }
         }
         // write the verification record
-        save_verification_record(self.write_pool.get()?, event, name).await?;
+	self.repo.create_verification_record(&event.id, name).await?;
         Ok(())
     }
 }
@@ -563,7 +455,7 @@ pub struct VerificationRecord {
 
 /// Check with settings to determine if a given domain is allowed to
 /// publish.
-pub fn is_domain_allowed(
+#[must_use] pub fn is_domain_allowed(
     domain: &str,
     whitelist: &Option<Vec<String>>,
     blacklist: &Option<Vec<String>>,
@@ -583,7 +475,7 @@ pub fn is_domain_allowed(
 impl VerificationRecord {
     /// Check if the record is recent enough to be considered valid,
     /// and the domain is allowed.
-    pub fn is_valid(&self, verified_users_settings: &VerifiedUsers) -> bool {
+    #[must_use] pub fn is_valid(&self, verified_users_settings: &VerifiedUsers) -> bool {
         //let settings = SETTINGS.read().unwrap();
         // how long a verification record is good for
         let nip05_expiration = &verified_users_settings.verify_expiration_duration;
@@ -630,130 +522,6 @@ impl std::fmt::Display for VerificationRecord {
     }
 }
 
-/// Create a new verification record based on an event
-pub async fn save_verification_record(
-    mut conn: db::PooledConnection,
-    event: &Event,
-    name: &str,
-) -> Result<()> {
-    let e = hex::decode(&event.id).ok();
-    let n = name.to_owned();
-    let a_prefix = event.get_author_prefix();
-    tokio::task::spawn_blocking(move || {
-        let tx = conn.transaction()?;
-        {
-            // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
-            let query = "INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash=?), ?, strftime('%s','now'));";
-            let mut stmt = tx.prepare(query)?;
-            stmt.execute(params![e, n])?;
-            // get the row ID
-            let v_id = tx.last_insert_rowid();
-            // delete everything else by this name
-            let del_query = "DELETE FROM user_verification WHERE name = ? AND id != ?;";
-            let mut del_stmt = tx.prepare(del_query)?;
-            let count = del_stmt.execute(params![n,v_id])?;
-            if count > 0 {
-                info!("removed {} old verification records for ({:?},{:?})", count, n, a_prefix);
-            }
-        }
-        tx.commit()?;
-        info!("saved new verification record for ({:?},{:?})", n, a_prefix);
-        let ok: Result<()> = Ok(());
-        ok
-    }).await?
-}
-
-/// Retrieve the most recent verification record for a given pubkey (async).
-pub async fn get_latest_user_verification(
-    conn: db::PooledConnection,
-    pubkey: &str,
-) -> Result<VerificationRecord> {
-    let p = pubkey.to_owned();
-    tokio::task::spawn_blocking(move || query_latest_user_verification(conn, p)).await?
-}
-
-/// Query database for the latest verification record for a given pubkey.
-pub fn query_latest_user_verification(
-    mut conn: db::PooledConnection,
-    pubkey: String,
-) -> Result<VerificationRecord> {
-    let tx = conn.transaction()?;
-    let query = "SELECT v.id, v.name, e.event_hash, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE e.author=? ORDER BY e.created_at DESC, v.verified_at DESC, v.failed_at DESC LIMIT 1;";
-    let mut stmt = tx.prepare_cached(query)?;
-    let fields = stmt.query_row(params![hex::decode(&pubkey).ok()], |r| {
-        let rowid: u64 = r.get(0)?;
-        let rowname: String = r.get(1)?;
-        let eventid: Vec<u8> = r.get(2)?;
-        let created_at: u64 = r.get(3)?;
-        // create a tuple since we can't throw non-rusqlite errors in this closure
-        Ok((
-            rowid,
-            rowname,
-            eventid,
-            created_at,
-            r.get(4).ok(),
-            r.get(5).ok(),
-            r.get(6)?,
-        ))
-    })?;
-    Ok(VerificationRecord {
-        rowid: fields.0,
-        name: Nip05Name::try_from(&fields.1[..])?,
-        address: pubkey,
-        event: hex::encode(fields.2),
-        event_created: fields.3,
-        last_success: fields.4,
-        last_failure: fields.5,
-        failure_count: fields.6,
-    })
-}
-
-/// Retrieve the oldest user verification (async)
-pub async fn get_oldest_user_verification(
-    conn: db::PooledConnection,
-    earliest: u64,
-) -> Result<VerificationRecord> {
-    tokio::task::spawn_blocking(move || query_oldest_user_verification(conn, earliest)).await?
-}
-
-pub fn query_oldest_user_verification(
-    mut conn: db::PooledConnection,
-    earliest: u64,
-) -> Result<VerificationRecord> {
-    let tx = conn.transaction()?;
-    let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v INNER JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
-    let mut stmt = tx.prepare_cached(query)?;
-    let fields = stmt.query_row(params![earliest, earliest], |r| {
-        let rowid: u64 = r.get(0)?;
-        let rowname: String = r.get(1)?;
-        let eventid: Vec<u8> = r.get(2)?;
-        let pubkey: Vec<u8> = r.get(3)?;
-        let created_at: u64 = r.get(4)?;
-        // create a tuple since we can't throw non-rusqlite errors in this closure
-        Ok((
-            rowid,
-            rowname,
-            eventid,
-            pubkey,
-            created_at,
-            r.get(5).ok(),
-            r.get(6).ok(),
-            r.get(7)?,
-        ))
-    })?;
-    let vr = VerificationRecord {
-        rowid: fields.0,
-        name: Nip05Name::try_from(&fields.1[..])?,
-        address: hex::encode(fields.3),
-        event: hex::encode(fields.2),
-        event_created: fields.4,
-        last_success: fields.5,
-        last_failure: fields.6,
-        failure_count: fields.7,
-    };
-    Ok(vr)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -762,7 +530,7 @@ mod tests {
     fn local_from_inet() {
         let addr = "bob@example.com";
         let parsed = Nip05Name::try_from(addr);
-        assert!(!parsed.is_err());
+        assert!(parsed.is_ok());
         let v = parsed.unwrap();
         assert_eq!(v.local, "bob");
         assert_eq!(v.domain, "example.com");

@@ -18,6 +18,7 @@ pub struct Info {
 #[allow(unused)]
 pub struct Database {
     pub data_directory: String,
+    pub engine: String,
     pub in_memory: bool,
     pub min_conn: u32,
     pub max_conn: u32,
@@ -206,6 +207,7 @@ impl Default for Settings {
             diagnostics: Diagnostics { tracing: false },
             database: Database {
                 data_directory: ".".to_owned(),
+		engine: "sqlite".to_owned(),
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 8,

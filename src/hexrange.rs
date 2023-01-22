@@ -19,7 +19,7 @@ fn is_all_fs(s: &str) -> bool {
 }
 
 /// Find the next hex sequence greater than the argument.
-pub fn hex_range(s: &str) -> Option<HexSearch> {
+#[must_use] pub fn hex_range(s: &str) -> Option<HexSearch> {
     // handle special cases
     if !is_hex(s) || s.len() > 64 {
         return None;

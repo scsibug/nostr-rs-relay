@@ -1,6 +1,6 @@
 //! Server process
 use clap::Parser;
-use nostr_rs_relay::cli::*;
+use nostr_rs_relay::cli::CLIArgs;
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
 use std::sync::mpsc as syncmpsc;
@@ -37,12 +37,15 @@ fn main() {
     if let Some(db_dir) = db_dir_arg {
         settings.database.data_directory = db_dir;
     }
+    // we should have a 'control plane' channel to monitor and bump
+    // the server.  this will let us do stuff like clear the database,
+    // shutdown, etc.; for now all this does is initiate shutdown if
+    // `()` is sent.  This will change in the future, this is just a
+    // stopgap to shutdown the relay when it is used as a library.
     let (_, ctrl_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
     // run this in a new thread
-    let handle = thread::spawn(|| {
-        // we should have a 'control plane' channel to monitor and bump the server.
-        // this will let us do stuff like clear the database, shutdown, etc.
-        let _svr = start_server(settings, ctrl_rx);
+    let handle = thread::spawn(move || {
+        let _svr = start_server(&settings, ctrl_rx);
     });
     // block on nostr thread to finish.
     handle.join().unwrap();
