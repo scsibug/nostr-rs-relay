@@ -9,6 +9,7 @@ use crate::repo::sqlite_migration::{STARTUP_SQL,upgrade_db};
 use crate::utils::{is_hex, is_lower_hex};
 use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::subscription::{ReqFilter, Subscription};
+use crate::server::NostrMetrics;
 use hex;
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -35,6 +36,8 @@ pub const DB_FILE: &str = "nostr.db";
 
 #[derive(Clone)]
 pub struct SqliteRepo {
+    /// Metrics
+    metrics: NostrMetrics,
     /// Pool for reading events and NIP-05 status
     read_pool: SqlitePool,
     /// Pool for writing events and NIP-05 verification
@@ -49,7 +52,7 @@ pub struct SqliteRepo {
 
 impl SqliteRepo {
     // build all the pools needed
-    #[must_use] pub fn new(settings: &Settings) -> SqliteRepo {
+    #[must_use] pub fn new(settings: &Settings, metrics: NostrMetrics) -> SqliteRepo {
         let maint_pool = build_pool(
             "maintenance",
             settings,
@@ -82,6 +85,7 @@ impl SqliteRepo {
         let write_in_progress = Arc::new(Mutex::new(0));
 
         SqliteRepo {
+	    metrics,
             read_pool,
             write_pool,
             maint_pool,
@@ -235,13 +239,18 @@ impl NostrRepo for SqliteRepo {
     }
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
+	let start = Instant::now();
         let _write_guard = self.write_in_progress.lock().await;
         // spawn a blocking thread
         let mut conn = self.write_pool.get()?;
         let e = e.clone();
-        task::spawn_blocking(move || {
+        let event_count = task::spawn_blocking(move || {
             SqliteRepo::persist_event(&mut conn, &e)
-        }).await?
+        }).await?;
+	self.metrics
+            .write_events
+            .observe(start.elapsed().as_secs_f64());
+	event_count
     }
 
     /// Perform a database query using a subscription.
@@ -259,6 +268,7 @@ impl NostrRepo for SqliteRepo {
     ) -> Result<()> {
         let pre_spawn_start = Instant::now();
         let self=self.clone();
+	let metrics=self.metrics.clone();
         task::spawn_blocking(move || {
             {
                 // if we are waiting on a checkpoint, stop until it is complete
@@ -392,10 +402,13 @@ impl NostrRepo for SqliteRepo {
             } else {
                 warn!("Could not get a database connection for querying");
             }
+	    metrics
+		.query_sub
+		.observe(pre_spawn_start.elapsed().as_secs_f64());
             let ok: Result<()> = Ok(());
             ok
         });
-        Ok(())
+	Ok(())
     }
 
     /// Perform normal maintenance

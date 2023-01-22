@@ -43,6 +43,7 @@ rand = "0.8"
 const_format = "0.2.28"
 regex = "1"
 async-trait = "0.1.60"
+prometheus = "0.13.3"
 
 [dev-dependencies]
 anyhow = "1"

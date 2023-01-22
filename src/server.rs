@@ -13,6 +13,7 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::subscription::Subscription;
+use prometheus::{CounterVec, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
@@ -55,6 +56,8 @@ async fn handle_web_request(
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
+    registry: Registry,
+    metrics: NostrMetrics,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -116,6 +119,7 @@ async fn handle_web_request(
                                     broadcast,
                                     event_tx,
                                     shutdown,
+                                    metrics,
                                 ));
                             }
                             // todo: trace, don't print...
@@ -166,6 +170,18 @@ async fn handle_web_request(
                .status(200)
                .header("Content-Type", "text/plain")
                .body(Body::from("Please use a Nostr client to connect."))
+               .unwrap())
+        }
+        ("/metrics", false) => {
+            let mut buffer = vec![];
+            let encoder = TextEncoder::new();
+            let metric_families = registry.gather();
+            encoder.encode(&metric_families, &mut buffer).unwrap();
+
+            Ok(Response::builder()
+               .status(StatusCode::OK)
+               .header("Content-Type", "text/plain")
+               .body(Body::from(buffer))
                .unwrap())
         }
         (_, _) => {
@@ -293,8 +309,35 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // overwhelming this will drop events and won't register
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
+
+        // setup prometheus registry
+        let registry = Registry::new();
+
+        let query_sub = Histogram::with_opts(HistogramOpts::new(
+            "query_sub",
+            "Subscription response times",
+        ))
+        .unwrap();
+        let write_events = Histogram::with_opts(HistogramOpts::new(
+            "write_event",
+            "Event writing response times",
+        ))
+        .unwrap();
+        let connections = CounterVec::new(
+            Opts::new("connections", "New connections"),
+            vec!["origin"].as_slice(),
+        )
+        .unwrap();
+        registry.register(Box::new(query_sub.clone())).unwrap();
+        registry.register(Box::new(write_events.clone())).unwrap();
+        registry.register(Box::new(connections.clone())).unwrap();
+        let metrics = NostrMetrics {
+            query_sub,
+            write_events,
+            connections,
+        };
         // build a repository for events
-        let repo = db::build_repo(&settings).await;
+        let repo = db::build_repo(&settings, metrics.clone()).await;
         // start the database writer task.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
@@ -360,6 +403,8 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
+            let registry = registry.clone();
+            let metrics = metrics.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -371,6 +416,8 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         bcast.clone(),
                         event.clone(),
                         stop.subscribe(),
+                        registry.clone(),
+                        metrics.clone(),
                     )
                 }))
             }
@@ -451,6 +498,7 @@ async fn nostr_server(
     broadcast: Sender<Event>,
     event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
+    metrics: NostrMetrics,
 ) {
     // the time this websocket nostr server started
     let orig_start = Instant::now();
@@ -510,6 +558,17 @@ async fn nostr_server(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
     );
+
+    // Measure connections per origin
+    let mut metric_map: HashMap<&str, &str> = HashMap::new();
+    metric_map.insert("origin", origin.as_str());
+
+    metrics
+        .connections
+        .get_metric_with(&metric_map)
+        .unwrap()
+        .inc();
+
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
@@ -722,4 +781,11 @@ async fn nostr_server(
         client_received_event_count,
         orig_start.elapsed()
     );
+}
+
+#[derive(Clone)]
+pub struct NostrMetrics {
+    pub query_sub: Histogram,
+    pub write_events: Histogram,
+    pub connections: CounterVec,
 }

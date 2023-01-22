@@ -3,6 +3,7 @@ use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::server::NostrMetrics;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
@@ -29,15 +30,15 @@ pub const DB_FILE: &str = "nostr.db";
 /// # Panics
 ///
 /// Will panic if the pool could not be created.
-pub async fn build_repo(settings: &Settings) -> Arc<dyn NostrRepo> {
+pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
-        "sqlite" => {Arc::new(build_sqlite_pool(settings).await)},
+        "sqlite" => {Arc::new(build_sqlite_pool(settings, metrics).await)},
         _ => panic!("Unknown database engine"),
     }
 }
 
-async fn build_sqlite_pool(settings: &Settings) -> SqliteRepo {
-    let repo = SqliteRepo::new(settings);
+async fn build_sqlite_pool(settings: &Settings, metrics: NostrMetrics) -> SqliteRepo {
+    let repo = SqliteRepo::new(settings, metrics);
     repo.start().await.ok();
     repo.migrate_up().await.ok();
     repo
