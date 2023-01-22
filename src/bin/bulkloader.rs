@@ -1,14 +1,13 @@
 use std::io;
 use std::path::Path;
 use nostr_rs_relay::utils::is_lower_hex;
-use tracing::*;
+use tracing::info;
 use nostr_rs_relay::config;
 use nostr_rs_relay::event::{Event,single_char_tagname};
 use nostr_rs_relay::error::{Error, Result};
-use nostr_rs_relay::db::build_pool;
-use nostr_rs_relay::schema::{curr_db_version, DB_VERSION};
+use nostr_rs_relay::repo::sqlite::{PooledConnection, build_pool};
+use nostr_rs_relay::repo::sqlite_migration::{curr_db_version, DB_VERSION};
 use rusqlite::{OpenFlags, Transaction};
-use nostr_rs_relay::db::PooledConnection;
 use std::sync::mpsc;
 use std::thread;
 use rusqlite::params;
@@ -67,7 +66,7 @@ pub fn main() -> Result<()> {
 	info!("finished parsing events");
 	event_tx.send(None).ok();
 	let ok: Result<()> = Ok(());
-        return ok;
+        ok
     });
     let mut conn: PooledConnection = pool.get()?;
     let mut events_read = 0;

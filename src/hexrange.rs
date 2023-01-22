@@ -19,7 +19,7 @@ fn is_all_fs(s: &str) -> bool {
 }
 
 /// Find the next hex sequence greater than the argument.
-pub fn hex_range(s: &str) -> Option<HexSearch> {
+#[must_use] pub fn hex_range(s: &str) -> Option<HexSearch> {
     // handle special cases
     if !is_hex(s) || s.len() > 64 {
         return None;
@@ -57,8 +57,9 @@ pub fn hex_range(s: &str) -> Option<HexSearch> {
         } else if odd {
             // check if first char in this byte is NOT 'f'
             if b < 240 {
-                upper[byte_len] = b + 16; // bump up the first character in this byte
-                                          // increment done, stop iterating through the vec
+		// bump up the first character in this byte
+                upper[byte_len] = b + 16;
+		// increment done, stop iterating through the vec
                 break;
             }
             // if it is 'f', reset the byte to 0 and do a carry

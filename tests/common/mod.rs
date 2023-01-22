@@ -36,9 +36,9 @@ pub fn start_relay() -> Result<Relay> {
     settings.database.min_conn = 4;
     settings.database.max_conn = 8;
     let (shutdown_tx, shutdown_rx): (MpscSender<()>, MpscReceiver<()>) = syncmpsc::channel();
-    let handle = thread::spawn(|| {
+    let handle = thread::spawn(move || {
         // server will block the thread it is run on.
-        let _ = start_server(settings, shutdown_rx);
+        let _ = start_server(&settings, shutdown_rx);
     });
     // how do we know the relay has finished starting up?
     Ok(Relay {

@@ -18,6 +18,7 @@ pub struct Info {
 #[allow(unused)]
 pub struct Database {
     pub data_directory: String,
+    pub engine: String,
     pub in_memory: bool,
     pub min_conn: u32,
     pub max_conn: u32,
@@ -169,9 +170,9 @@ impl Settings {
     fn new_from_default(default: &Settings) -> Result<Self, ConfigError> {
         let builder = Config::builder();
         let config: Config = builder
-            // use defaults
+        // use defaults
             .add_source(Config::try_from(default)?)
-            // override with file contents
+        // override with file contents
             .add_source(File::with_name("config.toml"))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
@@ -206,6 +207,7 @@ impl Default for Settings {
             diagnostics: Diagnostics { tracing: false },
             database: Database {
                 data_directory: ".".to_owned(),
+                engine: "sqlite".to_owned(),
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 8,

@@ -65,21 +65,21 @@ impl<'de> Deserialize<'de> for ReqFilter {
             tags: None,
             force_no_match: false,
         };
-	let empty_string = "".into();
+        let empty_string = "".into();
         let mut ts = None;
         // iterate through each key, and assign values that exist
-        for (key, val) in filter.into_iter() {
+        for (key, val) in filter {
             // ids
             if key == "ids" {
-		let raw_ids: Option<Vec<String>>= Deserialize::deserialize(val).ok();
-		if let Some(a) = raw_ids.as_ref() {
-		    if a.contains(&empty_string) {
-		    return Err(serde::de::Error::invalid_type(
-                Unexpected::Other("prefix matches must not be empty strings"),
-                &"a json object"));
-		    }
-		}
-		rf.ids =raw_ids;
+                let raw_ids: Option<Vec<String>>= Deserialize::deserialize(val).ok();
+                if let Some(a) = raw_ids.as_ref() {
+                    if a.contains(&empty_string) {
+                        return Err(serde::de::Error::invalid_type(
+                            Unexpected::Other("prefix matches must not be empty strings"),
+                            &"a json object"));
+                    }
+                }
+                rf.ids =raw_ids;
             } else if key == "kinds" {
                 rf.kinds = Deserialize::deserialize(val).ok();
             } else if key == "since" {
@@ -90,14 +90,14 @@ impl<'de> Deserialize<'de> for ReqFilter {
                 rf.limit = Deserialize::deserialize(val).ok();
             } else if key == "authors" {
                 let raw_authors: Option<Vec<String>>= Deserialize::deserialize(val).ok();
-		if let Some(a) = raw_authors.as_ref() {
-		    if a.contains(&empty_string) {
-			return Err(serde::de::Error::invalid_type(
-			    Unexpected::Other("prefix matches must not be empty strings"),
-			    &"a json object"));
-		    }
-		}
-		rf.authors = raw_authors;
+                if let Some(a) = raw_authors.as_ref() {
+                    if a.contains(&empty_string) {
+                        return Err(serde::de::Error::invalid_type(
+                            Unexpected::Other("prefix matches must not be empty strings"),
+                            &"a json object"));
+                    }
+                }
+                rf.authors = raw_authors;
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
                 if let Some(tag_search) = tag_search_char_from_filter(key) {
                     if ts.is_none() {
@@ -107,7 +107,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
                     if let Some(m) = ts.as_mut() {
                         let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                         if let Some(v) = tag_vals {
-                            let hs = HashSet::from_iter(v.into_iter());
+                            let hs = v.into_iter().collect::<HashSet<_>>();
                             m.insert(tag_search.to_owned(), hs);
                         }
                     };
@@ -197,20 +197,20 @@ impl<'de> Deserialize<'de> for Subscription {
 
 impl Subscription {
     /// Get a copy of the subscription identifier.
-    pub fn get_id(&self) -> String {
+    #[must_use] pub fn get_id(&self) -> String {
         self.id.clone()
     }
 
     /// Determine if any filter is requesting historical (database)
     /// queries.  If every filter has limit:0, we do not need to query the DB.
-    pub fn needs_historical_events(&self) -> bool {
-	self.filters.iter().any(|f| f.limit!=Some(0))
+    #[must_use] pub fn needs_historical_events(&self) -> bool {
+        self.filters.iter().any(|f| f.limit!=Some(0))
     }
 
     /// Determine if this subscription matches a given [`Event`].  Any
     /// individual filter match is sufficient.
-    pub fn interested_in_event(&self, event: &Event) -> bool {
-        for f in self.filters.iter() {
+    #[must_use] pub fn interested_in_event(&self, event: &Event) -> bool {
+        for f in &self.filters {
             if f.interested_in_event(event) {
                 return true;
             }
@@ -233,23 +233,20 @@ impl ReqFilter {
     fn ids_match(&self, event: &Event) -> bool {
         self.ids
             .as_ref()
-            .map(|vs| prefix_match(vs, &event.id))
-            .unwrap_or(true)
+            .map_or(true, |vs| prefix_match(vs, &event.id))
     }
 
     fn authors_match(&self, event: &Event) -> bool {
         self.authors
             .as_ref()
-            .map(|vs| prefix_match(vs, &event.pubkey))
-            .unwrap_or(true)
+            .map_or(true, |vs| prefix_match(vs, &event.pubkey))
     }
 
     fn delegated_authors_match(&self, event: &Event) -> bool {
         if let Some(delegated_pubkey) = &event.delegated_by {
             self.authors
                 .as_ref()
-                .map(|vs| prefix_match(vs, delegated_pubkey))
-                .unwrap_or(true)
+                .map_or(true, |vs| prefix_match(vs, delegated_pubkey))
         } else {
             false
         }
@@ -275,16 +272,15 @@ impl ReqFilter {
     fn kind_match(&self, kind: u64) -> bool {
         self.kinds
             .as_ref()
-            .map(|ks| ks.contains(&kind))
-            .unwrap_or(true)
+            .map_or(true, |ks| ks.contains(&kind))
     }
 
     /// Determine if all populated fields in this filter match the provided event.
-    pub fn interested_in_event(&self, event: &Event) -> bool {
+    #[must_use] pub fn interested_in_event(&self, event: &Event) -> bool {
         //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
         self.ids_match(event)
-            && self.since.map(|t| event.created_at > t).unwrap_or(true)
-            && self.until.map(|t| event.created_at < t).unwrap_or(true)
+            && self.since.map_or(true, |t| event.created_at > t)
+            && self.until.map_or(true, |t| event.created_at < t)
             && self.kind_match(event.kind)
             && (self.authors_match(event) || self.delegated_authors_match(event))
             && self.tag_match(event)
@@ -320,19 +316,19 @@ mod tests {
 
     #[test]
     fn req_empty_authors_prefix() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"authors\": [\"\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"authors\": [\"\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 
     #[test]
     fn req_empty_ids_prefix() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 
     #[test]
     fn req_empty_ids_prefix_mixed() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\",\"aaa\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\",\"aaa\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 

@@ -113,7 +113,7 @@ pub fn db_tag_count(conn: &mut Connection) -> Result<usize> {
     Ok(count)
 }
 
-fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
+fn mig_init(conn: &mut PooledConnection) -> usize {
     match conn.execute_batch(INIT_SQL) {
         Ok(()) => {
             info!(
@@ -126,11 +126,11 @@ fn mig_init(conn: &mut PooledConnection) -> Result<usize> {
             panic!("database could not be initialized");
         }
     }
-    Ok(DB_VERSION)
+    DB_VERSION
 }
 
 /// Upgrade DB to latest version, and execute pragma settings
-pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
+pub fn upgrade_db(conn: &mut PooledConnection) -> Result<usize> {
     // check the version.
     let mut curr_version = curr_db_version(conn)?;
     info!("DB version = {:?}", curr_version);
@@ -141,11 +141,11 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     );
     debug!(
         "SQLite max table/blob/text length: {} MB",
-        (conn.limit(Limit::SQLITE_LIMIT_LENGTH) as f64 / (1024 * 1024) as f64).floor()
+        (f64::from(conn.limit(Limit::SQLITE_LIMIT_LENGTH)) / f64::from(1024 * 1024)).floor()
     );
     debug!(
         "SQLite max SQL length: {} MB",
-        (conn.limit(Limit::SQLITE_LIMIT_SQL_LENGTH) as f64 / (1024 * 1024) as f64).floor()
+        (f64::from(conn.limit(Limit::SQLITE_LIMIT_SQL_LENGTH)) / f64::from(1024 * 1024)).floor()
     );
 
     match curr_version.cmp(&DB_VERSION) {
@@ -153,7 +153,7 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
         Ordering::Less => {
             // initialize from scratch
             if curr_version == 0 {
-                curr_version = mig_init(conn)?;
+                curr_version = mig_init(conn);
             }
             // for initialized but out-of-date schemas, proceed to
             // upgrade sequentially until we are current.
@@ -223,7 +223,7 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<()> {
     // Setup PRAGMA
     conn.execute_batch(STARTUP_SQL)?;
     debug!("SQLite PRAGMA startup completed");
-    Ok(())
+    Ok(DB_VERSION)
 }
 
 pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
@@ -240,10 +240,10 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
         let mut stmt = tx.prepare("select id, content from event order by id;")?;
         let mut tag_rows = stmt.query([])?;
         while let Some(row) = tag_rows.next()? {
-	    if (events_processed as f32)/(count as f32) > percent_done {
-		info!("Tag update {}% complete...", (100.0*percent_done).round());
-		percent_done += update_each_percent;
-	    }
+            if (events_processed as f32)/(count as f32) > percent_done {
+                info!("Tag update {}% complete...", (100.0*percent_done).round());
+                percent_done += update_each_percent;
+            }
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_id: u64 = row.get(0)?;
             let event_json: String = row.get(1)?;
@@ -272,7 +272,7 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
                     )?;
                 }
             }
-	    events_processed += 1;
+            events_processed += 1;
         }
     }
     tx.commit()?;
@@ -560,7 +560,7 @@ fn mig_11_to_12(conn: &mut PooledConnection) -> Result<usize> {
         // Lookup every replaceable event
         let mut stmt = tx.prepare("select kind,author from event where kind in (0,3,41) or (kind>=10000 and kind<20000) order by id;")?;
         let mut replaceable_rows = stmt.query([])?;
-	info!("updating replaceable events; this could take awhile...");
+        info!("updating replaceable events; this could take awhile...");
         while let Some(row) = replaceable_rows.next()? {
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_kind: u64 = row.get(0)?;
@@ -641,10 +641,10 @@ PRAGMA user_version = 15;
     let clear_hidden_sql = r##"DELETE FROM event WHERE HIDDEN=true;"##;
     info!("removing hidden events; this may take awhile...");
     match conn.execute_batch(clear_hidden_sql) {
-	Ok(()) => {
-	    info!("all hidden events removed");
-	},
-	Err(err) => {
+        Ok(()) => {
+            info!("all hidden events removed");
+        },
+        Err(err) => {
             error!("delete failed: {}", err);
             panic!("could not remove hidden events");
         }
