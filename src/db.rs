@@ -117,7 +117,7 @@ pub async fn db_writer(
                 debug!(
                     "rejecting event: {}, blacklisted kind: {}",
                     &event.get_event_id_prefix(),
-		    &event.kind
+                    &event.kind
                 );
                 notice_tx
                     .try_send(Notice::blocked(
@@ -138,51 +138,51 @@ pub async fn db_writer(
             metadata_tx.send(event.clone()).ok();
         }
 
-            // check for  NIP-05 verification
+        // check for  NIP-05 verification
         if nip05_enabled {
-	    match repo.get_latest_user_verification(&event.pubkey).await {
-                    Ok(uv) => {
-                        if uv.is_valid(&settings.verified_users) {
-                            info!(
-                                "new event from verified author ({:?},{:?})",
-                                uv.name.to_string(),
-                                event.get_author_prefix()
-                            );
-                        } else {
-                            info!(
-                                "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
-                                uv.name.to_string(),
-                                event.get_author_prefix()
-                            );
-                            notice_tx
-                                .try_send(Notice::blocked(
-                                    event.id,
-                                    "NIP-05 verification is no longer valid (expired/wrong domain)",
-                                ))
-                                .ok();
-                            continue;
-                        }
-                    }
-                    Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
-                        debug!(
-                            "no verification records found for pubkey: {:?}",
+            match repo.get_latest_user_verification(&event.pubkey).await {
+                Ok(uv) => {
+                    if uv.is_valid(&settings.verified_users) {
+                        info!(
+                            "new event from verified author ({:?},{:?})",
+                            uv.name.to_string(),
+                            event.get_author_prefix()
+                        );
+                    } else {
+                        info!(
+                            "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
+                            uv.name.to_string(),
                             event.get_author_prefix()
                         );
                         notice_tx
                             .try_send(Notice::blocked(
                                 event.id,
-                                "NIP-05 verification needed to publish events",
+                                "NIP-05 verification is no longer valid (expired/wrong domain)",
                             ))
                             .ok();
                         continue;
                     }
-                    Err(e) => {
-                        warn!("checking nip05 verification status failed: {:?}", e);
-                        continue;
-                    }
+                }
+                Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+                    debug!(
+                        "no verification records found for pubkey: {:?}",
+                        event.get_author_prefix()
+                    );
+                    notice_tx
+                        .try_send(Notice::blocked(
+                            event.id,
+                            "NIP-05 verification needed to publish events",
+                        ))
+                        .ok();
+                    continue;
+                }
+                Err(e) => {
+                    warn!("checking nip05 verification status failed: {:?}", e);
+                    continue;
                 }
             }
-            // TODO: cache recent list of authors to remove a DB call.
+        }
+        // TODO: cache recent list of authors to remove a DB call.
         let start = Instant::now();
         if event.kind >= 20000 && event.kind < 30000 {
             bcast_tx.send(event.clone()).ok();
@@ -203,7 +203,7 @@ pub async fn db_writer(
                         info!(
                             "persisted event: {:?} (kind: {}) from: {:?} in: {:?}",
                             event.get_event_id_prefix(),
-			    event.kind,
+                            event.kind,
                             event.get_author_prefix(),
                             start.elapsed()
                         );

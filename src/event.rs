@@ -88,14 +88,14 @@ impl From<EventCmd> for Result<Event> {
     fn from(ec: EventCmd) -> Result<Event> {
         // ensure command is correct
         if ec.cmd == "EVENT" {
-	    ec.event.validate().map(|_| {
+            ec.event.validate().map(|_| {
                 let mut e = ec.event;
                 e.build_index();
                 e.update_delegation();
                 e
             })
         } else {
-	    Err(CommandUnknownError)
+            Err(CommandUnknownError)
         }
     }
 }
@@ -122,7 +122,7 @@ impl Event {
 
     /// Should this event be replaced with newer timestamps from same author?
     #[must_use] pub fn is_replaceable(&self) -> bool {
-	self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
+        self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
     }
 
     /// Pull a NIP-05 Name out of the event, if one exists
@@ -359,7 +359,7 @@ mod tests {
     fn empty_event_tag_match() {
         let event = Event::simple_event();
         assert!(!event
-            .generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
+		.generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
     }
 
     #[test]
@@ -506,13 +506,13 @@ mod tests {
 
     #[test]
     fn replaceable_event() {
-	let mut event = Event::simple_event();
-	event.kind=0;
-	assert!(event.is_replaceable());
-	event.kind=3;
-	assert!(event.is_replaceable());
-	event.kind=12000;
-	assert!(event.is_replaceable());
+        let mut event = Event::simple_event();
+        event.kind=0;
+        assert!(event.is_replaceable());
+        event.kind=3;
+        assert!(event.is_replaceable());
+        event.kind=12000;
+        assert!(event.is_replaceable());
 
     }
 

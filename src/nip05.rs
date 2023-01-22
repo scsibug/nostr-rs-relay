@@ -58,8 +58,8 @@ impl Nip05Name {
             "https://{}/.well-known/nostr.json?name={}",
             self.domain, self.local
         )
-        .parse::<http::Uri>()
-        .ok()
+            .parse::<http::Uri>()
+            .ok()
     }
 }
 
@@ -70,7 +70,7 @@ impl std::convert::TryFrom<&str> for Nip05Name {
         // break full name at the @ boundary.
         let components: Vec<&str> = inet.split('@').collect();
         if components.len() == 2 {
-	    // check if local name is valid
+            // check if local name is valid
             let local = components[0];
             let domain = components[1];
             if local.chars().all(|x| x.is_alphanumeric() || x == '_' || x == '-' || x == '.') {
@@ -93,7 +93,7 @@ impl std::convert::TryFrom<&str> for Nip05Name {
                 ))
             }
         } else {
-	    Err(Error::CustomError("too many/few components".to_owned()))
+            Err(Error::CustomError("too many/few components".to_owned()))
         }
     }
 }
@@ -122,7 +122,7 @@ fn body_contains_user(username: &str, address: &str, bytes: &hyper::body::Bytes)
 
 impl Verifier {
     pub fn new(
-	repo: Arc<dyn NostrRepo>,
+        repo: Arc<dyn NostrRepo>,
         metadata_rx: tokio::sync::broadcast::Receiver<Event>,
         event_tx: tokio::sync::broadcast::Sender<Event>,
         settings: crate::config::Settings,
@@ -143,7 +143,7 @@ impl Verifier {
         // duration.
         let reverify_interval = tokio::time::interval(http_wait_duration);
         Ok(Verifier {
-	    repo,
+            repo,
             metadata_rx,
             event_tx,
             settings,
@@ -343,35 +343,35 @@ impl Verifier {
                         // timestamp.
                         self.repo.update_verification_timestamp(v.rowid)
                             .await?;
-			info!("verification updated for {}", v.to_string());
+                        info!("verification updated for {}", v.to_string());
 
                     }
                     UserWebVerificationStatus::DomainNotAllowed
-                    | UserWebVerificationStatus::Unknown => {
-                        // server may be offline, or temporarily
-                        // blocked by the config file.  Note the
-                        // failure so we can process something
-                        // else.
+			| UserWebVerificationStatus::Unknown => {
+                            // server may be offline, or temporarily
+                            // blocked by the config file.  Note the
+                            // failure so we can process something
+                            // else.
 
-                        // have we had enough failures to give up?
-                        if v.failure_count >= max_failures as u64 {
-                            info!(
-                                "giving up on verifying {:?} after {} failures",
-                                v.name, v.failure_count
-                            );
-                            self.repo.delete_verification(v.rowid)
-                                .await?;
-                        } else {
-                            // record normal failure, incrementing failure count
-			    info!("verification failed for {}", v.to_string());
-			    self.repo.fail_verification(v.rowid).await?;
-                        }
-                    }
+                            // have we had enough failures to give up?
+                            if v.failure_count >= max_failures as u64 {
+				info!(
+                                    "giving up on verifying {:?} after {} failures",
+                                    v.name, v.failure_count
+				);
+				self.repo.delete_verification(v.rowid)
+                                    .await?;
+                            } else {
+				// record normal failure, incrementing failure count
+				info!("verification failed for {}", v.to_string());
+				self.repo.fail_verification(v.rowid).await?;
+                            }
+			}
                     UserWebVerificationStatus::Unverified => {
                         // domain has removed the verification, drop
                         // the record on our side.
-			info!("verification rescinded for {}", v.to_string());
-			self.repo.delete_verification(v.rowid)
+                        info!("verification rescinded for {}", v.to_string());
+                        self.repo.delete_verification(v.rowid)
                             .await?;
                     }
                 }
@@ -405,27 +405,27 @@ impl Verifier {
         // disabled/passive, the event has already been persisted.
         let should_write_event = self.settings.verified_users.is_enabled();
         if should_write_event {
-             match self.repo.write_event(event).await {
-                 Ok(updated) => {
-                     if updated != 0 {
-                         info!(
-                             "persisted event (new verified pubkey): {:?} in {:?}",
-                             event.get_event_id_prefix(),
-                             start.elapsed()
-                         );
-                         self.event_tx.send(event.clone()).ok();
-                     }
-                 }
-                 Err(err) => {
-                     warn!("event insert failed: {:?}", err);
-                     if let Error::SqlError(r) = err {
-                         warn!("because: : {:?}", r);
-                     }
-                 }
-             }
+            match self.repo.write_event(event).await {
+                Ok(updated) => {
+                    if updated != 0 {
+                        info!(
+                            "persisted event (new verified pubkey): {:?} in {:?}",
+                            event.get_event_id_prefix(),
+                            start.elapsed()
+                        );
+                        self.event_tx.send(event.clone()).ok();
+                    }
+                }
+                Err(err) => {
+                    warn!("event insert failed: {:?}", err);
+                    if let Error::SqlError(r) = err {
+                        warn!("because: : {:?}", r);
+                    }
+                }
+            }
         }
         // write the verification record
-	self.repo.create_verification_record(&event.id, name).await?;
+        self.repo.create_verification_record(&event.id, name).await?;
         Ok(())
     }
 }

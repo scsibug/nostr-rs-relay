@@ -65,21 +65,21 @@ impl<'de> Deserialize<'de> for ReqFilter {
             tags: None,
             force_no_match: false,
         };
-	let empty_string = "".into();
+        let empty_string = "".into();
         let mut ts = None;
         // iterate through each key, and assign values that exist
         for (key, val) in filter {
             // ids
             if key == "ids" {
-		let raw_ids: Option<Vec<String>>= Deserialize::deserialize(val).ok();
-		if let Some(a) = raw_ids.as_ref() {
-		    if a.contains(&empty_string) {
-		    return Err(serde::de::Error::invalid_type(
-                Unexpected::Other("prefix matches must not be empty strings"),
-                &"a json object"));
-		    }
-		}
-		rf.ids =raw_ids;
+                let raw_ids: Option<Vec<String>>= Deserialize::deserialize(val).ok();
+                if let Some(a) = raw_ids.as_ref() {
+                    if a.contains(&empty_string) {
+                        return Err(serde::de::Error::invalid_type(
+                            Unexpected::Other("prefix matches must not be empty strings"),
+                            &"a json object"));
+                    }
+                }
+                rf.ids =raw_ids;
             } else if key == "kinds" {
                 rf.kinds = Deserialize::deserialize(val).ok();
             } else if key == "since" {
@@ -90,14 +90,14 @@ impl<'de> Deserialize<'de> for ReqFilter {
                 rf.limit = Deserialize::deserialize(val).ok();
             } else if key == "authors" {
                 let raw_authors: Option<Vec<String>>= Deserialize::deserialize(val).ok();
-		if let Some(a) = raw_authors.as_ref() {
-		    if a.contains(&empty_string) {
-			return Err(serde::de::Error::invalid_type(
-			    Unexpected::Other("prefix matches must not be empty strings"),
-			    &"a json object"));
-		    }
-		}
-		rf.authors = raw_authors;
+                if let Some(a) = raw_authors.as_ref() {
+                    if a.contains(&empty_string) {
+                        return Err(serde::de::Error::invalid_type(
+                            Unexpected::Other("prefix matches must not be empty strings"),
+                            &"a json object"));
+                    }
+                }
+                rf.authors = raw_authors;
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
                 if let Some(tag_search) = tag_search_char_from_filter(key) {
                     if ts.is_none() {
@@ -107,7 +107,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
                     if let Some(m) = ts.as_mut() {
                         let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                         if let Some(v) = tag_vals {
-			    let hs = v.into_iter().collect::<HashSet<_>>();
+                            let hs = v.into_iter().collect::<HashSet<_>>();
                             m.insert(tag_search.to_owned(), hs);
                         }
                     };
@@ -204,7 +204,7 @@ impl Subscription {
     /// Determine if any filter is requesting historical (database)
     /// queries.  If every filter has limit:0, we do not need to query the DB.
     #[must_use] pub fn needs_historical_events(&self) -> bool {
-	self.filters.iter().any(|f| f.limit!=Some(0))
+        self.filters.iter().any(|f| f.limit!=Some(0))
     }
 
     /// Determine if this subscription matches a given [`Event`].  Any
@@ -316,19 +316,19 @@ mod tests {
 
     #[test]
     fn req_empty_authors_prefix() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"authors\": [\"\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"authors\": [\"\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 
     #[test]
     fn req_empty_ids_prefix() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 
     #[test]
     fn req_empty_ids_prefix_mixed() {
-	let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\",\"aaa\"]}]";
+        let raw_json = "[\"REQ\",\"some-id\",{\"ids\": [\"\",\"aaa\"]}]";
         assert!(serde_json::from_str::<Subscription>(raw_json).is_err());
     }
 

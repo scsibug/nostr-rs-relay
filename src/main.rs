@@ -7,10 +7,7 @@ use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 use tracing::info;
-
-
 use console_subscriber::ConsoleLayer;
-
 
 /// Start running a Nostr relay server.
 fn main() {
@@ -23,8 +20,8 @@ fn main() {
         // enable tracing with tokio-console
         ConsoleLayer::builder().with_default_env().init();
     } else {
-	// standard logging
-	tracing_subscriber::fmt::try_init().unwrap();
+        // standard logging
+        tracing_subscriber::fmt::try_init().unwrap();
     }
     info!("Starting up from main");
 

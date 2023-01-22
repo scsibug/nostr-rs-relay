@@ -240,10 +240,10 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
         let mut stmt = tx.prepare("select id, content from event order by id;")?;
         let mut tag_rows = stmt.query([])?;
         while let Some(row) = tag_rows.next()? {
-	    if (events_processed as f32)/(count as f32) > percent_done {
-		info!("Tag update {}% complete...", (100.0*percent_done).round());
-		percent_done += update_each_percent;
-	    }
+            if (events_processed as f32)/(count as f32) > percent_done {
+                info!("Tag update {}% complete...", (100.0*percent_done).round());
+                percent_done += update_each_percent;
+            }
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_id: u64 = row.get(0)?;
             let event_json: String = row.get(1)?;
@@ -272,7 +272,7 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
                     )?;
                 }
             }
-	    events_processed += 1;
+            events_processed += 1;
         }
     }
     tx.commit()?;
@@ -560,7 +560,7 @@ fn mig_11_to_12(conn: &mut PooledConnection) -> Result<usize> {
         // Lookup every replaceable event
         let mut stmt = tx.prepare("select kind,author from event where kind in (0,3,41) or (kind>=10000 and kind<20000) order by id;")?;
         let mut replaceable_rows = stmt.query([])?;
-	info!("updating replaceable events; this could take awhile...");
+        info!("updating replaceable events; this could take awhile...");
         while let Some(row) = replaceable_rows.next()? {
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
             let event_kind: u64 = row.get(0)?;
@@ -641,10 +641,10 @@ PRAGMA user_version = 15;
     let clear_hidden_sql = r##"DELETE FROM event WHERE HIDDEN=true;"##;
     info!("removing hidden events; this may take awhile...");
     match conn.execute_batch(clear_hidden_sql) {
-	Ok(()) => {
-	    info!("all hidden events removed");
-	},
-	Err(err) => {
+        Ok(()) => {
+            info!("all hidden events removed");
+        },
+        Err(err) => {
             error!("delete failed: {}", err);
             panic!("could not remove hidden events");
         }

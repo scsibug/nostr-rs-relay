@@ -75,147 +75,147 @@ impl SqliteRepo {
             false,
         );
 
-	// this is used to block new reads during critical checkpoints
-	let checkpoint_in_progress = Arc::new(Mutex::new(0));
-	// SQLite can only effectively write single threaded, so don't
-	// block multiple worker threads unnecessarily.
-	let write_in_progress = Arc::new(Mutex::new(0));
+        // this is used to block new reads during critical checkpoints
+        let checkpoint_in_progress = Arc::new(Mutex::new(0));
+        // SQLite can only effectively write single threaded, so don't
+        // block multiple worker threads unnecessarily.
+        let write_in_progress = Arc::new(Mutex::new(0));
 
         SqliteRepo {
             read_pool,
-	    write_pool,
-	    maint_pool,
-	    checkpoint_in_progress,
-	    write_in_progress,
+            write_pool,
+            maint_pool,
+            checkpoint_in_progress,
+            write_in_progress,
         }
     }
 
     /// Persist an event to the database, returning rows added.
     pub fn persist_event(conn: &mut PooledConnection, e: &Event) -> Result<u64> {
-	// enable auto vacuum
-	conn.execute_batch("pragma auto_vacuum = FULL")?;
+        // enable auto vacuum
+        conn.execute_batch("pragma auto_vacuum = FULL")?;
 
-	// start transaction
-	let tx = conn.transaction()?;
-	// get relevant fields from event and convert to blobs.
-	let id_blob = hex::decode(&e.id).ok();
-	let pubkey_blob: Option<Vec<u8>> = hex::decode(&e.pubkey).ok();
-	let delegator_blob: Option<Vec<u8>> = e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
-	let event_str = serde_json::to_string(&e).ok();
-	// check for replaceable events that would hide this one; we won't even attempt to insert these.
-	if e.is_replaceable() {
+        // start transaction
+        let tx = conn.transaction()?;
+        // get relevant fields from event and convert to blobs.
+        let id_blob = hex::decode(&e.id).ok();
+        let pubkey_blob: Option<Vec<u8>> = hex::decode(&e.pubkey).ok();
+        let delegator_blob: Option<Vec<u8>> = e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
+        let event_str = serde_json::to_string(&e).ok();
+        // check for replaceable events that would hide this one; we won't even attempt to insert these.
+        if e.is_replaceable() {
             let repl_count = tx.query_row(
-		"SELECT e.id FROM event e INDEXED BY author_index WHERE e.author=? AND e.kind=? AND e.created_at > ? LIMIT 1;",
-		params![pubkey_blob, e.kind, e.created_at], |row| row.get::<usize, usize>(0));
-	    if repl_count.ok().is_some() {
-		return Ok(0);
-	    }
-	}
-	// ignore if the event hash is a duplicate.
-	let mut ins_count = tx.execute(
+                "SELECT e.id FROM event e INDEXED BY author_index WHERE e.author=? AND e.kind=? AND e.created_at > ? LIMIT 1;",
+                params![pubkey_blob, e.kind, e.created_at], |row| row.get::<usize, usize>(0));
+            if repl_count.ok().is_some() {
+                return Ok(0);
+            }
+        }
+        // ignore if the event hash is a duplicate.
+        let mut ins_count = tx.execute(
             "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
             params![id_blob, e.created_at, e.kind, pubkey_blob, delegator_blob, event_str]
-	)? as u64;
-	if ins_count == 0 {
+        )? as u64;
+        if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
             // pubkey references.
             tx.rollback().ok();
             return Ok(ins_count);
-	}
-	// remember primary key of the event most recently inserted.
-	let ev_id = tx.last_insert_rowid();
-	// add all tags to the tag table
-	for tag in &e.tags {
+        }
+        // remember primary key of the event most recently inserted.
+        let ev_id = tx.last_insert_rowid();
+        // add all tags to the tag table
+        for tag in &e.tags {
             // ensure we have 2 values.
             if tag.len() >= 2 {
-		let tagname = &tag[0];
-		let tagval = &tag[1];
-		// only single-char tags are searchable
-		let tagchar_opt = single_char_tagname(tagname);
-		match &tagchar_opt {
+                let tagname = &tag[0];
+                let tagval = &tag[1];
+                // only single-char tags are searchable
+                let tagchar_opt = single_char_tagname(tagname);
+                match &tagchar_opt {
                     Some(_) => {
-			// if tagvalue is lowercase hex;
-			if is_lower_hex(tagval) && (tagval.len() % 2 == 0) {
+                        // if tagvalue is lowercase hex;
+                        if is_lower_hex(tagval) && (tagval.len() % 2 == 0) {
                             tx.execute(
-				"INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
-				params![ev_id, &tagname, hex::decode(tagval).ok()],
+                                "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
+                                params![ev_id, &tagname, hex::decode(tagval).ok()],
                             )?;
-			} else {
+                        } else {
                             tx.execute(
-				"INSERT OR IGNORE INTO tag (event_id, name, value) VALUES (?1, ?2, ?3)",
-				params![ev_id, &tagname, &tagval],
+                                "INSERT OR IGNORE INTO tag (event_id, name, value) VALUES (?1, ?2, ?3)",
+                                params![ev_id, &tagname, &tagval],
                             )?;
-			}
+                        }
                     }
                     None => {}
-		}
+                }
             }
-	}
-	// if this event is replaceable update, remove other replaceable
-	// event with the same kind from the same author that was issued
-	// earlier than this.
-	if e.is_replaceable() {
-	    let author = hex::decode(&e.pubkey).ok();
-	    // this is a backwards check - hide any events that were older.
+        }
+        // if this event is replaceable update, remove other replaceable
+        // event with the same kind from the same author that was issued
+        // earlier than this.
+        if e.is_replaceable() {
+            let author = hex::decode(&e.pubkey).ok();
+            // this is a backwards check - hide any events that were older.
             let update_count = tx.execute(
-		"DELETE FROM event WHERE kind=? and author=? and id NOT IN (SELECT id FROM event INDEXED BY author_kind_index WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
-		params![e.kind, author, e.kind, author],
+                "DELETE FROM event WHERE kind=? and author=? and id NOT IN (SELECT id FROM event INDEXED BY author_kind_index WHERE kind=? AND author=? ORDER BY created_at DESC LIMIT 1)",
+                params![e.kind, author, e.kind, author],
             )?;
             if update_count > 0 {
-		info!(
+                info!(
                     "removed {} older replaceable kind {} events for author: {:?}",
                     update_count,
                     e.kind,
                     e.get_author_prefix()
-		);
+                );
             }
-	}
-	// if this event is a deletion, hide the referenced events from the same author.
-	if e.kind == 5 {
+        }
+        // if this event is a deletion, hide the referenced events from the same author.
+        if e.kind == 5 {
             let event_candidates = e.tag_values_by_name("e");
             // first parameter will be author
             let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(hex::decode(&e.pubkey)?)];
             event_candidates
-		.iter()
-		.filter(|x| is_hex(x) && x.len() == 64)
-		.filter_map(|x| hex::decode(x).ok())
-		.for_each(|x| params.push(Box::new(x)));
+                .iter()
+                .filter(|x| is_hex(x) && x.len() == 64)
+                .filter_map(|x| hex::decode(x).ok())
+                .for_each(|x| params.push(Box::new(x)));
             let query = format!(
-		"UPDATE event SET hidden=TRUE WHERE kind!=5 AND author=? AND event_hash IN ({})",
-		repeat_vars(params.len() - 1)
+                "UPDATE event SET hidden=TRUE WHERE kind!=5 AND author=? AND event_hash IN ({})",
+                repeat_vars(params.len() - 1)
             );
             let mut stmt = tx.prepare(&query)?;
             let update_count = stmt.execute(rusqlite::params_from_iter(params))?;
             info!(
-		"hid {} deleted events for author {:?}",
-		update_count,
-		e.get_author_prefix()
+                "hid {} deleted events for author {:?}",
+                update_count,
+                e.get_author_prefix()
             );
-	} else {
+        } else {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
             let del_count = tx.query_row(
-		"SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value_hex=? LIMIT 1;",
-		params![pubkey_blob, id_blob], |row| row.get::<usize, usize>(0));
+                "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value_hex=? LIMIT 1;",
+                params![pubkey_blob, id_blob], |row| row.get::<usize, usize>(0));
             // check if a the query returned a result, meaning we should
             // hid the current event
             if del_count.ok().is_some() {
-		// a deletion already existed, mark original event as hidden.
-		info!(
+                // a deletion already existed, mark original event as hidden.
+                info!(
                     "hid event: {:?} due to existing deletion by author: {:?}",
                     e.get_event_id_prefix(),
                     e.get_author_prefix()
-		);
-		let _update_count =
+                );
+                let _update_count =
                     tx.execute("UPDATE event SET hidden=TRUE WHERE id=?", params![ev_id])?;
-		// event was deleted, so let caller know nothing new
-		// arrived, preventing this from being sent to active
-		// subscriptions
-		ins_count = 0;
+                // event was deleted, so let caller know nothing new
+                // arrived, preventing this from being sent to active
+                // subscriptions
+                ins_count = 0;
             }
-	}
-	tx.commit()?;
-	Ok(ins_count)
+        }
+        tx.commit()?;
+        Ok(ins_count)
     }
 }
 
@@ -223,25 +223,25 @@ impl SqliteRepo {
 impl NostrRepo for SqliteRepo {
 
     async fn start(&self) -> Result<()> {
-	db_checkpoint_task(self.maint_pool.clone(), Duration::from_secs(60), self.checkpoint_in_progress.clone()).await
+        db_checkpoint_task(self.maint_pool.clone(), Duration::from_secs(60), self.checkpoint_in_progress.clone()).await
     }
 
     async fn migrate_up(&self) -> Result<usize> {
-	let _write_guard = self.write_in_progress.lock().await;
-	let mut conn = self.write_pool.get()?;
-	task::spawn_blocking(move || {
-	    upgrade_db(&mut conn)
-	}).await?
+        let _write_guard = self.write_in_progress.lock().await;
+        let mut conn = self.write_pool.get()?;
+        task::spawn_blocking(move || {
+            upgrade_db(&mut conn)
+        }).await?
     }
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
-	let _write_guard = self.write_in_progress.lock().await;
-	// spawn a blocking thread
-	let mut conn = self.write_pool.get()?;
-	let e = e.clone();
-	task::spawn_blocking(move || {
-	    SqliteRepo::persist_event(&mut conn, &e)
-	}).await?
+        let _write_guard = self.write_in_progress.lock().await;
+        // spawn a blocking thread
+        let mut conn = self.write_pool.get()?;
+        let e = e.clone();
+        task::spawn_blocking(move || {
+            SqliteRepo::persist_event(&mut conn, &e)
+        }).await?
     }
 
     /// Perform a database query using a subscription.
@@ -257,28 +257,28 @@ impl NostrRepo for SqliteRepo {
         query_tx: tokio::sync::mpsc::Sender<QueryResult>,
         mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
     ) -> Result<()> {
-	let pre_spawn_start = Instant::now();
-	let self=self.clone();
-	task::spawn_blocking(move || {
-	    {
-		// if we are waiting on a checkpoint, stop until it is complete
-		let _x = self.checkpoint_in_progress.blocking_lock();
-	    }
+        let pre_spawn_start = Instant::now();
+        let self=self.clone();
+        task::spawn_blocking(move || {
+            {
+                // if we are waiting on a checkpoint, stop until it is complete
+                let _x = self.checkpoint_in_progress.blocking_lock();
+            }
             let db_queue_time = pre_spawn_start.elapsed();
             // if the queue time was very long (>5 seconds), spare the DB and abort.
             if db_queue_time > Duration::from_secs(5) {
-		info!(
+                info!(
                     "shedding DB query load queued for {:?} (cid: {}, sub: {:?})",
                     db_queue_time, client_id, sub.id
-		);
-		return Ok(());
+                );
+                return Ok(());
             }
             // otherwise, report queuing time if it is slow
             else if db_queue_time > Duration::from_secs(1) {
-		debug!(
+                debug!(
                     "(slow) DB query queued for {:?} (cid: {}, sub: {:?})",
                     db_queue_time, client_id, sub.id
-		);
+                );
             }
             let start = Instant::now();
             let mut row_count: usize = 0;
@@ -287,7 +287,7 @@ impl NostrRepo for SqliteRepo {
             let sql_gen_elapsed = start.elapsed();
 
             if sql_gen_elapsed > Duration::from_millis(10) {
-		debug!("SQL (slow) generated in {:?}", start.elapsed());
+                debug!("SQL (slow) generated in {:?}", start.elapsed());
             }
             // cutoff for displaying slow queries
             let slow_cutoff = Duration::from_millis(2000);
@@ -298,69 +298,69 @@ impl NostrRepo for SqliteRepo {
             let mut slow_first_event;
             let mut last_successful_send = Instant::now();
             if let Ok(mut conn) = self.read_pool.get() {
-		// execute the query.
-		// make the actual SQL query (with parameters inserted) available
-		conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
-		let mut stmt = conn.prepare_cached(&q)?;
-		let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
+                // execute the query.
+                // make the actual SQL query (with parameters inserted) available
+                conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
+                let mut stmt = conn.prepare_cached(&q)?;
+                let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
 
-		let mut first_result = true;
-		while let Some(row) = event_rows.next()? {
+                let mut first_result = true;
+                while let Some(row) = event_rows.next()? {
                     let first_event_elapsed = start.elapsed();
                     slow_first_event = first_event_elapsed >= slow_cutoff;
                     if first_result {
-			debug!(
+                        debug!(
                             "first result in {:?} (cid: {}, sub: {:?}) [used indexes: {:?}]",
                             first_event_elapsed, client_id, sub.id, idxs
-			);
-			first_result = false;
+                        );
+                        first_result = false;
                     }
                     // logging for slow queries; show sub and SQL.
                     // to reduce logging; only show 1/16th of clients (leading 0)
                     if row_count == 0 && slow_first_event && client_id.starts_with('0') {
-			debug!(
+                        debug!(
                             "query req (slow): {:?} (cid: {}, sub: {:?})",
                             sub, client_id, sub.id
-			);
-		    }
-		    // check if a checkpoint is trying to run, and abort
-		    if row_count % 100 == 0 {
-			{
-			    if self.checkpoint_in_progress.try_lock().is_err() {
-				// lock was held, abort this query
-				debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
-				return Ok(());
-			    }
-			}
-		    }
+                        );
+                    }
+                    // check if a checkpoint is trying to run, and abort
+                    if row_count % 100 == 0 {
+                        {
+                            if self.checkpoint_in_progress.try_lock().is_err() {
+                                // lock was held, abort this query
+                                debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+                                return Ok(());
+                            }
+                        }
+                    }
 
                     // check if this is still active; every 100 rows
                     if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
-			debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
-			return Ok(());
+                        debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
+                        return Ok(());
                     }
                     row_count += 1;
                     let event_json = row.get(0)?;
                     loop {
-			if query_tx.capacity() != 0 {
+                        if query_tx.capacity() != 0 {
                             // we have capacity to add another item
                             break;
-			}
+                        }
                         // the queue is full
                         trace!("db reader thread is stalled");
                         if last_successful_send + abort_cutoff < Instant::now() {
-			    // the queue has been full for too long, abort
-			    info!("aborting database query due to slow client (cid: {}, sub: {:?})",
-				  client_id, sub.id);
-			    let ok: Result<()> = Ok(());
-			    return ok;
+                            // the queue has been full for too long, abort
+                            info!("aborting database query due to slow client (cid: {}, sub: {:?})",
+                                  client_id, sub.id);
+                            let ok: Result<()> = Ok(());
+                            return ok;
                         }
-			// check if a checkpoint is trying to run, and abort
-			if self.checkpoint_in_progress.try_lock().is_err() {
-			    // lock was held, abort this query
-			    debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
-			    return Ok(());
-			    }
+                        // check if a checkpoint is trying to run, and abort
+                        if self.checkpoint_in_progress.try_lock().is_err() {
+                            // lock was held, abort this query
+                            debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+                            return Ok(());
+                        }
                         // give the queue a chance to clear before trying again
                         thread::sleep(Duration::from_millis(100));
                     }
@@ -368,79 +368,79 @@ impl NostrRepo for SqliteRepo {
                     // getting the query result back as part of the error
                     // result.
                     query_tx
-			.blocking_send(QueryResult {
+                        .blocking_send(QueryResult {
                             sub_id: sub.get_id(),
                             event: event_json,
-			})
-			.ok();
+                        })
+                        .ok();
                     last_successful_send = Instant::now();
-		}
-		query_tx
+                }
+                query_tx
                     .blocking_send(QueryResult {
-			sub_id: sub.get_id(),
-			event: "EOSE".to_string(),
+                        sub_id: sub.get_id(),
+                        event: "EOSE".to_string(),
                     })
                     .ok();
-		debug!(
+                debug!(
                     "query completed in {:?} (cid: {}, sub: {:?}, db_time: {:?}, rows: {})",
                     pre_spawn_start.elapsed(),
                     client_id,
                     sub.id,
                     start.elapsed(),
                     row_count
-		);
+                );
             } else {
-		warn!("Could not get a database connection for querying");
+                warn!("Could not get a database connection for querying");
             }
             let ok: Result<()> = Ok(());
             ok
-	});
-	Ok(())
+        });
+        Ok(())
     }
 
     /// Perform normal maintenance
     async fn optimize_db(&self) -> Result<()> {
-	let conn = self.write_pool.get()?;
-	task::spawn_blocking(move || {
-	    let start = Instant::now();
-	    conn.execute_batch("PRAGMA optimize;").ok();
-	    info!("optimize ran in {:?}", start.elapsed());
-	}).await?;
-	Ok(())
+        let conn = self.write_pool.get()?;
+        task::spawn_blocking(move || {
+            let start = Instant::now();
+            conn.execute_batch("PRAGMA optimize;").ok();
+            info!("optimize ran in {:?}", start.elapsed());
+        }).await?;
+        Ok(())
     }
 
     /// Create a new verification record connected to a specific event
     async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
-	let e = hex::decode(event_id).ok();
-	let n = name.to_owned();
-	let mut conn = self.write_pool.get()?;
-	tokio::task::spawn_blocking(move || {
+        let e = hex::decode(event_id).ok();
+        let n = name.to_owned();
+        let mut conn = self.write_pool.get()?;
+        tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
             {
-		// if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
-		let query = "INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash=?), ?, strftime('%s','now'));";
-		let mut stmt = tx.prepare(query)?;
-		stmt.execute(params![e, n])?;
-		// get the row ID
-		let v_id = tx.last_insert_rowid();
-		// delete everything else by this name
-		let del_query = "DELETE FROM user_verification WHERE name = ? AND id != ?;";
-		let mut del_stmt = tx.prepare(del_query)?;
-		let count = del_stmt.execute(params![n,v_id])?;
-		if count > 0 {
+                // if we create a /new/ one, we should get rid of any old ones.  or group the new ones by name and only consider the latest.
+                let query = "INSERT INTO user_verification (metadata_event, name, verified_at) VALUES ((SELECT id from event WHERE event_hash=?), ?, strftime('%s','now'));";
+                let mut stmt = tx.prepare(query)?;
+                stmt.execute(params![e, n])?;
+                // get the row ID
+                let v_id = tx.last_insert_rowid();
+                // delete everything else by this name
+                let del_query = "DELETE FROM user_verification WHERE name = ? AND id != ?;";
+                let mut del_stmt = tx.prepare(del_query)?;
+                let count = del_stmt.execute(params![n,v_id])?;
+                if count > 0 {
                     info!("removed {} old verification records for ({:?})", count, n);
-		}
+                }
             }
             tx.commit()?;
             info!("saved new verification record for ({:?})", n);
             let ok: Result<()> = Ok(());
             ok
-	}).await?
+        }).await?
     }
 
     /// Update verification timestamp
     async fn update_verification_timestamp(&self, id: u64) -> Result<()> {
-	let mut conn = self.write_pool.get()?;
+        let mut conn = self.write_pool.get()?;
         tokio::task::spawn_blocking(move || {
             // add some jitter to the verification to prevent everything from stacking up together.
             let verif_time = now_jitter(600);
@@ -462,8 +462,8 @@ impl NostrRepo for SqliteRepo {
 
     /// Update verification record as failed
     async fn fail_verification(&self, id: u64) -> Result<()> {
-	let mut conn = self.write_pool.get()?;
-	tokio::task::spawn_blocking(move || {
+        let mut conn = self.write_pool.get()?;
+        tokio::task::spawn_blocking(move || {
             // add some jitter to the verification to prevent everything from stacking up together.
             let fail_time = now_jitter(600);
             let tx = conn.transaction()?;
@@ -481,8 +481,8 @@ impl NostrRepo for SqliteRepo {
 
     /// Delete verification record
     async fn delete_verification(&self, id: u64) -> Result<()> {
-	let mut conn = self.write_pool.get()?;
-	tokio::task::spawn_blocking(move || {
+        let mut conn = self.write_pool.get()?;
+        tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
             {
                 let query = "DELETE FROM user_verification WHERE id=?;";
@@ -498,78 +498,78 @@ impl NostrRepo for SqliteRepo {
 
     /// Get the latest verification record for a given pubkey.
     async fn get_latest_user_verification(&self, pub_key: &str) -> Result<VerificationRecord> {
-	let mut conn = self.read_pool.get()?;
-	let pub_key = pub_key.to_owned();
-	tokio::task::spawn_blocking(move || {
-	    let tx = conn.transaction()?;
-	    let query = "SELECT v.id, v.name, e.event_hash, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE e.author=? ORDER BY e.created_at DESC, v.verified_at DESC, v.failed_at DESC LIMIT 1;";
-	    let mut stmt = tx.prepare_cached(query)?;
-	    let fields = stmt.query_row(params![hex::decode(&pub_key).ok()], |r| {
-		let rowid: u64 = r.get(0)?;
-		let rowname: String = r.get(1)?;
-		let eventid: Vec<u8> = r.get(2)?;
-		let created_at: u64 = r.get(3)?;
-		// create a tuple since we can't throw non-rusqlite errors in this closure
-		Ok((
-		    rowid,
-		    rowname,
-		    eventid,
-		    created_at,
-		    r.get(4).ok(),
-		    r.get(5).ok(),
-		    r.get(6)?,
-		))
-	    })?;
-	    Ok(VerificationRecord {
-		rowid: fields.0,
-		name: Nip05Name::try_from(&fields.1[..])?,
-		address: pub_key,
-		event: hex::encode(fields.2),
-		event_created: fields.3,
-		last_success: fields.4,
-		last_failure: fields.5,
-		failure_count: fields.6,
-	    })
-	}).await?
+        let mut conn = self.read_pool.get()?;
+        let pub_key = pub_key.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let query = "SELECT v.id, v.name, e.event_hash, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v LEFT JOIN event e ON e.id=v.metadata_event WHERE e.author=? ORDER BY e.created_at DESC, v.verified_at DESC, v.failed_at DESC LIMIT 1;";
+            let mut stmt = tx.prepare_cached(query)?;
+            let fields = stmt.query_row(params![hex::decode(&pub_key).ok()], |r| {
+                let rowid: u64 = r.get(0)?;
+                let rowname: String = r.get(1)?;
+                let eventid: Vec<u8> = r.get(2)?;
+                let created_at: u64 = r.get(3)?;
+                // create a tuple since we can't throw non-rusqlite errors in this closure
+                Ok((
+                    rowid,
+                    rowname,
+                    eventid,
+                    created_at,
+                    r.get(4).ok(),
+                    r.get(5).ok(),
+                    r.get(6)?,
+                ))
+            })?;
+            Ok(VerificationRecord {
+                rowid: fields.0,
+                name: Nip05Name::try_from(&fields.1[..])?,
+                address: pub_key,
+                event: hex::encode(fields.2),
+                event_created: fields.3,
+                last_success: fields.4,
+                last_failure: fields.5,
+                failure_count: fields.6,
+            })
+        }).await?
     }
 
     /// Get oldest verification before timestamp
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord> {
-	let mut conn = self.read_pool.get()?;
-	tokio::task::spawn_blocking(move || {
-	    let tx = conn.transaction()?;
-	    let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v INNER JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
-	    let mut stmt = tx.prepare_cached(query)?;
-	    let fields = stmt.query_row(params![before, before], |r| {
-		let rowid: u64 = r.get(0)?;
-		let rowname: String = r.get(1)?;
-		let eventid: Vec<u8> = r.get(2)?;
-		let pubkey: Vec<u8> = r.get(3)?;
-		let created_at: u64 = r.get(4)?;
-		// create a tuple since we can't throw non-rusqlite errors in this closure
-		Ok((
-		    rowid,
-		    rowname,
-		    eventid,
-		    pubkey,
-		    created_at,
-		    r.get(5).ok(),
-		    r.get(6).ok(),
-		    r.get(7)?,
-		))
-	    })?;
-	    let vr = VerificationRecord {
-		rowid: fields.0,
-		name: Nip05Name::try_from(&fields.1[..])?,
-		address: hex::encode(fields.3),
-		event: hex::encode(fields.2),
-		event_created: fields.4,
-		last_success: fields.5,
-		last_failure: fields.6,
-		failure_count: fields.7,
-	    };
-	    Ok(vr)
-	}).await?
+        let mut conn = self.read_pool.get()?;
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let query = "SELECT v.id, v.name, e.event_hash, e.author, e.created_at, v.verified_at, v.failed_at, v.failure_count FROM user_verification v INNER JOIN event e ON e.id=v.metadata_event WHERE (v.verified_at < ? OR v.verified_at IS NULL) AND (v.failed_at < ? OR v.failed_at IS NULL) ORDER BY v.verified_at ASC, v.failed_at ASC LIMIT 1;";
+            let mut stmt = tx.prepare_cached(query)?;
+            let fields = stmt.query_row(params![before, before], |r| {
+                let rowid: u64 = r.get(0)?;
+                let rowname: String = r.get(1)?;
+                let eventid: Vec<u8> = r.get(2)?;
+                let pubkey: Vec<u8> = r.get(3)?;
+                let created_at: u64 = r.get(4)?;
+                // create a tuple since we can't throw non-rusqlite errors in this closure
+                Ok((
+                    rowid,
+                    rowname,
+                    eventid,
+                    pubkey,
+                    created_at,
+                    r.get(5).ok(),
+                    r.get(6).ok(),
+                    r.get(7)?,
+                ))
+            })?;
+            let vr = VerificationRecord {
+                rowid: fields.0,
+                name: Nip05Name::try_from(&fields.1[..])?,
+                address: hex::encode(fields.3),
+                event: hex::encode(fields.2),
+                event_created: fields.4,
+                last_success: fields.5,
+                last_failure: fields.6,
+                failure_count: fields.7,
+            };
+            Ok(vr)
+        }).await?
     }
 }
 
@@ -578,27 +578,27 @@ fn override_index(f: &ReqFilter) -> Option<String> {
     // queries for multiple kinds default to kind_index, which is
     // significantly slower than kind_created_at_index.
     if let Some(ks) = &f.kinds {
-	if f.ids.is_none() &&
-	    ks.len() > 1 &&
-	    f.since.is_none() &&
-	    f.until.is_none() &&
-	    f.tags.is_none() &&
-	    f.authors.is_none() {
-		return Some("kind_created_at_index".into());
-	    }
+        if f.ids.is_none() &&
+            ks.len() > 1 &&
+            f.since.is_none() &&
+            f.until.is_none() &&
+            f.tags.is_none() &&
+            f.authors.is_none() {
+                return Some("kind_created_at_index".into());
+            }
     }
     // if there is an author, it is much better to force the authors index.
     if f.authors.is_some() {
-	if f.since.is_none() && f.until.is_none() {
-	    if f.kinds.is_none() {
-		// with no use of kinds/created_at, just author
-		return Some("author_index".into());
-	    }
-	    // prefer author_kind if there are kinds
-	    return Some("author_kind_index".into());
-	}
-	// finally, prefer author_created_at if time is provided
-	return Some("author_created_at_index".into());
+        if f.since.is_none() && f.until.is_none() {
+            if f.kinds.is_none() {
+                // with no use of kinds/created_at, just author
+                return Some("author_index".into());
+            }
+            // prefer author_kind if there are kinds
+            return Some("author_kind_index".into());
+        }
+        // finally, prefer author_created_at if time is provided
+        return Some("author_created_at_index".into());
     }
     None
 }
@@ -654,11 +654,11 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
             }
         }
         if !authvec.is_empty() {
-	    let auth_clause = format!("({})", auth_searches.join(" OR "));
+            let auth_clause = format!("({})", auth_searches.join(" OR "));
             filter_components.push(auth_clause);
         } else {
-	    filter_components.push("false".to_owned());
-	}
+            filter_components.push("false".to_owned());
+        }
     }
     // Query for Kind
     if let Some(ks) = &f.kinds {
@@ -692,11 +692,11 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
             }
         }
         if idvec.is_empty() {
-	    // if the ids list was empty, we should never return
+            // if the ids list was empty, we should never return
             // any results.
             filter_components.push("false".to_owned());
         } else {
-	    let id_clause = format!("({})", id_searches.join(" OR "));
+            let id_clause = format!("({})", id_searches.join(" OR "));
             filter_components.push(id_clause);
         }
     }
@@ -769,9 +769,9 @@ fn query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>, Vec<Strin
     // for every filter in the subscription, generate a subquery
     for f in &sub.filters {
         let (f_subquery, mut f_params, index) = query_from_filter(f);
-	if let Some(i) = index {
-	    indexes.push(i);
-	}
+        if let Some(i) = index {
+            indexes.push(i);
+        }
         subqueries.push(f_subquery);
         params.append(&mut f_params);
     }
@@ -835,37 +835,37 @@ pub fn build_pool(
 pub async fn db_checkpoint_task(pool: SqlitePool, frequency: Duration, checkpoint_in_progress: Arc<Mutex<u64>>) -> Result<()> {
 
     tokio::task::spawn(async move {
-	// WAL size in pages.
-	let mut current_wal_size = 0;
-	// WAL threshold for more aggressive checkpointing (10,000 pages, or about 40MB)
-	let wal_threshold = 1000*10;
-	// default threshold for the busy timer
-	let busy_wait_default = Duration::from_secs(1);
-	// if the WAL file is getting too big, switch to this
-	let busy_wait_default_long = Duration::from_secs(10);
+        // WAL size in pages.
+        let mut current_wal_size = 0;
+        // WAL threshold for more aggressive checkpointing (10,000 pages, or about 40MB)
+        let wal_threshold = 1000*10;
+        // default threshold for the busy timer
+        let busy_wait_default = Duration::from_secs(1);
+        // if the WAL file is getting too big, switch to this
+        let busy_wait_default_long = Duration::from_secs(10);
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(frequency) => {
                     if let Ok(mut conn) = pool.get() {
                         let mut _guard:Option<MutexGuard<u64>> = None;
-			// the busy timer will block writers, so don't set
-			// this any higher than you want max latency for event
-			// writes.
-			if current_wal_size <= wal_threshold {
-			    conn.busy_timeout(busy_wait_default).ok();
-			} else {
-			    // if the wal size has exceeded a threshold, increase the busy timeout.
-			    conn.busy_timeout(busy_wait_default_long).ok();
-			    // take a lock that will prevent new readers.
-			    info!("blocking new readers to perform wal_checkpoint");
-			    _guard = Some(checkpoint_in_progress.lock().await);
-			}
+                        // the busy timer will block writers, so don't set
+                        // this any higher than you want max latency for event
+                        // writes.
+                        if current_wal_size <= wal_threshold {
+                            conn.busy_timeout(busy_wait_default).ok();
+                        } else {
+                            // if the wal size has exceeded a threshold, increase the busy timeout.
+                            conn.busy_timeout(busy_wait_default_long).ok();
+                            // take a lock that will prevent new readers.
+                            info!("blocking new readers to perform wal_checkpoint");
+                            _guard = Some(checkpoint_in_progress.lock().await);
+                        }
                         debug!("running wal_checkpoint(TRUNCATE)");
                         if let Ok(new_size) = checkpoint_db(&mut conn) {
-			    current_wal_size = new_size;
-			}
+                            current_wal_size = new_size;
+                        }
                     }
-		}
+                }
             };
         }
     });
@@ -922,8 +922,8 @@ fn repeat_vars(count: usize) -> String {
 pub async fn monitor_pool(name: &str, pool: SqlitePool) {
     let sleep_dur = Duration::from_secs(60);
     loop {
-	log_pool_stats(name, &pool);
-	tokio::time::sleep(sleep_dur).await;
+        log_pool_stats(name, &pool);
+        tokio::time::sleep(sleep_dur).await;
     }
 }
 
@@ -936,7 +936,7 @@ fn log_pool_stats(name: &str, pool: &SqlitePool) {
         name,
         in_use_cxns,
         state.connections,
-	pool.max_size()
+        pool.max_size()
     );
 }
 
