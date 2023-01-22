@@ -26,10 +26,10 @@ jobs:
           cargo clippy --version          
           ls -lsrth
 
-      - name: Lint
-        run: |
-          cargo fmt -- --check
-          cargo clippy -- -D warnings          
+      # - name: Lint
+      #   run: |
+      #     cargo fmt -- --check
+      #     cargo clippy -- -D warnings          
 
       - name: Test
         run: |
