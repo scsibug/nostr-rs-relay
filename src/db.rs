@@ -62,9 +62,13 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
         .connect_with(options)
         .await
         .unwrap();
-    PostgresRepo::new(pool, metrics, PostgresRepoSettings {
+    let repo = PostgresRepo::new(pool, metrics, PostgresRepoSettings {
         cleanup_contact_list: true
-    })
+    });
+    if let Ok(version) = repo.migrate_up().await {
+        info!("Postgres migration completed, at v{}", version);
+    }
+    repo
 }
 
 /// Spawn a database writer that persists events to the `SQLite` store.
