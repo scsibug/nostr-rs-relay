@@ -27,19 +27,13 @@ pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 pub struct PostgresRepo {
     conn: PostgresPool,
     metrics: NostrMetrics,
-    settings: PostgresRepoSettings
-}
-
-pub struct PostgresRepoSettings {
-    pub cleanup_contact_list: bool
 }
 
 impl PostgresRepo {
-    pub fn new(c: PostgresPool, m: NostrMetrics, s: PostgresRepoSettings) -> PostgresRepo {
+    pub fn new(c: PostgresPool, m: NostrMetrics) -> PostgresRepo {
         PostgresRepo {
             conn: c,
             metrics: m,
-            settings: s,
         }
     }
 }
@@ -124,26 +118,12 @@ ON CONFLICT (id) DO NOTHING"#,
                 }
             }
         }
-
-        // if this event is replaceable update, hide every other replaceable
-        // event with the same kind from the same author that was issued
-        // earlier than this.
-        if e.kind == 3 && self.settings.cleanup_contact_list {
-            sqlx::query("delete from \"event\" where id != $1 and kind = 3 and pub_key = $2")
-                .bind(&id_blob)
-                .bind(hex::decode(&e.pubkey).ok())
-                .execute(&mut tx)
-                .await?;
-        } else if e.kind == 0 || e.kind == 3 || (e.kind >= 10000 && e.kind < 20000) {
-            let update_count = sqlx::query("UPDATE \"event\" SET hidden = 1::bit(1) \
-            WHERE id != $1 AND kind = $2 AND pub_key = $3 AND created_at <= $4 and hidden != 1::bit(1)")
-                .bind(&id_blob)
+        if e.is_replaceable() {
+            let update_count = sqlx::query("DELETE FROM \"event\" WHERE kind=$1 and pub_key = $2 and id not in (select id from \"event\" where kind=$1 and pub_key=$2 order by created_at desc limit 1);")
                 .bind(e.kind as i64)
                 .bind(hex::decode(&e.pubkey).ok())
-                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                 .execute(&mut tx)
-                .await?
-                .rows_affected();
+                .await?.rows_affected();
             if update_count > 0 {
                 info!(
                     "hid {} older replaceable kind {} events for author: {:?}",

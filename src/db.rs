@@ -13,7 +13,7 @@ use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
 use crate::repo::sqlite::SqliteRepo;
-use crate::repo::postgres::{PostgresRepo,PostgresPool,PostgresRepoSettings};
+use crate::repo::postgres::{PostgresRepo,PostgresPool};
 use crate::repo::NostrRepo;
 use std::time::{Instant, Duration};
 use tracing::log::LevelFilter;
@@ -62,9 +62,7 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
         .connect_with(options)
         .await
         .unwrap();
-    let repo = PostgresRepo::new(pool, metrics, PostgresRepoSettings {
-        cleanup_contact_list: true
-    });
+    let repo = PostgresRepo::new(pool, metrics);
     if let Ok(version) = repo.migrate_up().await {
         info!("Postgres migration completed, at v{}", version);
     }
