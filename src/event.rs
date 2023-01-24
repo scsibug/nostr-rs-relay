@@ -130,6 +130,33 @@ impl Event {
         self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
     }
 
+    /// Should this event be replaced with newer timestamps from same author, for distinct `d` tag values?
+    #[must_use] pub fn is_param_replaceable(&self) -> bool {
+        self.kind >= 30000 && self.kind < 40000
+    }
+
+    /// What is the replaceable `d` tag value?
+
+    /// Should this event be replaced with newer timestamps from same author, for distinct `d` tag values?
+    #[must_use] pub fn distinct_param(&self) -> Option<String> {
+        if self.is_param_replaceable() {
+            let default = "".to_string();
+            let dvals:Vec<&String> = self.tags
+                .iter()
+                .filter(|x| x.len() >= 1)
+                .filter(|x| x.get(0).unwrap() == "d")
+                .map(|x| x.get(1).unwrap_or_else(|| &default)).take(1)
+                .collect();
+            let dval_first = dvals.get(0);
+            match dval_first {
+                Some(_) => {dval_first.map(|x| x.to_string())},
+                None => Some(default)
+            }
+        } else {
+            None
+        }
+    }
+
     /// Pull a NIP-05 Name out of the event, if one exists
     #[must_use] pub fn get_nip05_addr(&self) -> Option<nip05::Nip05Name> {
         if self.is_kind_metadata() {
@@ -364,7 +391,7 @@ mod tests {
     fn empty_event_tag_match() {
         let event = Event::simple_event();
         assert!(!event
-		.generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
+                .generic_tag_val_intersect('e', &HashSet::from(["foo".to_owned(), "bar".to_owned()])));
     }
 
     #[test]
@@ -510,15 +537,121 @@ mod tests {
     }
 
     #[test]
+    fn ephemeral_event() {
+        let mut event = Event::simple_event();
+        event.kind=20000;
+        assert!(event.is_ephemeral());
+        event.kind=29999;
+        assert!(event.is_ephemeral());
+        event.kind=30000;
+        assert!(!event.is_ephemeral());
+        event.kind=19999;
+        assert!(!event.is_ephemeral());
+    }
+
+    #[test]
     fn replaceable_event() {
         let mut event = Event::simple_event();
         event.kind=0;
         assert!(event.is_replaceable());
         event.kind=3;
         assert!(event.is_replaceable());
-        event.kind=12000;
+        event.kind=10000;
         assert!(event.is_replaceable());
+        event.kind=19999;
+        assert!(event.is_replaceable());
+        event.kind=20000;
+        assert!(!event.is_replaceable());
+    }
 
+    #[test]
+    fn param_replaceable_event() {
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        assert!(event.is_param_replaceable());
+        event.kind = 39999;
+        assert!(event.is_param_replaceable());
+        event.kind = 29999;
+        assert!(!event.is_param_replaceable());
+        event.kind = 40000;
+        assert!(!event.is_param_replaceable());
+    }
+
+    #[test]
+    fn param_replaceable_value_case_1() {
+        // NIP case #1: "tags":[["d",""]]
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["d".to_owned(), "".to_owned()]];
+        assert_eq!(event.distinct_param(), Some("".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_2() {
+        // NIP case #2: "tags":[]: implicit d tag with empty value
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        assert_eq!(event.distinct_param(), Some("".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_3() {
+        // NIP case #3: "tags":[["d"]]: implicit empty value ""
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["d".to_owned()]];
+        assert_eq!(event.distinct_param(), Some("".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_4() {
+        // NIP case #4: "tags":[["d",""],["d","not empty"]]: only first d tag is considered
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["d".to_owned(), "".to_string()],
+            vec!["d".to_owned(), "not empty".to_string()]
+        ];
+        assert_eq!(event.distinct_param(), Some("".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_4b() {
+        // Variation of #4 with
+        // NIP case #4: "tags":[["d","not empty"],["d",""]]: only first d tag is considered
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["d".to_owned(), "not empty".to_string()],
+            vec!["d".to_owned(), "".to_string()]
+        ];
+        assert_eq!(event.distinct_param(), Some("not empty".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_5() {
+        // NIP case #5: "tags":[["d"],["d","some value"]]: only first d tag is considered
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["d".to_owned()],
+            vec!["d".to_owned(), "second value".to_string()],
+            vec!["d".to_owned(), "third value".to_string()]
+        ];
+        assert_eq!(event.distinct_param(), Some("".to_string()));
+    }
+
+    #[test]
+    fn param_replaceable_value_case_6() {
+        // NIP case #6: "tags":[["e"]]: same as no tags
+        let mut event = Event::simple_event();
+        event.kind = 30000;
+        event.tags = vec![
+            vec!["e".to_owned()],
+        ];
+        assert_eq!(event.distinct_param(), Some("".to_string()));
     }
 
 }

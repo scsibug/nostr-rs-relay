@@ -115,6 +115,25 @@ impl SqliteRepo {
                 return Ok(0);
             }
         }
+        // check for parameterized replaceable events that would be hidden; don't insert these either.
+        if let Some(d_tag) = e.distinct_param() {
+            let repl_count;
+            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                repl_count = tx.query_row(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value_hex=? AND e.created_at >= ? LIMIT 1;",
+                    params![pubkey_blob, e.kind, hex::decode(d_tag).ok(), e.created_at],|row| row.get::<usize, usize>(0));
+            } else {
+                repl_count = tx.query_row(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value=? AND e.created_at >= ? LIMIT 1;",
+                    params![pubkey_blob, e.kind, d_tag, e.created_at],|row| row.get::<usize, usize>(0));
+            }
+            // if any rows were returned, then some newer event with
+            // the same author/kind/tag value exist, and we can ignore
+            // this event.
+            if repl_count.ok().is_some() {
+                return Ok(0)
+            }
+        }
         // ignore if the event hash is a duplicate.
         let mut ins_count = tx.execute(
             "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
@@ -168,6 +187,27 @@ impl SqliteRepo {
             if update_count > 0 {
                 info!(
                     "removed {} older replaceable kind {} events for author: {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
+        // if this event is parameterized replaceable, remove other events.
+        if let Some(d_tag) = e.distinct_param() {
+            let update_count;
+            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                update_count = tx.execute(
+                    "DELETE FROM event WHERE kind=? AND author=? AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value_hex=? ORDER BY created_at DESC LIMIT 1);",
+                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, hex::decode(d_tag).ok()])?;
+            } else {
+                update_count = tx.execute(
+                    "DELETE FROM event WHERE kind=? AND author=? AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT 1);",
+                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?;
+            }
+            if update_count > 0 {
+                info!(
+                    "removed {} older parameterized replaceable kind {} events for author: {:?}",
                     update_count,
                     e.kind,
                     e.get_author_prefix()
