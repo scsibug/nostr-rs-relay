@@ -120,6 +120,11 @@ impl Event {
         self.kind == 0
     }
 
+    /// Should this event be persisted?
+    #[must_use] pub fn is_ephemeral(&self) -> bool {
+        self.kind >= 20000 && self.kind < 30000
+    }
+
     /// Should this event be replaced with newer timestamps from same author?
     #[must_use] pub fn is_replaceable(&self) -> bool {
         self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
