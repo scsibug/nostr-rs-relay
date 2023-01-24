@@ -109,7 +109,7 @@ impl SqliteRepo {
         // check for replaceable events that would hide this one; we won't even attempt to insert these.
         if e.is_replaceable() {
             let repl_count = tx.query_row(
-                "SELECT e.id FROM event e INDEXED BY author_index WHERE e.author=? AND e.kind=? AND e.created_at > ? LIMIT 1;",
+                "SELECT e.id FROM event e INDEXED BY author_index WHERE e.author=? AND e.kind=? AND e.created_at >= ? LIMIT 1;",
                 params![pubkey_blob, e.kind, e.created_at], |row| row.get::<usize, usize>(0));
             if repl_count.ok().is_some() {
                 return Ok(0);
