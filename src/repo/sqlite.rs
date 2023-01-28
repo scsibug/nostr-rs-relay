@@ -420,6 +420,7 @@ impl NostrRepo for SqliteRepo {
                     // TODO: we could use try_send, but we'd have to juggle
                     // getting the query result back as part of the error
                     // result.
+                    metrics.sent_events.inc();
                     query_tx
                         .blocking_send(QueryResult {
                             sub_id: sub.get_id(),

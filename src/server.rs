@@ -321,21 +321,27 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             "write_event",
             "Event writing response times",
         )).unwrap();
+        let sent_events = IntCounter::with_opts(Opts::new(
+            "sent_event",
+            "Events sent",
+        )).unwrap();
         let connections = IntCounter::with_opts(Opts::new(
             "connections",
-            "New connections"
+            "New connections",
         )).unwrap();
         let query_aborts = IntCounter::with_opts(Opts::new(
             "query_abort",
-            "Aborted queries"
+            "Aborted queries",
         )).unwrap();
         registry.register(Box::new(query_sub.clone())).unwrap();
         registry.register(Box::new(write_events.clone())).unwrap();
+        registry.register(Box::new(sent_events.clone())).unwrap();
         registry.register(Box::new(connections.clone())).unwrap();
         registry.register(Box::new(query_aborts.clone())).unwrap();
         let metrics = NostrMetrics {
             query_sub,
             write_events,
+            sent_events,
             connections,
             query_aborts,
         };
@@ -783,6 +789,7 @@ async fn nostr_server(
 pub struct NostrMetrics {
     pub query_sub: Histogram,
     pub write_events: Histogram,
+    pub sent_events: IntCounter,
     pub connections: IntCounter,
     pub query_aborts: IntCounter,
 }

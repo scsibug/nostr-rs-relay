@@ -133,7 +133,34 @@ ON CONFLICT (id) DO NOTHING"#,
                 );
             }
         }
-
+        // parameterized replaceable events
+        // check for parameterized replaceable events that would be hidden; don't insert these either.
+        if let Some(d_tag) = e.distinct_param() {
+            let update_count;
+            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC LIMIT 1);")
+                    .bind(e.kind as i64)
+                    .bind(hex::decode(&e.pubkey).ok())
+                    .bind(hex::decode(d_tag).ok())
+                    .execute(&mut tx)
+                    .await?.rows_affected();
+            } else {
+                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC LIMIT 1);")
+                    .bind(e.kind as i64)
+                    .bind(hex::decode(&e.pubkey).ok())
+                    .bind(d_tag.as_bytes())
+                    .execute(&mut tx)
+                    .await?.rows_affected();
+            }
+            if update_count > 0 {
+                info!(
+                    "removed {} older parameterized replaceable kind {} events for author: {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
         // if this event is a deletion, hide the referenced events from the same author.
         if e.kind == 5 {
             let event_candidates = e.tag_values_by_name("e");
@@ -300,6 +327,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 // TODO: we could use try_send, but we'd have to juggle
                 // getting the query result back as part of the error
                 // result.
+                metrics.sent_events.inc();
                 query_tx
                     .send(QueryResult {
                         sub_id: sub.get_id(),
