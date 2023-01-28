@@ -77,7 +77,7 @@ reject_future_seconds = 1800
 # Limiting event creation is highly recommended if your relay is
 # public!
 #
-messages_per_sec = 5
+#messages_per_sec = 5
 
 # Limit client subscriptions created per second, averaged over one
 # minute.  Must be an integer.  If not set (or set to 0), defaults to

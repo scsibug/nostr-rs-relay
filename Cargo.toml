@@ -47,6 +47,7 @@ async-std = "1.12.0"
 sqlx = { version ="0.6.2", features=["runtime-tokio-rustls", "postgres", "chrono"]}
 chrono = "0.4.23"
 prometheus = "0.13.3"
+indicatif = "0.17.3"
 
 [dev-dependencies]
 anyhow = "1"

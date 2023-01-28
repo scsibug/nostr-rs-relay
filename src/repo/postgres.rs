@@ -47,7 +47,7 @@ impl NostrRepo for PostgresRepo {
     }
 
     async fn migrate_up(&self) -> Result<usize> {
-        run_migrations(&self.conn).await
+        Ok(run_migrations(&self.conn).await?)
     }
 
     async fn write_event(&self, e: &Event) -> Result<u64> {

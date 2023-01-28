@@ -30,7 +30,15 @@ impl Migration for SimpleSqlMigration {
 pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     prepare_migrations_table(db).await;
     run_migration(m001::migration(), db).await;
-    Ok(m001::migration().serial_number() as usize)
+    let m002_result = run_migration(m002::migration(), db).await;
+    if m002_result == MigrationResult::Upgraded {
+        m002::rebuild_tags(db).await?;
+    }
+    Ok(current_version(db).await as usize)
+}
+
+async fn current_version(db: &PostgresPool) -> i64 {
+    sqlx::query_scalar("SELECT max(serial_number) FROM migrations;").fetch_one(db).await.unwrap()
 }
 
 async fn prepare_migrations_table(db: &PostgresPool) {
@@ -40,7 +48,14 @@ async fn prepare_migrations_table(db: &PostgresPool) {
         .unwrap();
 }
 
-async fn run_migration(migration: impl Migration, db: &PostgresPool) {
+// Running a migration was either unnecessary, or completed
+#[derive(PartialEq, Eq, Debug, Clone)]
+enum MigrationResult {
+    Upgraded,
+    NotNeeded,
+}
+
+async fn run_migration(migration: impl Migration, db: &PostgresPool) -> MigrationResult {
     let row: i64 =
         sqlx::query_scalar("SELECT COUNT(*) AS count FROM migrations WHERE serial_number = $1")
             .bind(migration.serial_number())
@@ -49,7 +64,7 @@ async fn run_migration(migration: impl Migration, db: &PostgresPool) {
             .unwrap();
 
     if row > 0 {
-        return;
+        return MigrationResult::NotNeeded;
     }
 
     let mut transaction = db.begin().await.unwrap();
@@ -62,14 +77,17 @@ async fn run_migration(migration: impl Migration, db: &PostgresPool) {
         .unwrap();
 
     transaction.commit().await.unwrap();
+    return MigrationResult::Upgraded;
 }
 
 mod m001 {
     use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
 
+    pub const VERSION: i64 = 1;
+
     pub fn migration() -> impl Migration {
         SimpleSqlMigration {
-            serial_number: 1,
+            serial_number: VERSION,
             sql: vec![
                 r#"
 -- Events table
@@ -97,8 +115,8 @@ CREATE TABLE "tag" (
 	CONSTRAINT tag_fk FOREIGN KEY (event_id) REFERENCES "event"(id) ON DELETE CASCADE
 );
 CREATE INDEX tag_event_id_idx ON tag USING btree (event_id, name);
-CREATE UNIQUE INDEX tag_event_id_value_idx ON tag (event_id,name,value);
 CREATE INDEX tag_value_idx ON tag USING btree (value);
+CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
 
 -- NIP-05 Verfication table
 CREATE TABLE "user_verification" (
@@ -116,5 +134,87 @@ CREATE INDEX user_verification_name_idx ON user_verification USING btree (name);
         "#,
             ],
         }
+    }
+}
+
+mod m002 {
+    use std::time::Instant;
+    use tracing::info;
+    use async_std::stream::StreamExt;
+    use sqlx::Row;
+    use indicatif::{ProgressBar, ProgressStyle};
+
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+    use crate::repo::postgres::PostgresPool;
+    use crate::event::{Event, single_char_tagname};
+    use crate::utils::is_lower_hex;
+
+    pub const VERSION: i64 = 2;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Add tag value column
+ALTER TABLE tag ADD COLUMN value_hex bytea;
+-- Remove not-null constraint
+ALTER TABLE tag ALTER COLUMN value DROP NOT NULL;
+-- Add value index
+CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
+        "#,
+            ],
+        }
+    }
+
+    pub async fn rebuild_tags(db: &PostgresPool) -> crate::error::Result<()> {
+        // Check how many events we have to process
+        let start = Instant::now();
+        let mut tx = db.begin().await.unwrap();
+        let mut update_tx = db.begin().await.unwrap();
+        // Clear out table
+        sqlx::query("DELETE FROM tag;").execute(&mut update_tx).await?;
+        {
+            let event_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) from event;")
+                .fetch_one(&mut tx)
+                .await
+                .unwrap();
+            let bar = ProgressBar::new(event_count.try_into().unwrap()).with_message("rebuilding tags table");
+            bar.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.white/blue} {pos:>7}/{len:7} [{percent}%] {msg}").unwrap());
+            let mut events = sqlx::query("SELECT id, content FROM event ORDER BY id;").fetch(&mut tx);
+            while let Some(row) = events.next().await {
+                bar.inc(1);
+                // get the row id and content
+                let row = row.unwrap();
+                let event_id: Vec<u8> = row.get(0);
+                let event_bytes: Vec<u8> = row.get(1);
+                let event:Event = serde_json::from_str(&String::from_utf8(event_bytes).unwrap())?;
+
+                for t in event.tags.iter().filter(|x| x.len() > 1) {
+                    let tagname = t.get(0).unwrap();
+                    let tagnamechar_opt = single_char_tagname(tagname);
+                    if tagnamechar_opt.is_none() {
+                        continue;
+                    }
+                    // safe because len was > 1
+                    let tagval = t.get(1).unwrap();
+                    // insert as BLOB if we can restore it losslessly.
+                    // this means it needs to be even length and lowercase.
+                    if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
+                        let q = "INSERT INTO tag (event_id, \"name\", value_hex) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
+                        sqlx::query(q).bind(&event_id).bind(&tagname).bind(hex::decode(tagval).ok()).execute(&mut update_tx).await?;
+                    } else {
+                        let q = "INSERT INTO tag (event_id, \"name\", value) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
+                        sqlx::query(q).bind(&event_id).bind(&tagname).bind(tagval.as_bytes()).execute(&mut update_tx).await?;
+                    }
+
+                }
+            }
+            update_tx.commit().await?;
+            bar.finish();
+        }
+        info!("rebuilt tags in {:?}", start.elapsed());
+        Ok(())
     }
 }

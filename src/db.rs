@@ -63,9 +63,9 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
         .await
         .unwrap();
     let repo = PostgresRepo::new(pool, metrics);
-    if let Ok(version) = repo.migrate_up().await {
-        info!("Postgres migration completed, at v{}", version);
-    }
+    // Panic on migration failure
+    let version = repo.migrate_up().await.unwrap();
+    info!("Postgres migration completed, at v{}", version);
     repo
 }
 
