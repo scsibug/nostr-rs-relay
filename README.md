@@ -2,7 +2,8 @@
 
 This is a [nostr](https://github.com/nostr-protocol/nostr) relay,
 written in Rust.  It currently supports the entire relay protocol, and
-persists data with SQLite.
+persists data with SQLite.  There is experimental support for
+Postgresql.
 
 The project master repository is available on
 [sourcehut](https://sr.ht/~gheartsfield/nostr-rs-relay/), and is
@@ -33,6 +34,7 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 - [x] NIP-22: [Event `created_at` limits](https://github.com/nostr-protocol/nips/blob/master/22.md) (_future-dated events only_)
 - [ ] NIP-26: [Event Delegation](https://github.com/nostr-protocol/nips/blob/master/26.md) (_implemented, but currently disabled_)
 - [x] NIP-28: [Public Chat](https://github.com/nostr-protocol/nips/blob/master/28.md)
+- [x] NIP-33: [Parameterized Replaceable Events](https://github.com/nostr-protocol/nips/blob/master/33.md)
 
 ## Quick Start
 
