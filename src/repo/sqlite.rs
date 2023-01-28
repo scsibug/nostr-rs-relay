@@ -53,6 +53,14 @@ pub struct SqliteRepo {
 impl SqliteRepo {
     // build all the pools needed
     #[must_use] pub fn new(settings: &Settings, metrics: NostrMetrics) -> SqliteRepo {
+        let write_pool = build_pool(
+            "writer",
+            settings,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            1,
+            2,
+            false,
+        );
         let maint_pool = build_pool(
             "maintenance",
             settings,
@@ -69,14 +77,6 @@ impl SqliteRepo {
             settings.database.max_conn,
             true,
         );
-        let write_pool = build_pool(
-            "writer",
-            settings,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            1,
-            2,
-            false,
-        );
 
         // this is used to block new reads during critical checkpoints
         let checkpoint_in_progress = Arc::new(Mutex::new(0));
@@ -85,7 +85,7 @@ impl SqliteRepo {
         let write_in_progress = Arc::new(Mutex::new(0));
 
         SqliteRepo {
-	    metrics,
+            metrics,
             read_pool,
             write_pool,
             maint_pool,
@@ -279,7 +279,7 @@ impl NostrRepo for SqliteRepo {
     }
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
-	let start = Instant::now();
+        let start = Instant::now();
         let _write_guard = self.write_in_progress.lock().await;
         // spawn a blocking thread
         let mut conn = self.write_pool.get()?;
@@ -287,10 +287,10 @@ impl NostrRepo for SqliteRepo {
         let event_count = task::spawn_blocking(move || {
             SqliteRepo::persist_event(&mut conn, &e)
         }).await?;
-	self.metrics
+        self.metrics
             .write_events
             .observe(start.elapsed().as_secs_f64());
-	event_count
+        event_count
     }
 
     /// Perform a database query using a subscription.
@@ -308,7 +308,7 @@ impl NostrRepo for SqliteRepo {
     ) -> Result<()> {
         let pre_spawn_start = Instant::now();
         let self=self.clone();
-	let metrics=self.metrics.clone();
+        let metrics=self.metrics.clone();
         task::spawn_blocking(move || {
             {
                 // if we are waiting on a checkpoint, stop until it is complete
@@ -442,13 +442,13 @@ impl NostrRepo for SqliteRepo {
             } else {
                 warn!("Could not get a database connection for querying");
             }
-	    metrics
-		.query_sub
-		.observe(pre_spawn_start.elapsed().as_secs_f64());
+            metrics
+                .query_sub
+                .observe(pre_spawn_start.elapsed().as_secs_f64());
             let ok: Result<()> = Ok(());
             ok
         });
-	Ok(())
+        Ok(())
     }
 
     /// Perform normal maintenance
@@ -852,6 +852,7 @@ pub fn build_pool(
 ) -> SqlitePool {
     let db_dir = &settings.database.data_directory;
     let full_path = Path::new(db_dir).join(DB_FILE);
+
     // small hack; if the database doesn't exist yet, that means the
     // writer thread hasn't finished.  Give it a chance to work.  This
     // is only an issue with the first time we run.
