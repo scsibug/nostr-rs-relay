@@ -13,7 +13,7 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::subscription::Subscription;
-use prometheus::{CounterVec, Encoder, Histogram, HistogramOpts, Opts, Registry, TextEncoder};
+use prometheus::{Encoder, Histogram, IntCounter, HistogramOpts, Opts, Registry, TextEncoder};
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
@@ -316,18 +316,15 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         let query_sub = Histogram::with_opts(HistogramOpts::new(
             "query_sub",
             "Subscription response times",
-        ))
-        .unwrap();
+        )).unwrap();
         let write_events = Histogram::with_opts(HistogramOpts::new(
             "write_event",
             "Event writing response times",
-        ))
-        .unwrap();
-        let connections = CounterVec::new(
-            Opts::new("connections", "New connections"),
-            vec!["origin"].as_slice(),
-        )
-        .unwrap();
+        )).unwrap();
+        let connections = IntCounter::with_opts(Opts::new(
+            "connections",
+            "New connections"
+        )).unwrap();
         registry.register(Box::new(query_sub.clone())).unwrap();
         registry.register(Box::new(write_events.clone())).unwrap();
         registry.register(Box::new(connections.clone())).unwrap();
@@ -559,15 +556,8 @@ async fn nostr_server(
         cid, origin, user_agent
     );
 
-    // Measure connections per origin
-    let mut metric_map: HashMap<&str, &str> = HashMap::new();
-    metric_map.insert("origin", origin.as_str());
-
-    metrics
-        .connections
-        .get_metric_with(&metric_map)
-        .unwrap()
-        .inc();
+    // Measure connections
+    metrics.connections.inc();
 
     loop {
         tokio::select! {
@@ -787,5 +777,5 @@ async fn nostr_server(
 pub struct NostrMetrics {
     pub query_sub: Histogram,
     pub write_events: Histogram,
-    pub connections: CounterVec,
+    pub connections: IntCounter,
 }
