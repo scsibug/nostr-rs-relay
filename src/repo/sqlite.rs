@@ -379,6 +379,7 @@ impl NostrRepo for SqliteRepo {
                             if self.checkpoint_in_progress.try_lock().is_err() {
                                 // lock was held, abort this query
                                 debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+                                metrics.query_aborts.inc();
                                 return Ok(());
                             }
                         }
@@ -386,7 +387,7 @@ impl NostrRepo for SqliteRepo {
 
                     // check if this is still active; every 100 rows
                     if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
-                        debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
+                        debug!("query cancelled by client (cid: {}, sub: {:?})", client_id, sub.id);
                         return Ok(());
                     }
                     row_count += 1;
@@ -402,6 +403,7 @@ impl NostrRepo for SqliteRepo {
                             // the queue has been full for too long, abort
                             info!("aborting database query due to slow client (cid: {}, sub: {:?})",
                                   client_id, sub.id);
+                            metrics.query_aborts.inc();
                             let ok: Result<()> = Ok(());
                             return ok;
                         }
@@ -409,6 +411,7 @@ impl NostrRepo for SqliteRepo {
                         if self.checkpoint_in_progress.try_lock().is_err() {
                             // lock was held, abort this query
                             debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
+                            metrics.query_aborts.inc();
                             return Ok(());
                         }
                         // give the queue a chance to clear before trying again

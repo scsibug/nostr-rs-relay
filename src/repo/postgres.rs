@@ -209,6 +209,7 @@ ON CONFLICT (id) DO NOTHING"#,
     ) -> Result<()> {
         let start = Instant::now();
         let mut row_count: usize = 0;
+        let metrics = &self.metrics;
 
         for filter in sub.filters.iter() {
             let start = Instant::now();
@@ -272,7 +273,7 @@ ON CONFLICT (id) DO NOTHING"#,
 
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
-                    debug!("query aborted (cid: {}, sub: {:?})", client_id, sub.id);
+                    debug!("query cancelled by client (cid: {}, sub: {:?})", client_id, sub.id);
                     return Ok(());
                 }
 
@@ -288,6 +289,7 @@ ON CONFLICT (id) DO NOTHING"#,
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
                             info!("aborting database query due to slow client");
+                            metrics.query_aborts.inc();
                             return Ok(());
                         }
                         // give the queue a chance to clear before trying again

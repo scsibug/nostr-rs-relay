@@ -325,13 +325,19 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             "connections",
             "New connections"
         )).unwrap();
+        let query_aborts = IntCounter::with_opts(Opts::new(
+            "query_abort",
+            "Aborted queries"
+        )).unwrap();
         registry.register(Box::new(query_sub.clone())).unwrap();
         registry.register(Box::new(write_events.clone())).unwrap();
         registry.register(Box::new(connections.clone())).unwrap();
+        registry.register(Box::new(query_aborts.clone())).unwrap();
         let metrics = NostrMetrics {
             query_sub,
             write_events,
             connections,
+            query_aborts,
         };
         // build a repository for events
         let repo = db::build_repo(&settings, metrics.clone()).await;
@@ -778,4 +784,5 @@ pub struct NostrMetrics {
     pub query_sub: Histogram,
     pub write_events: Histogram,
     pub connections: IntCounter,
+    pub query_aborts: IntCounter,
 }
