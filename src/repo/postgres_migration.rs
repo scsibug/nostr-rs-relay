@@ -116,7 +116,6 @@ CREATE TABLE "tag" (
 );
 CREATE INDEX tag_event_id_idx ON tag USING btree (event_id, name);
 CREATE INDEX tag_value_idx ON tag USING btree (value);
-CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
 
 -- NIP-05 Verfication table
 CREATE TABLE "user_verification" (
