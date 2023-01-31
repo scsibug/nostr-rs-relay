@@ -719,7 +719,7 @@ async fn nostr_server(
                         match parsed {
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
-                                debug!("successfully parsed/validated event: {:?} (cid: {})", id_prefix, cid);
+                                debug!("successfully parsed/validated event: {:?} (cid: {}, kind: {})", id_prefix, cid, e.kind);
                                 // check if the event is too far in the future.
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
