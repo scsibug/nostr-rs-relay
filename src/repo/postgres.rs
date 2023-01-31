@@ -62,6 +62,48 @@ impl NostrRepo for PostgresRepo {
             e.delegated_by.as_ref().and_then(|d| hex::decode(d).ok());
         let event_str = serde_json::to_string(&e).unwrap();
 
+        // determine if this event would be shadowed by an existing
+        // replaceable event or parameterized replaceable event.
+        if e.is_replaceable() {
+            let repl_count = sqlx::query(
+                "SELECT e.id FROM event e WHERE e.pub_key=? AND e.kind=? AND e.created_at >= ? LIMIT 1;")
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                .fetch_optional(&mut tx)
+                .await?;
+            if repl_count.is_some() {
+                return Ok(0);
+            }
+        }
+        if let Some(d_tag) = e.distinct_param() {
+            let repl_count:i64;
+            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                repl_count = sqlx::query_scalar(
+                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at >= $4 LIMIT 1;")
+                    .bind(hex::decode(&e.pubkey).ok())
+                    .bind(e.kind as i64)
+                    .bind(hex::decode(d_tag).ok())
+                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                    .fetch_one(&mut tx)
+                    .await?;
+            } else {
+                repl_count = sqlx::query_scalar(
+                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 AND e.created_at >= $4 LIMIT 1;")
+                    .bind(hex::decode(&e.pubkey).ok())
+                    .bind(e.kind as i64)
+                    .bind(d_tag.as_bytes())
+                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                    .fetch_one(&mut tx)
+                    .await?;
+            }
+            // if any rows were returned, then some newer event with
+            // the same author/kind/tag value exist, and we can ignore
+            // this event.
+            if repl_count > 0 {
+                return Ok(0)
+            }
+        }
         // ignore if the event hash is a duplicate.
         let mut ins_count = sqlx::query(
             r#"INSERT INTO "event"
