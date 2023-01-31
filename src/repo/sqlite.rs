@@ -323,6 +323,7 @@ impl NostrRepo for SqliteRepo {
                     "shedding DB query load queued for {:?} (cid: {}, sub: {:?})",
                     db_queue_time, client_id, sub.id
                 );
+                metrics.query_aborts.with_label_values(&["loadshed"]).inc();
                 return Ok(());
             }
             // otherwise, report queuing time if it is slow
@@ -383,7 +384,7 @@ impl NostrRepo for SqliteRepo {
                                 if self.checkpoint_in_progress.try_lock().is_err() {
                                     // lock was held, abort this query
                                     debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
-                                    metrics.query_aborts.inc();
+                                    metrics.query_aborts.with_label_values(&["checkpoint"]).inc();
                                     return Ok(());
                                 }
                             }
@@ -407,7 +408,7 @@ impl NostrRepo for SqliteRepo {
                                 // the queue has been full for too long, abort
                                 info!("aborting database query due to slow client (cid: {}, sub: {:?})",
                                       client_id, sub.id);
-                                metrics.query_aborts.inc();
+                                metrics.query_aborts.with_label_values(&["slowclient"]).inc();
                                 let ok: Result<()> = Ok(());
                                 return ok;
                             }
@@ -415,7 +416,7 @@ impl NostrRepo for SqliteRepo {
                             if self.checkpoint_in_progress.try_lock().is_err() {
                                 // lock was held, abort this query
                                 debug!("query aborted due to checkpoint (cid: {}, sub: {:?})", client_id, sub.id);
-                                metrics.query_aborts.inc();
+                                metrics.query_aborts.with_label_values(&["checkpoint"]).inc();
                                 return Ok(());
                             }
                             // give the queue a chance to clear before trying again

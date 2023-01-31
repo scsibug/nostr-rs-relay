@@ -244,10 +244,10 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         "nostr_connections_total",
         "New connections",
     )).unwrap();
-    let query_aborts = IntCounter::with_opts(Opts::new(
-        "nostr_query_abort_total",
-        "Aborted queries",
-    )).unwrap();
+    let query_aborts = IntCounterVec::new(
+        Opts::new("nostr_query_abort_total", "Aborted queries"),
+        vec!["reason"].as_slice(),
+    ).unwrap();
     let cmd_req = IntCounter::with_opts(Opts::new(
         "nostr_cmd_req_total",
         "REQ commands",
@@ -834,7 +834,7 @@ pub struct NostrMetrics {
     pub sent_events: IntCounterVec, // count of events sent to clients
     pub connections: IntCounter, // count of websocket connections
     pub disconnects: IntCounterVec, // client disconnects
-    pub query_aborts: IntCounter, // count of queries aborted by server
+    pub query_aborts: IntCounterVec, // count of queries aborted by server
     pub cmd_req: IntCounter, // count of REQ commands received
     pub cmd_event: IntCounter, // count of EVENT commands received
     pub cmd_close: IntCounter, // count of CLOSE commands received

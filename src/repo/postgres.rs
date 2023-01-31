@@ -358,7 +358,7 @@ ON CONFLICT (id) DO NOTHING"#,
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
                             info!("aborting database query due to slow client");
-                            metrics.query_aborts.inc();
+                            metrics.query_aborts.with_label_values(&["slowclient"]).inc();
                             return Ok(());
                         }
                         // give the queue a chance to clear before trying again
