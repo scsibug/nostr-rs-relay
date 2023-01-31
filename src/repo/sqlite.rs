@@ -645,7 +645,7 @@ fn override_index(f: &ReqFilter) -> Option<String> {
     }
     // if there is an author, it is much better to force the authors index.
     if f.authors.is_some() {
-        if f.since.is_none() && f.until.is_none() {
+        if f.since.is_none() && f.until.is_none() && f.limit.is_none() {
             if f.kinds.is_none() {
                 // with no use of kinds/created_at, just author
                 return Some("author_index".into());
