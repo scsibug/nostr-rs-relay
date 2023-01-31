@@ -327,7 +327,6 @@ ON CONFLICT (id) DO NOTHING"#,
                 // TODO: we could use try_send, but we'd have to juggle
                 // getting the query result back as part of the error
                 // result.
-                metrics.sent_events.inc();
                 query_tx
                     .send(QueryResult {
                         sub_id: sub.get_id(),
