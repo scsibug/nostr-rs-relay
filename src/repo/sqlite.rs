@@ -336,6 +336,7 @@ impl NostrRepo for SqliteRepo {
             let slow_cutoff = Duration::from_millis(2000);
             let mut filter_count = 0;
             for filter in sub.filters.iter() {
+                let filter_start = Instant::now();
                 filter_count += 1;
                 let (q, p, idx) = query_from_filter(&filter);
                 let sql_gen_elapsed = start.elapsed();
@@ -357,7 +358,7 @@ impl NostrRepo for SqliteRepo {
 
                     let mut first_result = true;
                     while let Some(row) = event_rows.next()? {
-                        let first_event_elapsed = start.elapsed();
+                        let first_event_elapsed = filter_start.elapsed();
                         slow_first_event = first_event_elapsed >= slow_cutoff;
                         if first_result {
                             debug!(
@@ -370,8 +371,8 @@ impl NostrRepo for SqliteRepo {
                         // to reduce logging; only show 1/16th of clients (leading 0)
                         if row_count == 0 && slow_first_event && client_id.starts_with('0') {
                             debug!(
-                                "query req (slow): {:?} (cid: {}, sub: {:?})",
-                                sub, client_id, sub.id
+                                "query filter req (slow): {:?} (cid: {}, sub: {:?})",
+                                filter, client_id, sub.id
                             );
                         }
                         // check if a checkpoint is trying to run, and abort
