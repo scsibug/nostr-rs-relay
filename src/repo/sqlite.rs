@@ -282,9 +282,11 @@ impl NostrRepo for SqliteRepo {
         let start = Instant::now();
         let _write_guard = self.write_in_progress.lock().await;
         // spawn a blocking thread
-        let mut conn = self.write_pool.get()?;
+        //let mut conn = self.write_pool.get()?;
+        let pool = self.write_pool.clone();
         let e = e.clone();
         let event_count = task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
             SqliteRepo::persist_event(&mut conn, &e)
         }).await?;
         self.metrics
