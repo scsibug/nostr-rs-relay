@@ -658,6 +658,9 @@ impl NostrRepo for SqliteRepo {
 
 /// Decide if there is an index that should be used explicitly
 fn override_index(f: &ReqFilter) -> Option<String> {
+    if f.ids.is_some() {
+        return Some("event_hash_index".into());
+    }
     // queries for multiple kinds default to kind_index, which is
     // significantly slower than kind_created_at_index.
     if let Some(ks) = &f.kinds {
