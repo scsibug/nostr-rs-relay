@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.66.0 as builder
+FROM docker.io/library/rust:1.67.0 as builder
 
 RUN USER=root cargo install cargo-auditable
 RUN USER=root cargo new --bin nostr-rs-relay
