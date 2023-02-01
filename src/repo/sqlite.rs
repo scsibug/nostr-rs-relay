@@ -800,21 +800,50 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                     str_vals.push(Box::new(v.clone()));
                 }
             }
-            // create clauses with "?" params for each tag value being searched
-            let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
-            let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
-            // find evidence of the target tag name/value existing for this event.
-            let tag_clause = format!(
-                "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND ({} OR {})))",
-                str_clause, blob_clause
-            );
-            // add the tag name as the first parameter
-            params.push(Box::new(key.to_string()));
-            // add all tag values that are plain strings as params
-            params.append(&mut str_vals);
-            // add all tag values that are blobs as params
-            params.append(&mut blob_vals);
-            filter_components.push(tag_clause);
+            // do not mix value and value_hex; this is a temporary special case.
+            if str_vals.len() == 0 {
+                // create clauses with "?" params for each tag value being searched
+                let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
+                // find evidence of the target tag name/value existing for this event.
+                let tag_clause = format!(
+                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND {}))",
+                    blob_clause
+                );
+                // add the tag name as the first parameter
+                params.push(Box::new(key.to_string()));
+                // add all tag values that are blobs as params
+                params.append(&mut blob_vals);
+                filter_components.push(tag_clause);
+            } else if blob_vals.len() == 0 {
+                // create clauses with "?" params for each tag value being searched
+                let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
+                // find evidence of the target tag name/value existing for this event.
+                let tag_clause = format!(
+                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND {}))",
+                    str_clause
+                );
+                // add the tag name as the first parameter
+                params.push(Box::new(key.to_string()));
+                // add all tag values that are blobs as params
+                params.append(&mut str_vals);
+                filter_components.push(tag_clause);
+            } else {
+                // create clauses with "?" params for each tag value being searched
+                let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
+                let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
+                // find evidence of the target tag name/value existing for this event.
+                let tag_clause = format!(
+                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND ({} OR {})))",
+                    str_clause, blob_clause
+                );
+                // add the tag name as the first parameter
+                params.push(Box::new(key.to_string()));
+                // add all tag values that are plain strings as params
+                params.append(&mut str_vals);
+                // add all tag values that are blobs as params
+                params.append(&mut blob_vals);
+                filter_components.push(tag_clause);
+            }
         }
     }
     // Query for timestamp
