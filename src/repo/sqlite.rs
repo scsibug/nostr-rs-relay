@@ -828,6 +828,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 params.append(&mut str_vals);
                 filter_components.push(tag_clause);
             } else {
+                debug!("mixed string/blob query");
                 // create clauses with "?" params for each tag value being searched
                 let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
                 let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
