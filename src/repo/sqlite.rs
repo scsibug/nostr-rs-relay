@@ -347,7 +347,7 @@ impl NostrRepo for SqliteRepo {
             let start = Instant::now();
             let mut row_count: usize = 0;
             // cutoff for displaying slow queries
-            let slow_cutoff = Duration::from_millis(1000);
+            let slow_cutoff = Duration::from_millis(250);
             let mut filter_count = 0;
             for filter in sub.filters.iter() {
                 let filter_start = Instant::now();
@@ -448,10 +448,10 @@ impl NostrRepo for SqliteRepo {
                     warn!("Could not get a database connection for querying");
                 }
                 // if the filter took more than 1 second of db_time, print out the JSON.
-                if start.elapsed() > slow_cutoff && client_id.starts_with('0') {
+                if filter_start.elapsed() > slow_cutoff && client_id.starts_with('0') {
                     debug!(
-                        "query filter req (slow): {} (cid: {}, sub: {:?})",
-                        serde_json::to_string(&filter)?, client_id, sub.id
+                        "query filter req (slow): {} (cid: {}, sub: {:?}, filter: {})",
+                        serde_json::to_string(&filter)?, client_id, sub.id, filter_count
                     );
                 }
 
