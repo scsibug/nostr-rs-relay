@@ -22,16 +22,22 @@ pub struct Subscription {
 #[derive(Serialize, PartialEq, Eq, Debug, Clone)]
 pub struct ReqFilter {
     /// Event hashes
+    #[serde(skip_serializing_if="Option::is_none")]
     pub ids: Option<Vec<String>>,
     /// Event kinds
+    #[serde(skip_serializing_if="Option::is_none")]
     pub kinds: Option<Vec<u64>>,
     /// Events published after this time
+    #[serde(skip_serializing_if="Option::is_none")]
     pub since: Option<u64>,
     /// Events published before this time
+    #[serde(skip_serializing_if="Option::is_none")]
     pub until: Option<u64>,
     /// List of author public keys
+    #[serde(skip_serializing_if="Option::is_none")]
     pub authors: Option<Vec<String>>,
     /// Limit number of results
+    #[serde(skip_serializing_if="Option::is_none")]
     pub limit: Option<u64>,
     /// Set of tags
     #[serde(skip)]
@@ -40,6 +46,7 @@ pub struct ReqFilter {
     // we can't represent it in the req filter, so we don't want to
     // erroneously match.  This basically indicates the req tried to
     // do something invalid.
+    #[serde(skip)]
     pub force_no_match: bool,
 }
 

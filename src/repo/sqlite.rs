@@ -347,7 +347,7 @@ impl NostrRepo for SqliteRepo {
             let start = Instant::now();
             let mut row_count: usize = 0;
             // cutoff for displaying slow queries
-            let slow_cutoff = Duration::from_millis(2000);
+            let slow_cutoff = Duration::from_millis(1000);
             let mut filter_count = 0;
             for filter in sub.filters.iter() {
                 let filter_start = Instant::now();
@@ -356,7 +356,7 @@ impl NostrRepo for SqliteRepo {
                 let sql_gen_elapsed = start.elapsed();
 
                 if sql_gen_elapsed > Duration::from_millis(10) {
-                    debug!("SQL (slow) generated in {:?}", start.elapsed());
+                    debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
                 }
                 // any client that doesn't cause us to generate new rows in 5
                 // seconds gets dropped.
@@ -379,15 +379,15 @@ impl NostrRepo for SqliteRepo {
                                 "first result in {:?} (cid: {}, sub: {:?}, filter: {}) [used index: {:?}]",
                                 first_event_elapsed, client_id, sub.id, filter_count, idx
                             );
+                            // logging for slow queries; show filter and SQL.
+                            // to reduce logging; only show 1/16th of clients (leading 0)
+                            if slow_first_event && client_id.starts_with('0') {
+                                debug!(
+                                    "filter first result (slow): {} (cid: {}, sub: {:?})",
+                                    serde_json::to_string(&filter)?, client_id, sub.id
+                                );
+                            }
                             first_result = false;
-                        }
-                        // logging for slow queries; show sub and SQL.
-                        // to reduce logging; only show 1/16th of clients (leading 0)
-                        if row_count == 0 && slow_first_event && client_id.starts_with('0') {
-                            debug!(
-                                "query filter req (slow): {:?} (cid: {}, sub: {:?})",
-                                filter, client_id, sub.id
-                            );
                         }
                         // check if a checkpoint is trying to run, and abort
                         if row_count % 100 == 0 {
@@ -447,6 +447,14 @@ impl NostrRepo for SqliteRepo {
                 } else {
                     warn!("Could not get a database connection for querying");
                 }
+                // if the filter took more than 1 second of db_time, print out the JSON.
+                if start.elapsed() > slow_cutoff && client_id.starts_with('0') {
+                    debug!(
+                        "query filter req (slow): {} (cid: {}, sub: {:?})",
+                        serde_json::to_string(&filter)?, client_id, sub.id
+                    );
+                }
+
             }
             drop(sem); // new query can begin
             debug!(
