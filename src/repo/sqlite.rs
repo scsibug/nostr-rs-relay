@@ -349,6 +349,7 @@ impl NostrRepo for SqliteRepo {
             // cutoff for displaying slow queries
             let slow_cutoff = Duration::from_millis(250);
             let mut filter_count = 0;
+            // remove duplicates from the filter list.
             for filter in sub.filters.iter() {
                 let filter_start = Instant::now();
                 filter_count += 1;
@@ -447,7 +448,7 @@ impl NostrRepo for SqliteRepo {
                 } else {
                     warn!("Could not get a database connection for querying");
                 }
-                // if the filter took more than 1 second of db_time, print out the JSON.
+                // if the filter took too much db_time, print out the JSON.
                 if filter_start.elapsed() > slow_cutoff && client_id.starts_with('0') {
                     debug!(
                         "query filter req (slow): {} (cid: {}, sub: {:?}, filter: {})",
