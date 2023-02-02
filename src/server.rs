@@ -576,7 +576,7 @@ async fn nostr_server(
     // we will send out the tx handle to any query we generate.
     // this has capacity for some of the larger requests we see, which
     // should allow the DB thread to release the handle earlier.
-    let (query_tx, mut query_rx) = mpsc::channel::<db::QueryResult>(20000);
+    let (query_tx, mut query_rx) = mpsc::channel::<db::QueryResult>(20_000);
     // Create channel for receiving NOTICEs
     let (notice_tx, mut notice_rx) = mpsc::channel::<Notice>(128);
 

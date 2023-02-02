@@ -364,9 +364,9 @@ impl NostrRepo for SqliteRepo {
                     if sql_gen_elapsed > Duration::from_millis(10) {
                         debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
                     }
-                    // any client that doesn't cause us to generate new rows in 5
+                    // any client that doesn't cause us to generate new rows in 2
                     // seconds gets dropped.
-                    let abort_cutoff = Duration::from_secs(5);
+                    let abort_cutoff = Duration::from_secs(2);
                     let mut slow_first_event;
                     let mut last_successful_send = Instant::now();
                     // execute the query.
@@ -436,8 +436,8 @@ impl NostrRepo for SqliteRepo {
                                 return Ok(());
                             }
                             // give the queue a chance to clear before trying again
-                            info!("query thread sleeping due to full query_tx (cid: {}, sub: {:?})", client_id, sub.id);
-                            thread::sleep(Duration::from_millis(100));
+                            debug!("query thread sleeping due to full query_tx (cid: {}, sub: {:?})", client_id, sub.id);
+                            thread::sleep(Duration::from_millis(500));
                         }
                         // TODO: we could use try_send, but we'd have to juggle
                         // getting the query result back as part of the error
