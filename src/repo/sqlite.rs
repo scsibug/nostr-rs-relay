@@ -388,8 +388,8 @@ impl NostrRepo for SqliteRepo {
                             // to reduce logging; only show 1/16th of clients (leading 0)
                             if slow_first_event && client_id.starts_with('0') {
                                 debug!(
-                                    "filter first result (slow): {} (cid: {}, sub: {:?})",
-                                    serde_json::to_string(&filter)?, client_id, sub.id
+                                    "filter first result in {:?} (slow): {} (cid: {}, sub: {:?})",
+                                    first_event_elapsed, serde_json::to_string(&filter)?, client_id, sub.id
                                 );
                             }
                             first_result = false;
