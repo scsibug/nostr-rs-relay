@@ -799,11 +799,11 @@ async fn nostr_server(
                         break;
                     }
                     Err(Error::EventMaxLengthError(s)) => {
-                        info!("client sent event larger ({} bytes) than max size (cid: {})", s, cid);
+                        info!("client sent command larger ({} bytes) than max size (cid: {})", s, cid);
                         ws_stream.send(make_notice_message(&Notice::message("event exceeded max size".into()))).await.ok();
                     },
                     Err(Error::ProtoParseError) => {
-                        info!("client sent event that could not be parsed (cid: {})", cid);
+                        info!("client sent command that could not be parsed (cid: {})", cid);
                         ws_stream.send(make_notice_message(&Notice::message("could not parse command".into()))).await.ok();
                     },
                     Err(e) => {
