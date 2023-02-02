@@ -351,6 +351,10 @@ impl NostrRepo for SqliteRepo {
             let mut filter_count = 0;
             // remove duplicates from the filter list.
             if let Ok(mut conn) = self.read_pool.get() {
+                {
+                    let pool_state = self.read_pool.state();
+                    metrics.db_connections.set((pool_state.connections - pool_state.idle_connections).into());
+                }
                 for filter in sub.filters.iter() {
                     let filter_start = Instant::now();
                     filter_count += 1;
@@ -367,7 +371,7 @@ impl NostrRepo for SqliteRepo {
                     let mut last_successful_send = Instant::now();
                     // execute the query.
                     // make the actual SQL query (with parameters inserted) available
-                    conn.trace(Some(|x| {debug!("SQL trace: {:?}", x)}));
+                    conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
                     let mut stmt = conn.prepare_cached(&q)?;
                     let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
 

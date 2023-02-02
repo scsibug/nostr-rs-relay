@@ -14,6 +14,7 @@ use crate::nip05;
 use crate::notice::Notice;
 use crate::subscription::Subscription;
 use prometheus::IntCounterVec;
+use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, IntCounter, HistogramOpts, Opts, Registry, TextEncoder};
 use futures::SinkExt;
 use futures::StreamExt;
@@ -248,6 +249,9 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         "nostr_connections_total",
         "New connections",
     )).unwrap();
+    let db_connections = IntGauge::with_opts(Opts::new(
+        "nostr_db_connections", "Active database connections"
+    )).unwrap();
     let query_aborts = IntCounterVec::new(
         Opts::new("nostr_query_abort_total", "Aborted queries"),
         vec!["reason"].as_slice(),
@@ -273,6 +277,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     registry.register(Box::new(write_events.clone())).unwrap();
     registry.register(Box::new(sent_events.clone())).unwrap();
     registry.register(Box::new(connections.clone())).unwrap();
+    registry.register(Box::new(db_connections.clone())).unwrap();
     registry.register(Box::new(query_aborts.clone())).unwrap();
     registry.register(Box::new(cmd_req.clone())).unwrap();
     registry.register(Box::new(cmd_event.clone())).unwrap();
@@ -284,6 +289,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         write_events,
         sent_events,
         connections,
+        db_connections,
 	disconnects,
         query_aborts,
 	cmd_req,
@@ -837,6 +843,7 @@ async fn nostr_server(
 pub struct NostrMetrics {
     pub query_sub: Histogram, // response time of successful subscriptions
     pub query_db: Histogram, // individual database query execution time
+    pub db_connections: IntGauge, // database connections in use
     pub write_events: Histogram, // response time of event writes
     pub sent_events: IntCounterVec, // count of events sent to clients
     pub connections: IntCounter, // count of websocket connections
