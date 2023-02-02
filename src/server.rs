@@ -232,6 +232,10 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         "nostr_query_seconds",
         "Subscription response times",
     )).unwrap();
+    let query_db = Histogram::with_opts(HistogramOpts::new(
+        "nostr_filter_seconds",
+        "Filter SQL query times",
+    )).unwrap();
     let write_events = Histogram::with_opts(HistogramOpts::new(
         "nostr_events_write_seconds",
         "Event writing response times",
@@ -265,6 +269,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         vec!["reason"].as_slice(),
         ).unwrap();
     registry.register(Box::new(query_sub.clone())).unwrap();
+    registry.register(Box::new(query_db.clone())).unwrap();
     registry.register(Box::new(write_events.clone())).unwrap();
     registry.register(Box::new(sent_events.clone())).unwrap();
     registry.register(Box::new(connections.clone())).unwrap();
@@ -275,6 +280,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     registry.register(Box::new(disconnects.clone())).unwrap();
     let metrics = NostrMetrics {
         query_sub,
+        query_db,
         write_events,
         sent_events,
         connections,
@@ -830,6 +836,7 @@ async fn nostr_server(
 #[derive(Clone)]
 pub struct NostrMetrics {
     pub query_sub: Histogram, // response time of successful subscriptions
+    pub query_db: Histogram, // individual database query execution time
     pub write_events: Histogram, // response time of event writes
     pub sent_events: IntCounterVec, // count of events sent to clients
     pub connections: IntCounter, // count of websocket connections

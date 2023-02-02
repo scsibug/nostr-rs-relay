@@ -350,24 +350,24 @@ impl NostrRepo for SqliteRepo {
             let slow_cutoff = Duration::from_millis(250);
             let mut filter_count = 0;
             // remove duplicates from the filter list.
-            for filter in sub.filters.iter() {
-                let filter_start = Instant::now();
-                filter_count += 1;
-                let (q, p, idx) = query_from_filter(&filter);
-                let sql_gen_elapsed = start.elapsed();
+            if let Ok(mut conn) = self.read_pool.get() {
+                for filter in sub.filters.iter() {
+                    let filter_start = Instant::now();
+                    filter_count += 1;
+                    let (q, p, idx) = query_from_filter(&filter);
+                    let sql_gen_elapsed = start.elapsed();
 
-                if sql_gen_elapsed > Duration::from_millis(10) {
-                    debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
-                }
-                // any client that doesn't cause us to generate new rows in 5
-                // seconds gets dropped.
-                let abort_cutoff = Duration::from_secs(5);
-                let mut slow_first_event;
-                let mut last_successful_send = Instant::now();
-                if let Ok(mut conn) = self.read_pool.get() {
+                    if sql_gen_elapsed > Duration::from_millis(10) {
+                        debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
+                    }
+                    // any client that doesn't cause us to generate new rows in 5
+                    // seconds gets dropped.
+                    let abort_cutoff = Duration::from_secs(5);
+                    let mut slow_first_event;
+                    let mut last_successful_send = Instant::now();
                     // execute the query.
                     // make the actual SQL query (with parameters inserted) available
-                    conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
+                    conn.trace(Some(|x| {debug!("SQL trace: {:?}", x)}));
                     let mut stmt = conn.prepare_cached(&q)?;
                     let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
 
@@ -445,17 +445,20 @@ impl NostrRepo for SqliteRepo {
                             .ok();
                         last_successful_send = Instant::now();
                     }
-                } else {
-                    warn!("Could not get a database connection for querying");
-                }
-                // if the filter took too much db_time, print out the JSON.
-                if filter_start.elapsed() > slow_cutoff && client_id.starts_with('0') {
-                    debug!(
-                        "query filter req (slow): {} (cid: {}, sub: {:?}, filter: {})",
-                        serde_json::to_string(&filter)?, client_id, sub.id, filter_count
-                    );
-                }
+                    metrics
+                        .query_db
+                        .observe(filter_start.elapsed().as_secs_f64());
+                    // if the filter took too much db_time, print out the JSON.
+                    if filter_start.elapsed() > slow_cutoff && client_id.starts_with('0') {
+                        debug!(
+                            "query filter req (slow): {} (cid: {}, sub: {:?}, filter: {})",
+                            serde_json::to_string(&filter)?, client_id, sub.id, filter_count
+                        );
+                    }
 
+                }
+            } else {
+                warn!("Could not get a database connection for querying");
             }
             drop(sem); // new query can begin
             debug!(
