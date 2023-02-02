@@ -180,14 +180,14 @@ ON CONFLICT (id) DO NOTHING"#,
         if let Some(d_tag) = e.distinct_param() {
             let update_count;
             if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC LIMIT 1);")
+                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(hex::decode(d_tag).ok())
                     .execute(&mut tx)
                     .await?.rows_affected();
             } else {
-                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC LIMIT 1);")
+                update_count = sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(d_tag.as_bytes())

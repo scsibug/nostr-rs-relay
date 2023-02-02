@@ -204,11 +204,11 @@ impl SqliteRepo {
             let update_count;
             if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
                 update_count = tx.execute(
-                    "DELETE FROM event WHERE kind=? AND author=? AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value_hex=? ORDER BY created_at DESC LIMIT 1);",
+                    "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value_hex=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
                     params![e.kind, pubkey_blob, e.kind, pubkey_blob, hex::decode(d_tag).ok()])?;
             } else {
                 update_count = tx.execute(
-                    "DELETE FROM event WHERE kind=? AND author=? AND id NOT IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT 1);",
+                    "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
                     params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?;
             }
             if update_count > 0 {
