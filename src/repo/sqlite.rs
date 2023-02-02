@@ -436,6 +436,7 @@ impl NostrRepo for SqliteRepo {
                                 return Ok(());
                             }
                             // give the queue a chance to clear before trying again
+                            info!("query thread sleeping due to full query_tx (cid: {}, sub: {:?})", client_id, sub.id);
                             thread::sleep(Duration::from_millis(100));
                         }
                         // TODO: we could use try_send, but we'd have to juggle
