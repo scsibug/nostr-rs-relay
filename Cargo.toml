@@ -1,6 +1,6 @@
 [package]
 name = "nostr-rs-relay"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 authors = ["Greg Heartsfield <scsibug@imap.cc>"]
 description = "A relay implementation for the Nostr protocol"
