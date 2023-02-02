@@ -820,7 +820,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND {}))",
+                    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {}))",
                     blob_clause
                 );
                 // add the tag name as the first parameter
@@ -833,7 +833,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND {}))",
+		    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {}))",
                     str_clause
                 );
                 // add the tag name as the first parameter
@@ -848,7 +848,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-                    "e.id IN (SELECT e.id FROM event e LEFT JOIN tag t on e.id=t.event_id WHERE hidden!=TRUE and (name=? AND ({} OR {})))",
+		    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND ({} OR {})))",
                     str_clause, blob_clause
                 );
                 // add the tag name as the first parameter
