@@ -81,7 +81,8 @@ reject_future_seconds = 1800
 
 # Limit client subscriptions created per second, averaged over one
 # minute.  Must be an integer.  If not set (or set to 0), defaults to
-# unlimited.
+# unlimited.  Strongly recommended to set this to a low value such as
+# 10 to ensure fair service.
 #subscriptions_per_min = 0
 
 # UNIMPLEMENTED...
