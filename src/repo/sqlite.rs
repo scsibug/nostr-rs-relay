@@ -344,6 +344,12 @@ impl NostrRepo for SqliteRepo {
                     db_queue_time, client_id, sub.id
                 );
             }
+            // check before getting a DB connection if the client still wants the results
+            if abandon_query_rx.try_recv().is_ok() {
+                debug!("query cancelled by client (before execution) (cid: {}, sub: {:?})", client_id, sub.id);
+                return Ok(());
+            }
+
             let start = Instant::now();
             let mut row_count: usize = 0;
             // cutoff for displaying slow queries
