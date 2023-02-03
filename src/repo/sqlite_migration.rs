@@ -16,6 +16,7 @@ pub const STARTUP_SQL: &str = r##"
 PRAGMA main.synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA journal_size_limit = 32768;
+PRAGMA temp_store = 2; -- use memory, not temp files
 pragma mmap_size = 17179869184; -- cap mmap at 16GB
 "##;
 
