@@ -92,6 +92,8 @@ http {
         location / {
             proxy_pass http://localhost:8080;
             proxy_http_version 1.1;
+            proxy_read_timeout 1d;
+            proxy_send_timeout 1d;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "Upgrade";
             proxy_set_header Host $host;
