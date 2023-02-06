@@ -34,6 +34,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     if m002_result == MigrationResult::Upgraded {
         m002::rebuild_tags(db).await?;
     }
+    run_migration(m003::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -215,5 +216,23 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
         }
         info!("rebuilt tags in {:?}", start.elapsed());
         Ok(())
+    }
+}
+
+mod m003 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+    
+    pub const VERSION: i64 = 3;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Add unique constraint on tag
+ALTER TABLE tag ADD CONSTRAINT unique_constraint_name UNIQUE (event_id, "name", value);
+        "#,
+            ],
+        }
     }
 }
