@@ -7,7 +7,7 @@ intervention.  For heavily trafficked relays, there are a number of
 steps that the operator may need to take to maintain performance and
 limit disk usage.
 
-This maintenance guide is current as of version `0.7.14`.  Future
+This maintenance guide is current as of version `0.8.2`.  Future
 versions may incorporate and automate some of these steps.
 
 ## Backing Up the Database
@@ -43,18 +43,15 @@ vacuum;
 
 ## Clearing Hidden Events
 
-When events are deleted, either through deletion events, metadata or
-follower updates, or a replaceable event kind, the event is not
-actually removed from the database.  Instead, a flag `HIDDEN` is set
-to true for the event, which excludes it from search results.  The
-original intent was to ensure that subsequent rebroadcasts of the
-event would be easily detected as having been deleted, and would not
-need to be stored again.  In practice, this decision causes excessive
-growth of the `tags` table, since all the previous followers are
-retained for those `HIDDEN` events.
+When events are deleted, the event is not actually removed from the
+database.  Instead, a flag `HIDDEN` is set to true for the event,
+which excludes it from search results.  High volume replacements from
+profile or other replaceable events are deleted, not hidden, in the
+current version of the relay.
 
-The `event` and especially the `tag` table can be significantly
-reduced in size by running these commands:
+In the current version, removing hidden events should not result in
+significant space savings, but it can still be used if there is no
+desire to hold on to events that can never be re-broadcast.
 
 ```console
 PRAGMA foreign_keys = ON;
