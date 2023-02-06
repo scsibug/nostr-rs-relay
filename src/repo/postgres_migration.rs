@@ -39,7 +39,10 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
 }
 
 async fn current_version(db: &PostgresPool) -> i64 {
-    sqlx::query_scalar("SELECT max(serial_number) FROM migrations;").fetch_one(db).await.unwrap()
+    sqlx::query_scalar("SELECT max(serial_number) FROM migrations;")
+        .fetch_one(db)
+        .await
+        .unwrap()
 }
 
 async fn prepare_migrations_table(db: &PostgresPool) {
@@ -138,15 +141,15 @@ CREATE INDEX user_verification_name_idx ON user_verification USING btree (name);
 }
 
 mod m002 {
+    use async_std::stream::StreamExt;
+    use indicatif::{ProgressBar, ProgressStyle};
+    use sqlx::Row;
     use std::time::Instant;
     use tracing::info;
-    use async_std::stream::StreamExt;
-    use sqlx::Row;
-    use indicatif::{ProgressBar, ProgressStyle};
 
-    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+    use crate::event::{single_char_tagname, Event};
     use crate::repo::postgres::PostgresPool;
-    use crate::event::{Event, single_char_tagname};
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
     use crate::utils::is_lower_hex;
 
     pub const VERSION: i64 = 2;
@@ -173,23 +176,31 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
         let mut tx = db.begin().await.unwrap();
         let mut update_tx = db.begin().await.unwrap();
         // Clear out table
-        sqlx::query("DELETE FROM tag;").execute(&mut update_tx).await?;
+        sqlx::query("DELETE FROM tag;")
+            .execute(&mut update_tx)
+            .await?;
         {
-            let event_count: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) from event;")
+            let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) from event;")
                 .fetch_one(&mut tx)
                 .await
                 .unwrap();
-            let bar = ProgressBar::new(event_count.try_into().unwrap()).with_message("rebuilding tags table");
-            bar.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.white/blue} {pos:>7}/{len:7} [{percent}%] {msg}").unwrap());
-            let mut events = sqlx::query("SELECT id, content FROM event ORDER BY id;").fetch(&mut tx);
+            let bar = ProgressBar::new(event_count.try_into().unwrap())
+                .with_message("rebuilding tags table");
+            bar.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] {bar:40.white/blue} {pos:>7}/{len:7} [{percent}%] {msg}",
+                )
+                .unwrap(),
+            );
+            let mut events =
+                sqlx::query("SELECT id, content FROM event ORDER BY id;").fetch(&mut tx);
             while let Some(row) = events.next().await {
                 bar.inc(1);
                 // get the row id and content
                 let row = row.unwrap();
                 let event_id: Vec<u8> = row.get(0);
                 let event_bytes: Vec<u8> = row.get(1);
-                let event:Event = serde_json::from_str(&String::from_utf8(event_bytes).unwrap())?;
+                let event: Event = serde_json::from_str(&String::from_utf8(event_bytes).unwrap())?;
 
                 for t in event.tags.iter().filter(|x| x.len() > 1) {
                     let tagname = t.get(0).unwrap();
@@ -203,12 +214,21 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                     // this means it needs to be even length and lowercase.
                     if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
                         let q = "INSERT INTO tag (event_id, \"name\", value_hex) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
-                        sqlx::query(q).bind(&event_id).bind(&tagname).bind(hex::decode(tagval).ok()).execute(&mut update_tx).await?;
+                        sqlx::query(q)
+                            .bind(&event_id)
+                            .bind(&tagname)
+                            .bind(hex::decode(tagval).ok())
+                            .execute(&mut update_tx)
+                            .await?;
                     } else {
                         let q = "INSERT INTO tag (event_id, \"name\", value) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
-                        sqlx::query(q).bind(&event_id).bind(&tagname).bind(tagval.as_bytes()).execute(&mut update_tx).await?;
+                        sqlx::query(q)
+                            .bind(&event_id)
+                            .bind(&tagname)
+                            .bind(tagval.as_bytes())
+                            .execute(&mut update_tx)
+                            .await?;
                     }
-
                 }
             }
             update_tx.commit().await?;
@@ -221,7 +241,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
 
 mod m003 {
     use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
-    
+
     pub const VERSION: i64 = 3;
 
     pub fn migration() -> impl Migration {
