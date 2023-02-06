@@ -70,7 +70,7 @@ impl Serialize for ReqFilter {
         if let Some(tags) = &self.tags {
             for (k,v) in tags {
                 let vals:Vec<&String> = v.iter().collect();
-                map.serialize_entry(&format!("#{}",k), &vals)?;
+                map.serialize_entry(&format!("#{k}"), &vals)?;
             }
         }
         map.end()

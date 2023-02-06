@@ -81,7 +81,7 @@ async fn run_migration(migration: impl Migration, db: &PostgresPool) -> Migratio
         .unwrap();
 
     transaction.commit().await.unwrap();
-    return MigrationResult::Upgraded;
+    MigrationResult::Upgraded
 }
 
 mod m001 {
@@ -216,7 +216,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                         let q = "INSERT INTO tag (event_id, \"name\", value_hex) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
                         sqlx::query(q)
                             .bind(&event_id)
-                            .bind(&tagname)
+                            .bind(tagname)
                             .bind(hex::decode(tagval).ok())
                             .execute(&mut update_tx)
                             .await?;
@@ -224,7 +224,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                         let q = "INSERT INTO tag (event_id, \"name\", value) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
                         sqlx::query(q)
                             .bind(&event_id)
-                            .bind(&tagname)
+                            .bind(tagname)
                             .bind(tagval.as_bytes())
                             .execute(&mut update_tx)
                             .await?;

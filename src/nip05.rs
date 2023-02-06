@@ -107,7 +107,7 @@ impl std::fmt::Display for Nip05Name {
 /// Check if the specified username and address are present and match in this response body
 fn body_contains_user(username: &str, address: &str, bytes: &hyper::body::Bytes) -> Result<bool> {
     // convert the body into json
-    let body: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let body: serde_json::Value = serde_json::from_slice(bytes)?;
     // ensure we have a names object.
     let names_map = body
         .as_object()

@@ -143,9 +143,9 @@ impl Event {
             let default = "".to_string();
             let dvals:Vec<&String> = self.tags
                 .iter()
-                .filter(|x| x.len() >= 1)
+                .filter(|x| !x.is_empty())
                 .filter(|x| x.get(0).unwrap() == "d")
-                .map(|x| x.get(1).unwrap_or_else(|| &default)).take(1)
+                .map(|x| x.get(1).unwrap_or(&default)).take(1)
                 .collect();
             let dval_first = dvals.get(0);
             match dval_first {
@@ -292,7 +292,7 @@ impl Event {
         let c = c_opt.unwrap();
         // * compute the sha256sum.
         let digest: sha256::Hash = sha256::Hash::hash(c.as_bytes());
-        let hex_digest = format!("{:x}", digest);
+        let hex_digest = format!("{digest:x}");
         // * ensure the id matches the computed sha256sum.
         if self.id != hex_digest {
             debug!("event id does not match digest");

@@ -108,7 +108,7 @@ impl ConditionQuery {
     sigstr: &str,
 ) -> Option<ConditionQuery> {
     // form the token
-    let tok = format!("nostr:delegation:{}:{}", delegatee, cond_query);
+    let tok = format!("nostr:delegation:{delegatee}:{cond_query}");
     // form SHA256 hash
     let digest: sha256::Hash = sha256::Hash::hash(tok.as_bytes());
     let sig = schnorr::Signature::from_str(sigstr).unwrap();
