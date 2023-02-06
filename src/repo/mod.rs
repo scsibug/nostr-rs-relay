@@ -2,6 +2,7 @@ use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::Event;
 use crate::nip05::VerificationRecord;
+use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::subscription::Subscription;
 use crate::utils::unix_time;
 use async_trait::async_trait;
@@ -57,6 +58,24 @@ pub trait NostrRepo: Send + Sync {
 
     /// Get oldest verification before timestamp
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord>;
+
+    /// Create a new user
+    async fn create_account(&self, pubkey: &str) -> Result<bool>; 
+
+    /// Admit a user 
+    async fn admit_account(&self, pubkey: &str) -> Result<()>;
+
+    /// Gets user balance if they are an admitted pubkey
+    async fn get_account_balance(&self, pubkey: &str) -> Result<(bool, u64)>;
+
+    /// Update user balance
+    async fn update_account_balance(&self, pub_key: &str, positive: bool, new_balance: u64) -> Result<()>;
+
+    /// Create invoice record
+    async fn create_invoice_record(&self, pubkey: &str, invoice_info: InvoiceInfo) -> Result<()>;
+
+    /// Update Invoice 
+    async fn update_invoice(&self, label: &str, status: InvoiceStatus) -> Result<String>;
 }
 
 // Current time, with a slight forward jitter in seconds

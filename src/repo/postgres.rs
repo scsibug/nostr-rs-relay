@@ -2,16 +2,18 @@ use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::nip05::{Nip05Name, VerificationRecord};
+use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::repo::{now_jitter, NostrRepo};
 use crate::subscription::{ReqFilter, Subscription};
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
 use sqlx::postgres::PgRow;
+use sqlx::Error::RowNotFound;
 use sqlx::{Error, Execute, FromRow, Postgres, QueryBuilder, Row};
 use std::time::{Duration, Instant};
-use sqlx::Error::RowNotFound;
 
+use crate::error;
 use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
 use crate::server::NostrMetrics;
@@ -20,7 +22,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::log::trace;
 use tracing::{debug, error, warn, info};
-use crate::error;
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
@@ -78,7 +79,6 @@ async fn delete_expired(conn:PostgresPool) -> Result<u64> {
 
 #[async_trait]
 impl NostrRepo for PostgresRepo {
-
     async fn start(&self) -> Result<()> {
         // begin a cleanup task for expired events.
         cleanup_expired(self.conn.clone(), Duration::from_secs(600)).await?;
@@ -139,7 +139,7 @@ impl NostrRepo for PostgresRepo {
             // the same author/kind/tag value exist, and we can ignore
             // this event.
             if repl_count > 0 {
-                return Ok(0)
+                return Ok(0);
             }
         }
         // ignore if the event hash is a duplicate.
@@ -184,7 +184,8 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(hex::decode(tag_val).ok())
                                 .execute(&mut tx)
-                                .await?;
+                                .await
+                                .unwrap();
                         } else {
                             sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
                     ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
@@ -192,7 +193,8 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(tag_val.as_bytes())
                                 .execute(&mut tx)
-                                .await?;
+                                .await
+                                .unwrap();
                         }
                     }
                     None => {}
@@ -276,10 +278,10 @@ ON CONFLICT (id) DO NOTHING"#,
             LEFT JOIN tag t ON e.id = t.event_id \
             WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
             )
-                .bind(&pubkey_blob)
-                .bind(&id_blob)
-                .fetch_optional(&mut tx)
-                .await?;
+            .bind(&pubkey_blob)
+            .bind(&id_blob)
+            .fetch_optional(&mut tx)
+            .await?;
 
             // check if a the query returned a result, meaning we should
             // hid the current event
@@ -380,7 +382,10 @@ ON CONFLICT (id) DO NOTHING"#,
 
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
-                    debug!("query cancelled by client (cid: {}, sub: {:?})", client_id, sub.id);
+                    debug!(
+                        "query cancelled by client (cid: {}, sub: {:?})",
+                        client_id, sub.id
+                    );
                     return Ok(());
                 }
 
@@ -396,7 +401,10 @@ ON CONFLICT (id) DO NOTHING"#,
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
                             info!("aborting database query due to slow client");
-                            metrics.query_aborts.with_label_values(&["slowclient"]).inc();
+                            metrics
+                                .query_aborts
+                                .with_label_values(&["slowclient"])
+                                .inc();
                             return Ok(());
                         }
                         // give the queue a chance to clear before trying again
@@ -467,9 +475,7 @@ ON CONFLICT (id) DO NOTHING"#,
         let verify_time = now_jitter(600);
 
         // update verification time and reset any failure count
-        sqlx::query(
-            "UPDATE user_verification SET verified_at = $1, fail_count = 0 WHERE id = $2",
-        )
+        sqlx::query("UPDATE user_verification SET verified_at = $1, fail_count = 0 WHERE id = $2")
             .bind(Utc.timestamp_opt(verify_time as i64, 0).unwrap())
             .bind(id as i64)
             .execute(&self.conn)
@@ -538,6 +544,116 @@ ON CONFLICT (id) DO NOTHING"#,
             .fetch_optional(&self.conn)
             .await?
             .ok_or(error::Error::SqlxError(RowNotFound))
+    }
+
+    async fn create_account(&self, pub_key: &str) -> Result<bool> {
+        let mut tx = self.conn.begin().await?;
+        let ins_count =
+            sqlx::query("INSERT INTO account (pubkey, is_admitted, balance) VALUES ($1, FALSE, 0);")
+                .bind(pub_key)
+                .execute(&mut tx)
+                .await?
+                .rows_affected();
+
+        tx.commit().await?;
+
+        Ok(ins_count == 1)
+    }
+
+    async fn admit_account(&self, pub_key: &str) -> Result<()> {
+        sqlx::query("UPDATE account SET is_admitted = TRUE WHERE pubkey = $1")
+            .bind(pub_key)
+            .execute(&self.conn)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_account_balance(&self, pub_key: &str) -> Result<(bool, u64)> {
+        let query = r#"SELECT
+            is_admitted,
+            balance
+            FROM account 
+            WHERE pubkey = $1
+            LIMIT 1"#;
+
+        let result = sqlx::query_as::<_, (bool, i64)>(query)
+            .bind(pub_key)
+            .fetch_optional(&self.conn)
+            .await?
+            .ok_or(error::Error::SqlxError(RowNotFound))?;
+
+        Ok((result.0, result.1 as u64))
+    }
+
+    async fn update_account_balance(
+        &self,
+        pub_key: &str,
+        positive: bool,
+        new_balance: u64,
+    ) -> Result<()> {
+        match positive {
+            true => {
+                sqlx::query("UPDATE account SET balance = balance + $1 WHERE pubkey = $2")
+                    .bind(new_balance as i64)
+                    .bind(pub_key)
+                    .execute(&self.conn)
+                    .await?
+            }
+            false => {
+                sqlx::query("UPDATE account SET balance = balance - $1 WHERE pubkey = $2")
+                    .bind(new_balance as i64)
+                    .bind(pub_key)
+                    .execute(&self.conn)
+                    .await?
+            }
+        };
+        Ok(())
+    }
+
+    async fn create_invoice_record(&self, pub_key: &str, invoice_info: InvoiceInfo) -> Result<()> {
+        let mut tx = self.conn.begin().await?;
+
+        sqlx::query(
+            "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at) VALUES ($1, $2, $3, $4, $5, now())",
+        )
+        .bind(pub_key)
+        .bind(invoice_info.payment_hash)
+        .bind(invoice_info.amount as i64)
+        .bind(invoice_info.status)
+        .bind(invoice_info.memo)
+        .execute(&mut tx)
+        .await.unwrap();
+
+        debug!("Invoice added");
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String> {
+        debug!("Payment Hash: {}", payment_hash);
+        let query = "SELECT pubkey, status FROM invoice WHERE payment_hash=$1;";
+        let (pubkey, prev_invoice_status) = sqlx::query_as::<_, (String, InvoiceStatus)>(query)
+            .bind(payment_hash)
+            .fetch_optional(&self.conn)
+            .await?
+            .ok_or(error::Error::SqlxError(RowNotFound))?;
+
+        sqlx::query("UPDATE invoice SET status = $1 WHERE payment_hash = $2")
+            .bind(&status)
+            .bind(payment_hash)
+            .execute(&self.conn)
+            .await?;
+
+        if prev_invoice_status.eq(&InvoiceStatus::Unpaid) && status.eq(&InvoiceStatus::Paid) {
+            sqlx::query("UPDATE account SET balance = balance + (SELECT amount FROM invoice WHERE payment_hash = $1) WHERE pubkey = $2")
+                .bind(payment_hash)
+                .bind(&pubkey)
+                .execute(&self.conn)
+                .await?;
+        }
+
+        Ok(pubkey)
     }
 }
 
@@ -770,8 +886,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
 
 impl FromRow<'_, PgRow> for VerificationRecord {
     fn from_row(row: &'_ PgRow) -> std::result::Result<Self, Error> {
-        let name =
-            Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(RowNotFound))?;
+        let name = Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(RowNotFound))?;
         Ok(VerificationRecord {
             rowid: row.get::<'_, i64, &str>("id") as u64,
             name,

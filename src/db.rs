@@ -3,20 +3,20 @@ use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::repo::postgres::{PostgresPool, PostgresRepo};
+use crate::repo::sqlite::SqliteRepo;
+use crate::repo::NostrRepo;
 use crate::server::NostrMetrics;
 use crate::nauthz;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
-use std::sync::Arc;
-use std::thread;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
-use crate::repo::sqlite::SqliteRepo;
-use crate::repo::postgres::{PostgresRepo,PostgresPool};
-use crate::repo::NostrRepo;
-use std::time::{Instant, Duration};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
@@ -83,12 +83,17 @@ pub async fn db_writer(
     mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
     metadata_tx: tokio::sync::broadcast::Sender<Event>,
+    payment_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<()> {
     // are we performing NIP-05 checking?
     let nip05_active = settings.verified_users.is_active();
     // are we requriing NIP-05 user verification?
     let nip05_enabled = settings.verified_users.is_enabled();
+
+    let pay_to_relay_enabled = settings.pay_to_relay.enabled;
+    let cost_per_event = settings.pay_to_relay.cost_per_event;
+    debug!("Pay to relay: {}", pay_to_relay_enabled);
 
     //upgrade_db(&mut pool.get()?)?;
 
@@ -136,22 +141,89 @@ pub async fn db_writer(
         let subm_event = next_event.unwrap();
         let event = subm_event.event;
         let notice_tx = subm_event.notice_tx;
-        // check if this event is authorized.
-        if let Some(allowed_addrs) = whitelist {
-            // TODO: incorporate delegated pubkeys
-            // if the event address is not in allowed_addrs.
-            if !allowed_addrs.contains(&event.pubkey) {
-                debug!(
-                    "rejecting event: {}, unauthorized author",
-                    event.get_event_id_prefix()
-                );
-                notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "pubkey is not allowed to publish to this relay",
-                    ))
-                    .ok();
-                continue;
+        
+        // Set to none until balance is got from db
+        // Will stay none if user in whitelisted and does not have to pay to post
+        let mut user_balance: Option<u64> = None; 
+        if !pay_to_relay_enabled {
+            // check if this event is authorized.
+            if let Some(allowed_addrs) = whitelist {
+                // TODO: incorporate delegated pubkeys
+                // if the event address is not in allowed_addrs.
+                if !allowed_addrs.contains(&event.pubkey) {
+                    debug!(
+                        "rejecting event: {}, unauthorized author",
+                        event.get_event_id_prefix()
+                    );
+                    notice_tx
+                        .try_send(Notice::blocked(
+                            event.id,
+                            "pubkey is not allowed to publish to this relay",
+                        ))
+                        .ok();
+                    continue;
+                }
+            }
+        } else {
+            if whitelist.is_none() || (whitelist.is_some() && !whitelist.as_ref().unwrap().contains(&event.pubkey)) {
+                match repo.get_account_balance(&event.pubkey).await {
+                    Ok((user_admitted, balance)) => {
+                        
+                        // Checks to make sure user is admitted
+                        if !user_admitted {
+                            debug!(
+                                "user: {}, is not admitted",
+                                &event.pubkey,
+                            );
+
+                            payment_tx.send(event.clone()).ok();
+
+                            notice_tx
+                                .try_send(Notice::blocked(event.id, "User is not admitted"))
+                                .ok();
+                            continue;
+                        }
+
+                        // Checks that user has enough balance to post
+                        if balance < cost_per_event {
+                            debug!(
+                                "user: {}, does not have a balance",
+                                &event.pubkey,
+                            );
+                            notice_tx
+                                .try_send(Notice::blocked(event.id, "Insufficient balance"))
+                                .ok();
+                            continue;
+                        }
+                        user_balance = Some(balance);
+                        debug!("User balance: {:?}", user_balance);
+                    },
+                Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+                    // User does not exist
+                    // TODO: Send DM to user to sign up
+                    info!("Unregistered user");
+                    payment_tx.send(event.clone()).ok();
+                    let msg = "Pubkey not registered";
+                    notice_tx.try_send(Notice::error(event.id, msg)).ok();
+                    continue;
+                },
+                Err(Error::SqlxError(sqlx::Error::RowNotFound)) => {
+                    // User does not exist
+                    // TODO: Send DM to user to sign up
+                    info!("Unregistered user");
+                    payment_tx.send(event.clone()).ok();
+                    let msg = "Pubkey not registered";
+                    notice_tx.try_send(Notice::error(event.id, msg)).ok();
+                    continue;
+                }
+                Err(err) => {
+                    warn!("Error checking admission status: {:?}", err);
+                    let msg = "relay experienced an error checking your admission status";
+                    notice_tx.try_send(Notice::error(event.id, msg)).ok();
+                    // Other error
+                    continue;
+                    }
+                }
             }
         }
 
@@ -165,10 +237,7 @@ pub async fn db_writer(
                     &event.kind
                 );
                 notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "event kind is blocked by relay"
-                    ))
+                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
                     .ok();
                 continue;
             }
@@ -282,6 +351,15 @@ pub async fn db_writer(
                         trace!("ignoring duplicate or deleted event");
                         notice_tx.try_send(Notice::duplicate(event.id)).ok();
                     } else {
+                        // If pay to relay is diabaled or the cost per event is 0
+                        // No need to update user balance
+                        if pay_to_relay_enabled && cost_per_event > 0 {
+                            // If the user balance is some, user was not on whitelist
+                            // Their balance should be reduced by the cost per event
+                            if let Some(_balance) = user_balance {
+                                repo.update_account_balance(&event.pubkey, false, cost_per_event).await.unwrap();
+                            }
+                        }
                         info!(
                             "persisted event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
                             event.get_event_id_prefix(),
@@ -297,6 +375,7 @@ pub async fn db_writer(
                     }
                 }
                 Err(err) => {
+                    // TODO: refund if failed
                     warn!("event insert failed: {:?}", err);
                     let msg = "relay experienced an error trying to publish the latest event";
                     notice_tx.try_send(Notice::error(event.id, msg)).ok();

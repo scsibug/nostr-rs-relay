@@ -72,6 +72,10 @@ pub enum Error {
     AuthFailure,
     #[error("I/O Error")]
     IoError(std::io::Error),
+    #[error("Event builder error")]
+    EventError(nostr::event::builder::Error),
+    //#[error("Request error")]
+   // ReqError(minreq::Error),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -153,3 +157,17 @@ impl From<std::io::Error> for Error {
         Error::IoError(r)
     }
 }
+impl From<nostr::event::builder::Error> for Error {
+    /// Wrap event builder error
+    fn from(r: nostr::event::builder::Error) -> Self {
+        Error::EventError(r)
+    }
+}
+
+/*
+impl From<minreq::Error> for Error {
+    fn from(r: minreq::Error) -> Self {
+        Error::ReqError(r)
+    }
+}
+*/

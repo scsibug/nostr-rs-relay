@@ -268,10 +268,36 @@ mod m004 {
             serial_number: VERSION,
             sql: vec![
                 r#"
+<<<<<<< HEAD
 -- Add expiration time for events
 ALTER TABLE event ADD COLUMN expires_at timestamp(0) with time zone;
 -- Index expiration time
 CREATE INDEX event_expires_at_idx ON "event" (expires_at);
+=======
+-- Create account table
+CREATE TABLE "account" (
+    pubkey varchar NOT NULL,
+    is_admitted BOOLEAN NOT NULL DEFAULT FALSE,
+    balance bigint NOT NULL,
+    tos_accepted_at TIMESTAMP,
+    CONSTRAINT account_pkey PRIMARY KEY (pubkey)
+);
+
+CREATE TYPE status AS ENUM ('Paid', 'Unpaid', 'Expired');
+
+
+CREATE TABLE "invoice" (
+    payment_hash varchar NOT NULL,
+    pubkey varchar NOT NULL,
+    amount integer NOT NULL,
+    status status NOT NULL DEFAULT 'Unpaid',
+    description varchar,
+    confirmed_at timestamp,
+    created_at timestamp,
+    CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
+    CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
+);
+>>>>>>> c72a41b (feat: pay to relay flow working)
         "#,
             ],
         }
