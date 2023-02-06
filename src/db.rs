@@ -26,6 +26,7 @@ pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnection
 pub struct SubmittedEvent {
     pub event: Event,
     pub notice_tx: tokio::sync::mpsc::Sender<Notice>,
+    pub source_ip: String,
 }
 
 /// Database file
@@ -227,11 +228,12 @@ pub async fn db_writer(
                         notice_tx.try_send(Notice::duplicate(event.id)).ok();
                     } else {
                         info!(
-                            "persisted event: {:?} (kind: {}) from: {:?} in: {:?}",
+                            "persisted event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
                             event.get_event_id_prefix(),
                             event.kind,
                             event.get_author_prefix(),
-                            start.elapsed()
+                            start.elapsed(),
+                            subm_event.source_ip,
                         );
                         event_write = true;
                         // send this out to all clients

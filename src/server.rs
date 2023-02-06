@@ -736,7 +736,7 @@ async fn nostr_server(
                                 // check if the event is too far in the future.
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
-                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone() };
+                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string()};
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                                 } else {
