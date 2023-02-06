@@ -211,13 +211,12 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<usize> {
         }
         // Database is current, all is good
         Ordering::Equal => {
-            debug!("Database version was already current (v{})", DB_VERSION);
+            debug!("Database version was already current (v{DB_VERSION})");
         }
         // Database is newer than what this code understands, abort
         Ordering::Greater => {
             panic!(
-                "Database version is newer than supported by this executable (v{} > v{})",
-                curr_version, DB_VERSION
+                "Database version is newer than supported by this executable (v{curr_version} > v{DB_VERSION})",
             );
         }
     }

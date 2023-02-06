@@ -50,6 +50,7 @@ use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
+#[allow(clippy::too_many_arguments)]
 async fn handle_web_request(
     mut request: Request<Body>,
     repo: Arc<dyn NostrRepo>,
@@ -127,9 +128,8 @@ async fn handle_web_request(
                             // todo: trace, don't print...
                             Err(e) => println!(
                                 "error when trying to upgrade connection \
-                                 from address {} to websocket connection. \
-                                 Error is: {}",
-                                remote_addr, e
+                                 from address {remote_addr} to websocket connection. \
+                                 Error is: {e}",
                             ),
                         }
                     });
@@ -139,7 +139,7 @@ async fn handle_web_request(
                 Err(error) => {
                     warn!("websocket response failed");
                     let mut res =
-                        Response::new(Body::from(format!("Failed to create websocket: {}", error)));
+                        Response::new(Body::from(format!("Failed to create websocket: {error}")));
                     *res.status_mut() = StatusCode::BAD_REQUEST;
                     return Ok(res);
                 }
@@ -346,7 +346,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             // give each thread a unique numeric name
             static ATOMIC_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1,Ordering::SeqCst);
-            format!("tokio-ws-{}", id)
+            format!("tokio-ws-{id}")
         })
     // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
@@ -478,7 +478,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             .with_graceful_shutdown(ctrl_c_or_signal(webserver_shutdown_listen));
         // run hyper in this thread.  This is why the thread does not return.
         if let Err(e) = server.await {
-            eprintln!("server error: {}", e);
+            eprintln!("server error: {e}");
         }
     });
     Ok(())
@@ -541,6 +541,7 @@ struct ClientInfo {
 
 /// Handle new client connections.  This runs through an event loop
 /// for all client communication.
+#[allow(clippy::too_many_arguments)]
 async fn nostr_server(
     repo: Arc<dyn NostrRepo>,
     client_info: ClientInfo,
@@ -639,7 +640,7 @@ async fn nostr_server(
                 // database informed us of a query result we asked for
                 let subesc = query_result.sub_id.replace('"', "");
                 if query_result.event == "EOSE" {
-                    let send_str = format!("[\"EOSE\",\"{}\"]", subesc);
+                    let send_str = format!("[\"EOSE\",\"{subesc}\"]");
                     ws_stream.send(Message::Text(send_str)).await.ok();
                 } else {
                     client_received_event_count += 1;
@@ -666,7 +667,7 @@ async fn nostr_server(
                         // create an event response and send it
                         let subesc = s.replace('"', "");
 			metrics.sent_events.with_label_values(&["realtime"]).inc();
-                        ws_stream.send(Message::Text(format!("[\"EVENT\",\"{}\",{}]", subesc, event_str))).await.ok();
+                        ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
                     }
@@ -692,7 +693,7 @@ async fn nostr_server(
                     },
                     Some(Err(WsError::Capacity(MessageTooLong{size, max_size}))) => {
                         ws_stream.send(
-                            make_notice_message(&Notice::message(format!("message too large ({} > {})",size, max_size)))).await.ok();
+                            make_notice_message(&Notice::message(format!("message too large ({size} > {max_size})")))).await.ok();
                         continue;
                     },
                     None |
@@ -741,7 +742,7 @@ async fn nostr_server(
                                 } else {
                                     info!("client: {} sent a far future-dated event", cid);
                                     if let Some(fut_sec) = settings.options.reject_future_seconds {
-                                        let msg = format!("The event created_at field is out of the acceptable range (+{}sec) for this relay.",fut_sec);
+                                        let msg = format!("The event created_at field is out of the acceptable range (+{fut_sec}sec) for this relay.");
                                         let notice = Notice::invalid(e.id, &msg);
                                         ws_stream.send(make_notice_message(&notice)).await.ok();
                                     }
@@ -749,7 +750,7 @@ async fn nostr_server(
                             },
                             Err(e) => {
                                 info!("client sent an invalid event (cid: {})", cid);
-                                ws_stream.send(make_notice_message(&Notice::invalid(evid, &format!("{}", e)))).await.ok();
+                                ws_stream.send(make_notice_message(&Notice::invalid(evid, &format!("{e}")))).await.ok();
                             }
                         }
                     },
@@ -782,7 +783,7 @@ async fn nostr_server(
                                 },
                                 Err(e) => {
                                     info!("Subscription error: {} (cid: {}, sub: {:?})", e, cid, s.id);
-                                    ws_stream.send(make_notice_message(&Notice::message(format!("Subscription error: {}", e)))).await.ok();
+                                    ws_stream.send(make_notice_message(&Notice::message(format!("Subscription error: {e}")))).await.ok();
                                 }
                             }
                         }

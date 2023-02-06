@@ -123,16 +123,15 @@ impl SqliteRepo {
         }
         // check for parameterized replaceable events that would be hidden; don't insert these either.
         if let Some(d_tag) = e.distinct_param() {
-            let repl_count;
-            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                repl_count = tx.query_row(
+            let repl_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                tx.query_row(
                     "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value_hex=? AND e.created_at >= ? LIMIT 1;",
-                    params![pubkey_blob, e.kind, hex::decode(d_tag).ok(), e.created_at],|row| row.get::<usize, usize>(0));
+                    params![pubkey_blob, e.kind, hex::decode(d_tag).ok(), e.created_at],|row| row.get::<usize, usize>(0))
             } else {
-                repl_count = tx.query_row(
+                tx.query_row(
                     "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value=? AND e.created_at >= ? LIMIT 1;",
-                    params![pubkey_blob, e.kind, d_tag, e.created_at],|row| row.get::<usize, usize>(0));
-            }
+                    params![pubkey_blob, e.kind, d_tag, e.created_at],|row| row.get::<usize, usize>(0))
+            };
             // if any rows were returned, then some newer event with
             // the same author/kind/tag value exist, and we can ignore
             // this event.
@@ -201,16 +200,15 @@ impl SqliteRepo {
         }
         // if this event is parameterized replaceable, remove other events.
         if let Some(d_tag) = e.distinct_param() {
-            let update_count;
-            if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                update_count = tx.execute(
+            let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                tx.execute(
                     "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value_hex=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
-                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, hex::decode(d_tag).ok()])?;
+                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, hex::decode(d_tag).ok()])?
             } else {
-                update_count = tx.execute(
+                tx.execute(
                     "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
-                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?;
-            }
+                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?
+            };
             if update_count > 0 {
                 info!(
                     "removed {} older parameterized replaceable kind {} events for author: {:?}",
@@ -365,7 +363,7 @@ impl NostrRepo for SqliteRepo {
                     let filter_start = Instant::now();
                     filter_count += 1;
                     let sql_gen_elapsed = start.elapsed();
-                    let (q, p, idx) = query_from_filter(&filter);
+                    let (q, p, idx) = query_from_filter(filter);
                     if sql_gen_elapsed > Duration::from_millis(10) {
                         debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
                     }
@@ -719,8 +717,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
 
     // check if the index needs to be overriden
     let idx_name = override_index(f);
-    let idx_stmt = idx_name.as_ref().map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {}",i));
-    let mut query = format!("SELECT e.content FROM event e {}", idx_stmt);
+    let idx_stmt = idx_name.as_ref().map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {i}"));
+    let mut query = format!("SELECT e.content FROM event e {idx_stmt}");
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
@@ -814,26 +812,24 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 }
             }
             // do not mix value and value_hex; this is a temporary special case.
-            if str_vals.len() == 0 {
+            if str_vals.is_empty() {
                 // create clauses with "?" params for each tag value being searched
                 let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-                    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {}))",
-                    blob_clause
+                    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {blob_clause}))",
                 );
                 // add the tag name as the first parameter
                 params.push(Box::new(key.to_string()));
                 // add all tag values that are blobs as params
                 params.append(&mut blob_vals);
                 filter_components.push(tag_clause);
-            } else if blob_vals.len() == 0 {
+            } else if blob_vals.is_empty() {
                 // create clauses with "?" params for each tag value being searched
                 let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-		    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {}))",
-                    str_clause
+		            "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {str_clause}))",
                 );
                 // add the tag name as the first parameter
                 params.push(Box::new(key.to_string()));
@@ -847,8 +843,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
                 // find evidence of the target tag name/value existing for this event.
                 let tag_clause = format!(
-		    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND ({} OR {})))",
-                    str_clause, blob_clause
+		            "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND ({str_clause} OR {blob_clause})))",
                 );
                 // add the tag name as the first parameter
                 params.push(Box::new(key.to_string()));
@@ -880,7 +875,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     // Apply per-filter limit to this subquery.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
-        let _ = write!(query, " ORDER BY e.created_at DESC LIMIT {}", lim);
+        let _ = write!(query, " ORDER BY e.created_at DESC LIMIT {lim}");
     } else {
         query.push_str(" ORDER BY e.created_at ASC");
     }
@@ -907,7 +902,7 @@ fn _query_from_sub(sub: &Subscription) -> (String, Vec<Box<dyn ToSql>>, Vec<Stri
     // encapsulate subqueries into select statements
     let subqueries_selects: Vec<String> = subqueries
         .iter()
-        .map(|s| format!("SELECT distinct content, created_at FROM ({})", s))
+        .map(|s| format!("SELECT distinct content, created_at FROM ({s})"))
         .collect();
     let query: String = subqueries_selects.join(" UNION ");
     (query, params,indexes)

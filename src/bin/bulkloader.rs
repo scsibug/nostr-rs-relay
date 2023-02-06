@@ -35,7 +35,7 @@ pub fn main() -> Result<()> {
 	// ensure the schema version is current.
 	if version != DB_VERSION {
 	    info!("version is not current, exiting");
-	    panic!("cannot write to schema other than v{}", DB_VERSION);
+	    panic!("cannot write to schema other than v{DB_VERSION}");
 	}
     }
     // this channel will contain parsed events ready to be inserted
