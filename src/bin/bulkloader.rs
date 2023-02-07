@@ -20,7 +20,7 @@ pub fn main() -> Result<()> {
     let _trace_sub = tracing_subscriber::fmt::try_init();
     println!("Nostr-rs-relay Bulk Loader");
     // check for a database file, or create one.
-    let settings = config::Settings::new();
+    let settings = config::Settings::new(&None);
     if !Path::new(&settings.database.data_directory).is_dir() {
         info!("Database directory does not exist");
         return Err(Error::DatabaseDirError);
