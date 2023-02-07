@@ -155,10 +155,10 @@ pub struct Settings {
 
 impl Settings {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(config_file_name: &Option<String>) -> Self {
         let default_settings = Self::default();
         // attempt to construct settings with file
-        let from_file = Self::new_from_default(&default_settings);
+        let from_file = Self::new_from_default(&default_settings, config_file_name);
         match from_file {
             Ok(f) => f,
             Err(e) => {
@@ -168,13 +168,19 @@ impl Settings {
         }
     }
 
-    fn new_from_default(default: &Settings) -> Result<Self, ConfigError> {
+
+    fn new_from_default(default: &Settings, config_file_name: &Option<String>) -> Result<Self, ConfigError> {
+        let default_config_file_name = "config.toml".to_string();
+        let config: &String = match config_file_name {
+            Some(value) => value,
+            None => &default_config_file_name
+        };
         let builder = Config::builder();
         let config: Config = builder
         // use defaults
             .add_source(Config::try_from(default)?)
         // override with file contents
-            .add_source(File::with_name("config.toml"))
+            .add_source(File::with_name(config))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
         // ensure connection pool size is logical
