@@ -66,7 +66,7 @@ impl NostrRepo for PostgresRepo {
         // replaceable event or parameterized replaceable event.
         if e.is_replaceable() {
             let repl_count = sqlx::query(
-                "SELECT e.id FROM event e WHERE e.pub_key=? AND e.kind=? AND e.created_at >= ? LIMIT 1;")
+                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND e.created_at >= $3 LIMIT 1;")
                 .bind(&pubkey_blob)
                 .bind(e.kind as i64)
                 .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
@@ -134,20 +134,20 @@ ON CONFLICT (id) DO NOTHING"#,
                 let tag_val = &tag[1];
                 // only single-char tags are searchable
                 let tag_char_opt = single_char_tagname(tag_name);
-                let query = "INSERT INTO tag (event_id, \"name\", value) VALUES($1, $2, $3) \
-                    ON CONFLICT (event_id, \"name\", value) DO NOTHING";
                 match &tag_char_opt {
                     Some(_) => {
                         // if tag value is lowercase hex;
                         if is_lower_hex(tag_val) && (tag_val.len() % 2 == 0) {
-                            sqlx::query(query)
+                            sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, NULL, $3) \
+                    ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                                 .bind(tag_name)
                                 .bind(hex::decode(tag_val).ok())
                                 .execute(&mut tx)
                                 .await?;
                         } else {
-                            sqlx::query(query)
+                            sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
+                    ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                                 .bind(tag_name)
                                 .bind(tag_val.as_bytes())

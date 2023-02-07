@@ -213,7 +213,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                     // insert as BLOB if we can restore it losslessly.
                     // this means it needs to be even length and lowercase.
                     if (tagval.len() % 2 == 0) && is_lower_hex(tagval) {
-                        let q = "INSERT INTO tag (event_id, \"name\", value_hex) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
+                        let q = "INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES ($1, $2, NULL, $3) ON CONFLICT DO NOTHING;";
                         sqlx::query(q)
                             .bind(&event_id)
                             .bind(tagname)
@@ -221,7 +221,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                             .execute(&mut update_tx)
                             .await?;
                     } else {
-                        let q = "INSERT INTO tag (event_id, \"name\", value) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;";
+                        let q = "INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES ($1, $2, $3, NULL) ON CONFLICT DO NOTHING;";
                         sqlx::query(q)
                             .bind(&event_id)
                             .bind(tagname)
@@ -250,7 +250,7 @@ mod m003 {
             sql: vec![
                 r#"
 -- Add unique constraint on tag
-ALTER TABLE tag ADD CONSTRAINT unique_constraint_name UNIQUE (event_id, "name", value);
+ALTER TABLE tag ADD CONSTRAINT unique_constraint_name UNIQUE (event_id, "name", value, value_hex);
         "#,
             ],
         }
