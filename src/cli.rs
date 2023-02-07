@@ -10,4 +10,11 @@ pub struct CLIArgs {
         required = false,
     )]
     pub db: Option<String>,
+    #[arg(
+        short,
+        long,
+        help = "Use the <file name> as the location of the config file",
+        required = false,
+    )]
+    pub config: Option<String>,
 }
