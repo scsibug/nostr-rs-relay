@@ -14,6 +14,7 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::payment;
+use crate::payment::get_invoice;
 use crate::payment::LNBitsCallback;
 use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
@@ -31,6 +32,8 @@ use hyper::{
 use prometheus::IntCounterVec;
 use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
+use qrcode::render::svg;
+use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -57,6 +60,9 @@ use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
 use crate::server::Error::CommandUnknownError;
+
+use nostr::key::FromPkStr;
+use nostr::key::Keys;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -209,7 +215,159 @@ async fn handle_web_request(
                 .await
                 .unwrap();
 
-            repo.admit_account(&pubkey).await.unwrap();
+            let key = Keys::from_pk_str(&pubkey).unwrap();
+            repo.admit_account(&key).await.unwrap();
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from("ok"))
+                .unwrap())
+        }
+        // Endpoint for relays terms
+        ("/terms", false) => {
+            debug!("{}", settings.pay_to_relay.terms_message);
+
+            Ok(Response::builder()
+                .status(200)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(settings.pay_to_relay.terms_message))
+                .unwrap())
+        }
+        // Endpoint to allow users to sign up
+        ("/join", false) => {
+            if !settings.pay_to_relay.sign_ups {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, joining is not allowed at the moment"))
+                    .unwrap());
+            }
+
+            let html = r#"
+            <h1>Enter your pubkey</h1>
+            <form action="/invoice">
+  <input type="text" name="pubkey">
+  <button type="submit">Submit</button>
+</form>
+            "#;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html))
+                .unwrap())
+        }
+        // Endpoint to display invoice
+        ("/invoice", false) => {
+            if !settings.pay_to_relay.sign_ups {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, joining is not allowed at the moment"))
+                    .unwrap());
+            }
+            let mut client = reqwest::Client::builder()
+                // REVIEW:
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap();
+
+            let amount = settings.pay_to_relay.admission_cost;
+
+            let query = request.uri().query().unwrap_or("").to_string();
+            let pubkey = query.split('&').fold(None, |acc, pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next();
+                let value = parts.next();
+                if key == Some("pubkey") {
+                    return value.map(|s| s.to_owned());
+                }
+                acc
+            });
+            debug!("{:?}", pubkey);
+
+            if let Some(pubkey) = pubkey {
+
+                let key = Keys::from_pk_str(&pubkey);
+
+                if key.is_err() {
+                    return Ok(Response::builder()
+                        .status(401)
+                        .header("Content-Type", "text/plain")
+                        .body(Body::from("Looks like your key is invalid")).unwrap());
+
+
+
+                }  
+
+                if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                    if admission_status {
+                        return Ok(Response::builder()
+                            .status(StatusCode::OK)
+                            .body(Body::from("Already admitted"))
+                            .unwrap());
+                    }
+                }
+
+                let invoice_info = get_invoice(&mut client, &repo, &pubkey, amount, &settings)
+                    .await
+                    .unwrap();
+
+                let qr_code: String;
+                if let Ok(code) = QrCode::new(invoice_info.invoice.as_bytes()) {
+                    qr_code = code
+                        .render()
+                        .min_dimensions(200, 200)
+                        .dark_color(svg::Color("#800000"))
+                        .light_color(svg::Color("#ffff80"))
+                        .build();
+                } else {
+                    qr_code = "Could not render image".to_string();
+                }
+
+                let html_result = format!(
+                    r#"<html>
+  <body>
+  <div>
+  <h3>
+  To use this relay requires an admission fee. By paying this fee you agree to these <a href='terms'>terms</a>
+  </h3>
+  </div>
+    <div>
+      <svg height='300' >
+        {}
+      </svg>
+    </div>
+    <div>
+    <p>{}</P>
+        <button id="copy-button">Copy</button>
+    </div>
+    
+  </body>
+</html>
+
+<script>
+  const copyButton = document.getElementById("copy-button");
+  if (navigator.clipboard) {{
+    copyButton.addEventListener("click", function() {{
+      const textToCopy = "{}";
+      navigator.clipboard.writeText(textToCopy).then(function() {{
+        console.log("Text copied to clipboard");
+      }}, function(err) {{
+        console.error("Could not copy text: ", err);
+      }});
+    }});
+  }} else {{
+    copyButton.style.display = "none";
+    console.warn("Clipboard API is not supported in this browser");
+  }}
+</script>
+"#,
+                    qr_code, invoice_info.invoice, invoice_info.invoice
+                );
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::from(html_result))
+                    .unwrap());
+            }
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -411,8 +569,9 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         .enable_all()
         .thread_name_fn(|| {
             // give each thread a unique numeric name
-            static ATOMIC_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1,Ordering::SeqCst);
+            static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("tokio-ws-{id}")
         })
         // limit concurrent SQLite blocking threads
@@ -771,7 +930,7 @@ async fn nostr_server(
                                global_event.get_event_id_prefix());
                         // create an event response and send it
                         let subesc = s.replace('"', "");
-			metrics.sent_events.with_label_values(&["realtime"]).inc();
+            metrics.sent_events.with_label_values(&["realtime"]).inc();
                         ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());

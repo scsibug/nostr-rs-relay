@@ -22,6 +22,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::log::trace;
 use tracing::{debug, error, warn, info};
+use nostr::key::Keys;
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
@@ -546,7 +547,8 @@ ON CONFLICT (id) DO NOTHING"#,
             .ok_or(error::Error::SqlxError(RowNotFound))
     }
 
-    async fn create_account(&self, pub_key: &str) -> Result<bool> {
+    async fn create_account(&self, pub_key: &Keys) -> Result<bool> {
+        let pub_key = pub_key.public_key().to_string();
         let mut tx = self.conn.begin().await?;
         let ins_count =
             sqlx::query("INSERT INTO account (pubkey, is_admitted, balance) VALUES ($1, FALSE, 0);")
@@ -560,7 +562,8 @@ ON CONFLICT (id) DO NOTHING"#,
         Ok(ins_count == 1)
     }
 
-    async fn admit_account(&self, pub_key: &str) -> Result<()> {
+    async fn admit_account(&self, pub_key: &Keys) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
         sqlx::query("UPDATE account SET is_admitted = TRUE WHERE pubkey = $1")
             .bind(pub_key)
             .execute(&self.conn)
@@ -568,7 +571,8 @@ ON CONFLICT (id) DO NOTHING"#,
         Ok(())
     }
 
-    async fn get_account_balance(&self, pub_key: &str) -> Result<(bool, u64)> {
+    async fn get_account_balance(&self, pub_key: &Keys) -> Result<(bool, u64)> {
+        let pub_key = pub_key.public_key().to_string();
         let query = r#"SELECT
             is_admitted,
             balance
@@ -587,10 +591,11 @@ ON CONFLICT (id) DO NOTHING"#,
 
     async fn update_account_balance(
         &self,
-        pub_key: &str,
+        pub_key: &Keys,
         positive: bool,
         new_balance: u64,
     ) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
         match positive {
             true => {
                 sqlx::query("UPDATE account SET balance = balance + $1 WHERE pubkey = $2")
@@ -610,7 +615,8 @@ ON CONFLICT (id) DO NOTHING"#,
         Ok(())
     }
 
-    async fn create_invoice_record(&self, pub_key: &str, invoice_info: InvoiceInfo) -> Result<()> {
+    async fn create_invoice_record(&self, pub_key: &Keys, invoice_info: InvoiceInfo) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
         let mut tx = self.conn.begin().await?;
 
         sqlx::query(

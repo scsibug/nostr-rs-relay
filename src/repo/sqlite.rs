@@ -30,6 +30,7 @@ use tokio::task;
 use tracing::{debug, info, trace, warn};
 
 use crate::repo::{now_jitter, NostrRepo};
+use nostr::key::Keys;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
@@ -705,8 +706,9 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Create account
-    async fn create_account(&self, pub_key: &str) -> Result<bool> {
-        let pub_key = pub_key.to_owned();
+    async fn create_account(&self, pub_key: &Keys) -> Result<bool> {
+        let pub_key = pub_key.public_key().to_string();
+
         let mut conn = self.write_pool.get()?;
        let ins_count =  tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
@@ -730,7 +732,8 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Admit account
-    async fn admit_account(&self, pub_key: &str) -> Result<()> {
+    async fn admit_account(&self, pub_key: &Keys) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
         let mut conn = self.write_pool.get()?;
         let pub_key = pub_key.to_owned();
         tokio::task::spawn_blocking(move || {
@@ -749,7 +752,8 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Gets if the account is admitted and balance
-    async fn get_account_balance(&self, pub_key: &str) -> Result<(bool, u64)> {
+    async fn get_account_balance(&self, pub_key: &Keys) -> Result<(bool, u64)> {
+        let pub_key = pub_key.public_key().to_string();
         let mut conn = self.write_pool.get()?;
         let pub_key = pub_key.to_owned();
         tokio::task::spawn_blocking(move || {
@@ -768,18 +772,19 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Update account balance
-    async fn update_account_balance(&self, pub_key: &str, positive: bool, new_balance: u64) -> Result<()> {
+    async fn update_account_balance(&self, pub_key: &Keys, positive: bool, new_balance: u64) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        
         let mut conn = self.write_pool.get()?;
-        let pub_key = pub_key.to_owned();
         tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
             {
-                let query: &str;
+                let query = 
                 if positive {
-                    query = "UPDATE account SET balance=balance + ?1 WHERE pubkey=?2";
+                     "UPDATE account SET balance=balance + ?1 WHERE pubkey=?2"
                 } else {
-                    query = "UPDATE account SET balance=balance - ?1 WHERE pubkey=?2";
-                }
+                    "UPDATE account SET balance=balance - ?1 WHERE pubkey=?2"
+                };
                 let mut stmt = tx.prepare(query)?;
                 stmt.execute(params![new_balance, pub_key])?;
             }
@@ -791,7 +796,8 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Create invoice record
-    async fn create_invoice_record(&self, pub_key: &str, invoice_info: InvoiceInfo) -> Result<()> {
+    async fn create_invoice_record(&self, pub_key: &Keys, invoice_info: InvoiceInfo) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
         let pub_key = pub_key.to_owned();
         let mut conn = self.write_pool.get()?;
         tokio::task::spawn_blocking(move || {

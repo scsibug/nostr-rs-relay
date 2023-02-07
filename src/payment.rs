@@ -1,15 +1,14 @@
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::repo::NostrRepo;
-use nostr::secp256k1::XOnlyPublicKey;
 use rand::Rng;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
+use nostr::key::FromPkStr;
 
 /// Payment handler
 pub struct Payment {
@@ -23,11 +22,7 @@ pub struct Payment {
     settings: crate::config::Settings,
     // HTTP client
     client: Client,
-
-    /// Node Url
-    node_url: String,
     // Api
-    api_secret: String,
     nostr_keys: Keys,
 }
 
@@ -64,7 +59,6 @@ pub enum InvoiceStatus {
     Paid,
     Expired,
 }
-
 
 impl ToString for InvoiceStatus {
     fn to_string(&self) -> String {
@@ -123,13 +117,6 @@ impl Payment {
             .build()
             .unwrap();
 
-        let api_secret = settings.clone().pay_to_relay.api_secret.unwrap();
-
-        let node_url = match &settings.pay_to_relay.cln_node_url {
-            Some(url) => url.clone(),
-            None => return Err(Error::CustomError("Relay url not set".to_string())),
-        };
-
         Ok(Payment {
             repo,
             payment_rx,
@@ -137,8 +124,6 @@ impl Payment {
             settings,
             nostr_keys,
             client,
-            api_secret: api_secret.clone(),
-            node_url,
         })
     }
 
@@ -176,17 +161,16 @@ impl Payment {
         // Checks that node url is set other wise returns error
         // REVIEW: should maybe check this in config
 
-        let invoice_info: InvoiceInfo;
-
         // If use is already in DB this will be false
         // This avoids resending admission invoices
         // FIXME: It should be more intelligent resend after x time?
-        if !self.repo.create_account(pubkey).await? {
+        let key = Keys::from_pk_str(pubkey)?;
+        if !self.repo.create_account(&key).await? {
             return Err(Error::UnknownError);
         }
 
         // If tor proxy is setting is set send request via proxy
-        match &self.settings.pay_to_relay.tor_proxy {
+        let invoice_info = match &self.settings.pay_to_relay.tor_proxy {
             Some(proxy_url) => {
                 debug!("{proxy_url}");
                 /*
@@ -207,56 +191,18 @@ impl Payment {
                 todo!();
             }
             None => {
-                let random_number: u16 = rand::thread_rng().gen();
-
-                let memo = format!("{}: {}", random_number, pubkey);
-                let amount = self.settings.pay_to_relay.admission_cost;
-
-                let body = LNBitsCreateInvoice {
-                    out: false,
-                    amount,
-                    memo: memo.clone(),
-                    webhook: format!(
-                        "{}lnbits",
-                        &self
-                            .settings
-                            .info
-                            .relay_url
-                            .clone()
-                            .unwrap()
-                            .replace("ws", "http")
-                    ),
-                    unit: "sat".to_string(),
-                    internal: false,
-                    expiry: 3600,
-                };
-
-                let res = self
-                    .client
-                    .post(&self.node_url)
-                    .header("X-Api-Key", &self.api_secret)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap();
-
-                let payment_response = res.json::<LNBitsCreateInvoiceResponse>().await.unwrap();
-
-                invoice_info = InvoiceInfo {
-                    pubkey: pubkey.to_string(),
-                    payment_hash: payment_response.payment_hash,
-                    invoice: payment_response.payment_request,
-                    amount,
-                    memo,
-                    status: InvoiceStatus::Unpaid,
-                    confirmed_at: None,
-                };
-
-                println!("{:?}", &invoice_info);
+                get_invoice(
+                    &mut self.client,
+                    &self.repo,
+                    &key.public_key().to_string(),
+                    self.settings.pay_to_relay.admission_cost,
+                    &self.settings,
+                )
+                .await?
             }
-        }
+        };
 
-        let pubkey = XOnlyPublicKey::from_str(pubkey).unwrap();
+        let pubkey = key.public_key();
 
         // Publish dm with terms of service and invoice
         let message_event: NostrEvent = EventBuilder::new_encrypted_direct_msg(
@@ -277,18 +223,69 @@ impl Payment {
         // Persist event to DB
         self.repo.write_event(&message_event.clone().into()).await?;
         self.repo.write_event(&invoice_event.clone().into()).await?;
-        
-        // Persist invoice to DB
-        self.repo
-            .create_invoice_record(&pubkey.to_string(), invoice_info.clone())
-            .await?;
 
         // Broadcast event
-        // FIXME: events are not getting broadcasted
         self.event_tx.send(message_event.clone().into()).ok();
         self.event_tx.send(invoice_event.clone().into()).ok();
 
-
         Ok(())
     }
+}
+
+pub async fn get_invoice(
+    client: &mut Client,
+    repo: &Arc<dyn NostrRepo>,
+    pubkey: &str,
+    amount: u64,
+    settings: &crate::config::Settings,
+) -> Result<InvoiceInfo> {
+
+    let key = Keys::from_pk_str(pubkey)?;
+    let random_number: u16 = rand::thread_rng().gen();
+
+    let memo = format!("{}: {}", random_number, key.public_key());
+
+    let body = LNBitsCreateInvoice {
+        out: false,
+        amount,
+        memo: memo.clone(),
+        webhook: format!(
+            "{}lnbits",
+            &settings
+                .info
+                .relay_url
+                .clone()
+                .unwrap()
+                .replace("ws", "http")
+        ),
+        unit: "sat".to_string(),
+        internal: false,
+        expiry: 3600,
+    };
+
+    let res = client
+        .post(&settings.pay_to_relay.node_url)
+        .header("X-Api-Key", &settings.pay_to_relay.api_secret)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    let payment_response = res.json::<LNBitsCreateInvoiceResponse>().await.unwrap();
+
+    let invoice_info = InvoiceInfo {
+        pubkey: key.public_key().to_string(),
+        payment_hash: payment_response.payment_hash,
+        invoice: payment_response.payment_request,
+        amount,
+        memo,
+        status: InvoiceStatus::Unpaid,
+        confirmed_at: None,
+    };
+
+    // Persist invoice to DB
+    repo.create_invoice_record(&key, invoice_info.clone())
+        .await?;
+
+    Ok(invoice_info)
 }
