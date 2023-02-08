@@ -1,5 +1,6 @@
 //! Server process
 use clap::Parser;
+use console_subscriber::ConsoleLayer;
 use nostr_rs_relay::cli::CLIArgs;
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
@@ -7,7 +8,6 @@ use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 use tracing::info;
-use console_subscriber::ConsoleLayer;
 
 /// Start running a Nostr relay server.
 fn main() {

@@ -84,7 +84,8 @@ pub struct ConditionQuery {
 }
 
 impl ConditionQuery {
-    #[must_use] pub fn allows_event(&self, event: &Event) -> bool {
+    #[must_use]
+    pub fn allows_event(&self, event: &Event) -> bool {
         // check each condition, to ensure that the event complies
         // with the restriction.
         for c in &self.conditions {
@@ -101,7 +102,8 @@ impl ConditionQuery {
 }
 
 // Verify that the delegator approved the delegation; return a ConditionQuery if so.
-#[must_use] pub fn validate_delegation(
+#[must_use]
+pub fn validate_delegation(
     delegator: &str,
     delegatee: &str,
     cond_query: &str,
@@ -144,7 +146,8 @@ pub struct Condition {
 
 impl Condition {
     /// Check if this condition allows the given event to be delegated
-    #[must_use] pub fn allows_event(&self, event: &Event) -> bool {
+    #[must_use]
+    pub fn allows_event(&self, event: &Event) -> bool {
         // determine what the right-hand side of the operator is
         let resolved_field = match &self.field {
             Field::Kind => event.kind,

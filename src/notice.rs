@@ -20,14 +20,16 @@ pub enum Notice {
 }
 
 impl EventResultStatus {
-    #[must_use] pub fn to_bool(&self) -> bool {
+    #[must_use]
+    pub fn to_bool(&self) -> bool {
         match self {
             Self::Duplicate | Self::Saved => true,
-            Self::Invalid |Self::Blocked | Self::RateLimited | Self::Error => false,
+            Self::Invalid | Self::Blocked | Self::RateLimited | Self::Error => false,
         }
     }
 
-    #[must_use] pub fn prefix(&self) -> &'static str {
+    #[must_use]
+    pub fn prefix(&self) -> &'static str {
         match self {
             Self::Saved => "saved",
             Self::Duplicate => "duplicate",
@@ -44,7 +46,8 @@ impl Notice {
     //    Notice::err_msg(format!("{}", err), id)
     //}
 
-    #[must_use] pub fn message(msg: String) -> Notice {
+    #[must_use]
+    pub fn message(msg: String) -> Notice {
         Notice::Message(msg)
     }
 
@@ -53,27 +56,33 @@ impl Notice {
         Notice::EventResult(EventResult { id, msg, status })
     }
 
-    #[must_use] pub fn invalid(id: String, msg: &str) -> Notice {
+    #[must_use]
+    pub fn invalid(id: String, msg: &str) -> Notice {
         Notice::prefixed(id, msg, EventResultStatus::Invalid)
     }
 
-    #[must_use] pub fn blocked(id: String, msg: &str) -> Notice {
+    #[must_use]
+    pub fn blocked(id: String, msg: &str) -> Notice {
         Notice::prefixed(id, msg, EventResultStatus::Blocked)
     }
 
-    #[must_use] pub fn rate_limited(id: String, msg: &str) -> Notice {
+    #[must_use]
+    pub fn rate_limited(id: String, msg: &str) -> Notice {
         Notice::prefixed(id, msg, EventResultStatus::RateLimited)
     }
 
-    #[must_use] pub fn duplicate(id: String) -> Notice {
+    #[must_use]
+    pub fn duplicate(id: String) -> Notice {
         Notice::prefixed(id, "", EventResultStatus::Duplicate)
     }
 
-    #[must_use] pub fn error(id: String, msg: &str) -> Notice {
+    #[must_use]
+    pub fn error(id: String, msg: &str) -> Notice {
         Notice::prefixed(id, msg, EventResultStatus::Error)
     }
 
-    #[must_use] pub fn saved(id: String) -> Notice {
+    #[must_use]
+    pub fn saved(id: String) -> Notice {
         Notice::EventResult(EventResult {
             id,
             msg: "".into(),

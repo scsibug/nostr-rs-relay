@@ -8,11 +8,11 @@ use crate::config::VerifiedUsers;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::repo::NostrRepo;
-use std::sync::Arc;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
 use hyper_tls::HttpsConnector;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
@@ -48,7 +48,8 @@ pub struct Nip05Name {
 
 impl Nip05Name {
     /// Does this name represent the entire domain?
-    #[must_use] pub fn is_domain_only(&self) -> bool {
+    #[must_use]
+    pub fn is_domain_only(&self) -> bool {
         self.local == "_"
     }
 
@@ -58,8 +59,8 @@ impl Nip05Name {
             "https://{}/.well-known/nostr.json?name={}",
             self.domain, self.local
         )
-            .parse::<http::Uri>()
-            .ok()
+        .parse::<http::Uri>()
+        .ok()
     }
 }
 
@@ -73,7 +74,10 @@ impl std::convert::TryFrom<&str> for Nip05Name {
             // check if local name is valid
             let local = components[0];
             let domain = components[1];
-            if local.chars().all(|x| x.is_alphanumeric() || x == '_' || x == '-' || x == '.') {
+            if local
+                .chars()
+                .all(|x| x.is_alphanumeric() || x == '_' || x == '-' || x == '.')
+            {
                 if domain
                     .chars()
                     .all(|x| x.is_alphanumeric() || x == '-' || x == '.')
@@ -349,38 +353,34 @@ impl Verifier {
                     UserWebVerificationStatus::Verified => {
                         // freshly verified account, update the
                         // timestamp.
-                        self.repo.update_verification_timestamp(v.rowid)
-                            .await?;
+                        self.repo.update_verification_timestamp(v.rowid).await?;
                         info!("verification updated for {}", v.to_string());
-
                     }
                     UserWebVerificationStatus::DomainNotAllowed
-			| UserWebVerificationStatus::Unknown => {
-                            // server may be offline, or temporarily
-                            // blocked by the config file.  Note the
-                            // failure so we can process something
-                            // else.
+                    | UserWebVerificationStatus::Unknown => {
+                        // server may be offline, or temporarily
+                        // blocked by the config file.  Note the
+                        // failure so we can process something
+                        // else.
 
-                            // have we had enough failures to give up?
-                            if v.failure_count >= max_failures as u64 {
-				info!(
-                                    "giving up on verifying {:?} after {} failures",
-                                    v.name, v.failure_count
-				);
-				self.repo.delete_verification(v.rowid)
-                                    .await?;
-                            } else {
-				// record normal failure, incrementing failure count
-				info!("verification failed for {}", v.to_string());
-				self.repo.fail_verification(v.rowid).await?;
-                            }
-			}
+                        // have we had enough failures to give up?
+                        if v.failure_count >= max_failures as u64 {
+                            info!(
+                                "giving up on verifying {:?} after {} failures",
+                                v.name, v.failure_count
+                            );
+                            self.repo.delete_verification(v.rowid).await?;
+                        } else {
+                            // record normal failure, incrementing failure count
+                            info!("verification failed for {}", v.to_string());
+                            self.repo.fail_verification(v.rowid).await?;
+                        }
+                    }
                     UserWebVerificationStatus::Unverified => {
                         // domain has removed the verification, drop
                         // the record on our side.
                         info!("verification rescinded for {}", v.to_string());
-                        self.repo.delete_verification(v.rowid)
-                            .await?;
+                        self.repo.delete_verification(v.rowid).await?;
                     }
                 }
             }
@@ -433,7 +433,9 @@ impl Verifier {
             }
         }
         // write the verification record
-        self.repo.create_verification_record(&event.id, name).await?;
+        self.repo
+            .create_verification_record(&event.id, name)
+            .await?;
         Ok(())
     }
 }
@@ -463,7 +465,8 @@ pub struct VerificationRecord {
 
 /// Check with settings to determine if a given domain is allowed to
 /// publish.
-#[must_use] pub fn is_domain_allowed(
+#[must_use]
+pub fn is_domain_allowed(
     domain: &str,
     whitelist: &Option<Vec<String>>,
     blacklist: &Option<Vec<String>>,
@@ -483,7 +486,8 @@ pub struct VerificationRecord {
 impl VerificationRecord {
     /// Check if the record is recent enough to be considered valid,
     /// and the domain is allowed.
-    #[must_use] pub fn is_valid(&self, verified_users_settings: &VerifiedUsers) -> bool {
+    #[must_use]
+    pub fn is_valid(&self, verified_users_settings: &VerifiedUsers) -> bool {
         //let settings = SETTINGS.read().unwrap();
         // how long a verification record is good for
         let nip05_expiration = &verified_users_settings.verify_expiration_duration;

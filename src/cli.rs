@@ -7,14 +7,14 @@ pub struct CLIArgs {
         short,
         long,
         help = "Use the <directory> as the location of the database",
-        required = false,
+        required = false
     )]
     pub db: Option<String>,
     #[arg(
         short,
         long,
         help = "Use the <file name> as the location of the config file",
-        required = false,
+        required = false
     )]
     pub config: Option<String>,
 }

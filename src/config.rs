@@ -70,7 +70,7 @@ pub struct Limits {
     pub broadcast_buffer: usize, // events to buffer for subscribers (prevents slow readers from consuming memory)
     pub event_persist_buffer: usize, // events to buffer for database commits (block senders if database writes are too slow)
     pub event_kind_blacklist: Option<Vec<u64>>,
-    pub event_kind_allowlist: Option<Vec<u64>>
+    pub event_kind_allowlist: Option<Vec<u64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,18 +178,20 @@ impl Settings {
         }
     }
 
-
-    fn new_from_default(default: &Settings, config_file_name: &Option<String>) -> Result<Self, ConfigError> {
+    fn new_from_default(
+        default: &Settings,
+        config_file_name: &Option<String>,
+    ) -> Result<Self, ConfigError> {
         let default_config_file_name = "config.toml".to_string();
         let config: &String = match config_file_name {
             Some(value) => value,
-            None => &default_config_file_name
+            None => &default_config_file_name,
         };
         let builder = Config::builder();
         let config: Config = builder
-        // use defaults
+            // use defaults
             .add_source(Config::try_from(default)?)
-        // override with file contents
+            // override with file contents
             .add_source(File::with_name(config))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
@@ -229,7 +231,7 @@ impl Default for Settings {
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 8,
-		connection: "".to_owned(),
+                connection: "".to_owned(),
             },
             grpc: Grpc {
                 event_admission_server: None,

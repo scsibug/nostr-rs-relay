@@ -3,20 +3,20 @@ use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::repo::postgres::{PostgresPool, PostgresRepo};
+use crate::repo::sqlite::SqliteRepo;
+use crate::repo::NostrRepo;
 use crate::server::NostrMetrics;
 use crate::nauthz;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
-use std::sync::Arc;
-use std::thread;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
-use crate::repo::sqlite::SqliteRepo;
-use crate::repo::postgres::{PostgresRepo,PostgresPool};
-use crate::repo::NostrRepo;
-use std::time::{Instant, Duration};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
@@ -42,8 +42,8 @@ pub const DB_FILE: &str = "nostr.db";
 /// Will panic if the pool could not be created.
 pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
-        "sqlite" => {Arc::new(build_sqlite_pool(settings, metrics).await)},
-        "postgres" => {Arc::new(build_postgres_pool(settings, metrics).await)},
+        "sqlite" => Arc::new(build_sqlite_pool(settings, metrics).await),
+        "postgres" => Arc::new(build_postgres_pool(settings, metrics).await),
         _ => panic!("Unknown database engine"),
     }
 }
@@ -165,10 +165,7 @@ pub async fn db_writer(
                     &event.kind
                 );
                 notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "event kind is blocked by relay"
-                    ))
+                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
                     .ok();
                 continue;
             }

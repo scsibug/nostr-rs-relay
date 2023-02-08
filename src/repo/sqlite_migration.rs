@@ -253,8 +253,8 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
         let mut stmt = tx.prepare("select id, content from event order by id;")?;
         let mut tag_rows = stmt.query([])?;
         while let Some(row) = tag_rows.next()? {
-            if (events_processed as f32)/(count as f32) > percent_done {
-                info!("Tag update {}% complete...", (100.0*percent_done).round());
+            if (events_processed as f32) / (count as f32) > percent_done {
+                info!("Tag update {}% complete...", (100.0 * percent_done).round());
                 percent_done += update_each_percent;
             }
             // we want to capture the event_id that had the tag, the tag name, and the tag hex value.
@@ -292,8 +292,6 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
     info!("rebuilt tags in {:?}", start.elapsed());
     Ok(())
 }
-
-
 
 //// Migration Scripts
 
@@ -586,11 +584,17 @@ fn mig_11_to_12(conn: &mut PooledConnection) -> Result<usize> {
         tx.execute("PRAGMA user_version = 12;", [])?;
     }
     tx.commit()?;
-    info!("database schema upgraded v11 -> v12 in {:?}", start.elapsed());
+    info!(
+        "database schema upgraded v11 -> v12 in {:?}",
+        start.elapsed()
+    );
     // vacuum after large table modification
     let start = Instant::now();
     conn.execute("VACUUM;", [])?;
-    info!("vacuumed DB after hidden event cleanup in {:?}", start.elapsed());
+    info!(
+        "vacuumed DB after hidden event cleanup in {:?}",
+        start.elapsed()
+    );
     Ok(12)
 }
 
@@ -656,7 +660,7 @@ PRAGMA user_version = 15;
     match conn.execute_batch(clear_hidden_sql) {
         Ok(()) => {
             info!("all hidden events removed");
-        },
+        }
         Err(err) => {
             error!("delete failed: {}", err);
             panic!("could not remove hidden events");

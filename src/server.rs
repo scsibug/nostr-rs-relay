@@ -3,7 +3,6 @@ use crate::close::Close;
 use crate::close::CloseCmd;
 use crate::config::{Settings, VerifiedUsersMode};
 use crate::conn;
-use crate::repo::NostrRepo;
 use crate::db;
 use crate::db::SubmittedEvent;
 use crate::error::{Error, Result};
@@ -14,10 +13,8 @@ use crate::event::EventCmd;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
+use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
-use prometheus::IntCounterVec;
-use prometheus::IntGauge;
-use prometheus::{Encoder, Histogram, IntCounter, HistogramOpts, Opts, Registry, TextEncoder};
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
@@ -28,6 +25,9 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use prometheus::IntCounterVec;
+use prometheus::IntGauge;
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -37,9 +37,9 @@ use std::io::BufReader;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::runtime::Builder;
@@ -103,7 +103,7 @@ async fn handle_web_request(
                                     tokio_tungstenite::tungstenite::protocol::Role::Server,
                                     Some(config),
                                 )
-                                    .await;
+                                .await;
                                 let origin = get_header_string("origin", request.headers());
                                 let user_agent = get_header_string("user-agent", request.headers());
                                 // determine the remote IP from headers if the exist
@@ -167,19 +167,19 @@ async fn handle_web_request(
                         let rinfo = RelayInfo::from(settings);
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
-                                  .status(200)
-                                  .header("Content-Type", "application/nostr+json")
-                                  .header("Access-Control-Allow-Origin", "*")
-                                  .body(b)
-                                  .unwrap());
+                            .status(200)
+                            .header("Content-Type", "application/nostr+json")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(b)
+                            .unwrap());
                     }
                 }
             }
             Ok(Response::builder()
-               .status(200)
-               .header("Content-Type", "text/plain")
-               .body(Body::from("Please use a Nostr client to connect."))
-               .unwrap())
+                .status(200)
+                .header("Content-Type", "text/plain")
+                .body(Body::from("Please use a Nostr client to connect."))
+                .unwrap())
         }
         ("/metrics", false) => {
             let mut buffer = vec![];
@@ -188,10 +188,10 @@ async fn handle_web_request(
             encoder.encode(&metric_families, &mut buffer).unwrap();
 
             Ok(Response::builder()
-               .status(StatusCode::OK)
-               .header("Content-Type", "text/plain")
-               .body(Body::from(buffer))
-               .unwrap())
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain")
+                .body(Body::from(buffer))
+                .unwrap())
         }
         ("/favicon.ico", false) => {
             if let Some(favicon_bytes) = favicon {
@@ -213,9 +213,9 @@ async fn handle_web_request(
         (_, _) => {
             //handle any other url
             Ok(Response::builder()
-               .status(StatusCode::NOT_FOUND)
-               .body(Body::from("Nothing here."))
-               .unwrap())
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Nothing here."))
+                .unwrap())
         }
     }
 }
@@ -256,50 +256,42 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     let query_sub = Histogram::with_opts(HistogramOpts::new(
         "nostr_query_seconds",
         "Subscription response times",
-    )).unwrap();
+    ))
+    .unwrap();
     let query_db = Histogram::with_opts(HistogramOpts::new(
         "nostr_filter_seconds",
         "Filter SQL query times",
-    )).unwrap();
+    ))
+    .unwrap();
     let write_events = Histogram::with_opts(HistogramOpts::new(
         "nostr_events_write_seconds",
         "Event writing response times",
-    )).unwrap();
+    ))
+    .unwrap();
     let sent_events = IntCounterVec::new(
-	Opts::new("nostr_events_sent_total", "Events sent to clients"),
-	vec!["source"].as_slice(),
-    ).unwrap();
-    let connections = IntCounter::with_opts(Opts::new(
-        "nostr_connections_total",
-        "New connections",
-    )).unwrap();
+        Opts::new("nostr_events_sent_total", "Events sent to clients"),
+        vec!["source"].as_slice(),
+    )
+    .unwrap();
+    let connections =
+        IntCounter::with_opts(Opts::new("nostr_connections_total", "New connections")).unwrap();
     let db_connections = IntGauge::with_opts(Opts::new(
-        "nostr_db_connections", "Active database connections"
-    )).unwrap();
+        "nostr_db_connections",
+        "Active database connections",
+    ))
+    .unwrap();
     let query_aborts = IntCounterVec::new(
         Opts::new("nostr_query_abort_total", "Aborted queries"),
         vec!["reason"].as_slice(),
     ).unwrap();
-    let cmd_req = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_req_total",
-        "REQ commands",
-    )).unwrap();
-    let cmd_event = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_event_total",
-        "EVENT commands",
-    )).unwrap();
-    let cmd_close = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_close_total",
-        "CLOSE commands",
-    )).unwrap();
-    let cmd_auth = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_auth_total",
-        "AUTH commands",
-    )).unwrap();
-    let disconnects = IntCounterVec::new(
-        Opts::new("nostr_disconnects_total", "Client disconnects"),
-        vec!["reason"].as_slice(),
-        ).unwrap();
+    let cmd_req = IntCounter::with_opts(Opts::new("nostr_cmd_req_total", "REQ commands")).unwrap();
+    let cmd_event =
+        IntCounter::with_opts(Opts::new("nostr_cmd_event_total", "EVENT commands")).unwrap();
+    let cmd_close =
+        IntCounter::with_opts(Opts::new("nostr_cmd_close_total", "CLOSE commands")).unwrap();
+    let cmd_auth = IntCounter::with_opts(Opts::new("nostr_cmd_auth_total", "AUTH commands")).unwrap();
+    let disconnects = IntCounterVec::new(Opts::new("nostr_disconnects_total", "Client disconnects"),
+                                         vec!["reason"].as_slice()).unwrap();
     registry.register(Box::new(query_sub.clone())).unwrap();
     registry.register(Box::new(query_db.clone())).unwrap();
     registry.register(Box::new(write_events.clone())).unwrap();
@@ -319,14 +311,14 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         sent_events,
         connections,
         db_connections,
-	disconnects,
+        disconnects,
         query_aborts,
 	cmd_req,
 	cmd_event,
 	cmd_close,
         cmd_auth,
     };
-    (registry,metrics)
+    (registry, metrics)
 }
 
 fn file_bytes(path: &str) -> Result<Vec<u8>> {
@@ -383,11 +375,12 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         .enable_all()
         .thread_name_fn(|| {
             // give each thread a unique numeric name
-            static ATOMIC_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-            let id = ATOMIC_ID.fetch_add(1,Ordering::SeqCst);
+            static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("tokio-ws-{id}")
         })
-    // limit concurrent SQLite blocking threads
+        // limit concurrent SQLite blocking threads
         .max_blocking_threads(settings.limits.max_blocking_threads)
         .on_thread_start(|| {
             trace!("started new thread: {:?}", std::thread::current().name());
@@ -425,27 +418,30 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
 
-	let (registry, metrics) = create_metrics();
+        let (registry, metrics) = create_metrics();
         // build a repository for events
         let repo = db::build_repo(&settings, metrics.clone()).await;
         // start the database writer task.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
-        tokio::task::spawn(
-            db::db_writer(
-                repo.clone(),
-                settings.clone(),
-                event_rx,
-                bcast_tx.clone(),
-                metadata_tx.clone(),
-                shutdown_listen,
-            ));
+        tokio::task::spawn(db::db_writer(
+            repo.clone(),
+            settings.clone(),
+            event_rx,
+            bcast_tx.clone(),
+            metadata_tx.clone(),
+            shutdown_listen,
+        ));
         info!("db writer created");
 
         // create a nip-05 verifier thread; if enabled.
         if settings.verified_users.mode != VerifiedUsersMode::Disabled {
-            let verifier_opt =
-                nip05::Verifier::new(repo.clone(), metadata_rx, bcast_tx.clone(), settings.clone());
+            let verifier_opt = nip05::Verifier::new(
+                repo.clone(),
+                metadata_rx,
+                bcast_tx.clone(),
+                settings.clone(),
+            );
             if let Ok(mut v) = verifier_opt {
                 if verified_users_active {
                     tokio::task::spawn(async move {
@@ -464,7 +460,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                 Ok(()) => {
                     info!("control message requesting shutdown");
                     controlled_shutdown.send(()).ok();
-                },
+                }
                 Err(std::sync::mpsc::RecvError) => {
                     trace!("shutdown requestor is disconnected (this is normal)");
                 }
@@ -545,12 +541,13 @@ pub enum NostrMessage {
 
 /// Convert Message to `NostrMessage`
 fn convert_to_msg(msg: &str, max_bytes: Option<usize>) -> Result<NostrMessage> {
-    let parsed_res: Result<NostrMessage> = serde_json::from_str(msg).map_err(std::convert::Into::into);
+    let parsed_res: Result<NostrMessage> =
+        serde_json::from_str(msg).map_err(std::convert::Into::into);
     match parsed_res {
         Ok(m) => {
             if let NostrMessage::SubMsg(_) = m {
                 // note; this only prints the first 16k of a REQ and then truncates.
-                trace!("REQ: {:?}",msg);
+                trace!("REQ: {:?}", msg);
             };
             if let NostrMessage::EventMsg(_) = m {
                 if let Some(max_size) = max_bytes {
@@ -675,7 +672,7 @@ async fn nostr_server(
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-		metrics.disconnects.with_label_values(&["shutdown"]).inc();
+        metrics.disconnects.with_label_values(&["shutdown"]).inc();
                 info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
                 // server shutting down, exit loop
                 break;
@@ -685,7 +682,7 @@ async fn nostr_server(
                 // if it has been too long, disconnect
                 if last_message_time.elapsed() > max_quiet_time {
                     debug!("ending connection due to lack of client ping response");
-		    metrics.disconnects.with_label_values(&["timeout"]).inc();
+            metrics.disconnects.with_label_values(&["timeout"]).inc();
                     break;
                 }
                 // Send a ping
@@ -702,7 +699,7 @@ async fn nostr_server(
                     ws_stream.send(Message::Text(send_str)).await.ok();
                 } else {
                     client_received_event_count += 1;
-		    metrics.sent_events.with_label_values(&["db"]).inc();
+            metrics.sent_events.with_label_values(&["db"]).inc();
                     // send a result
                     let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
                     ws_stream.send(Message::Text(send_str)).await.ok();
@@ -724,7 +721,7 @@ async fn nostr_server(
                                global_event.get_event_id_prefix());
                         // create an event response and send it
                         let subesc = s.replace('"', "");
-			metrics.sent_events.with_label_values(&["realtime"]).inc();
+            metrics.sent_events.with_label_values(&["realtime"]).inc();
                         ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
@@ -760,20 +757,20 @@ async fn nostr_server(
                              WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
                             debug!("websocket close from client (cid: {}, ip: {:?})",cid, conn.ip());
-			    metrics.disconnects.with_label_values(&["normal"]).inc();
+                metrics.disconnects.with_label_values(&["normal"]).inc();
                             break;
                         },
                     Some(Err(WsError::Io(e))) => {
                         // IO errors are considered fatal
                         warn!("IO error (cid: {}, ip: {:?}): {:?}", cid, conn.ip(), e);
-			metrics.disconnects.with_label_values(&["error"]).inc();
+            metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
                     x => {
                         // default condition on error is to close the client connection
                         info!("unknown error (cid: {}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
-			metrics.disconnects.with_label_values(&["error"]).inc();
+            metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
@@ -786,6 +783,7 @@ async fn nostr_server(
                         // handle each type of message
                         let evid = ec.event_id().to_owned();
                         let parsed : Result<EventWrapper> = Result::<EventWrapper>::from(ec);
+                        metrics.cmd_event.inc();
                         match parsed {
                             Ok(WrappedEvent(e)) => {
                                 metrics.cmd_event.inc();
@@ -866,7 +864,7 @@ async fn nostr_server(
                         if conn.has_subscription(&s) {
                             info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
                         } else {
-			    metrics.cmd_req.inc();
+                metrics.cmd_req.inc();
                             if let Some(ref lim) = sub_lim_opt {
                                 lim.until_ready_with_jitter(jitter).await;
                             }
@@ -893,7 +891,7 @@ async fn nostr_server(
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
                         if let Ok(c) = parsed {
-			    metrics.cmd_close.inc();
+                metrics.cmd_close.inc();
                             // check if a query is currently
                             // running, and remove it if so.
                             let stop_tx = running_queries.remove(&c.id);
@@ -943,17 +941,16 @@ async fn nostr_server(
 
 #[derive(Clone)]
 pub struct NostrMetrics {
-    pub query_sub: Histogram, // response time of successful subscriptions
-    pub query_db: Histogram, // individual database query execution time
-    pub db_connections: IntGauge, // database connections in use
-    pub write_events: Histogram, // response time of event writes
-    pub sent_events: IntCounterVec, // count of events sent to clients
-    pub connections: IntCounter, // count of websocket connections
-    pub disconnects: IntCounterVec, // client disconnects
+    pub query_sub: Histogram,        // response time of successful subscriptions
+    pub query_db: Histogram,         // individual database query execution time
+    pub db_connections: IntGauge,    // database connections in use
+    pub write_events: Histogram,     // response time of event writes
+    pub sent_events: IntCounterVec,  // count of events sent to clients
+    pub connections: IntCounter,     // count of websocket connections
+    pub disconnects: IntCounterVec,  // client disconnects
     pub query_aborts: IntCounterVec, // count of queries aborted by server
-    pub cmd_req: IntCounter, // count of REQ commands received
-    pub cmd_event: IntCounter, // count of EVENT commands received
-    pub cmd_close: IntCounter, // count of CLOSE commands received
-    pub cmd_auth: IntCounter, // count of AUTH commands received
-
+    pub cmd_req: IntCounter,         // count of REQ commands received
+    pub cmd_event: IntCounter,       // count of EVENT commands received
+    pub cmd_close: IntCounter,       // count of CLOSE commands received
+    pub cmd_auth: IntCounter,        // count of AUTH commands received
 }

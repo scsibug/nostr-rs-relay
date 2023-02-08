@@ -1,5 +1,5 @@
 //! Utilities for searching hexadecimal
-use crate::utils::{is_hex};
+use crate::utils::is_hex;
 use hex;
 
 /// Types of hexadecimal queries.
@@ -19,7 +19,8 @@ fn is_all_fs(s: &str) -> bool {
 }
 
 /// Find the next hex sequence greater than the argument.
-#[must_use] pub fn hex_range(s: &str) -> Option<HexSearch> {
+#[must_use]
+pub fn hex_range(s: &str) -> Option<HexSearch> {
     let mut hash_base = s.to_owned();
     if !is_hex(&hash_base) || hash_base.len() > 64 {
         return None;
@@ -56,9 +57,9 @@ fn is_all_fs(s: &str) -> bool {
         } else if odd {
             // check if first char in this byte is NOT 'f'
             if b < 240 {
-		// bump up the first character in this byte
+                // bump up the first character in this byte
                 upper[byte_len] = b + 16;
-		// increment done, stop iterating through the vec
+                // increment done, stop iterating through the vec
                 break;
             }
             // if it is 'f', reset the byte to 0 and do a carry

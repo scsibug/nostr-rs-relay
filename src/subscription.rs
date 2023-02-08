@@ -45,7 +45,8 @@ pub struct ReqFilter {
 
 impl Serialize for ReqFilter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S:Serializer,
+    where
+        S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
         if let Some(ids) = &self.ids {
@@ -68,8 +69,8 @@ impl Serialize for ReqFilter {
         }
         // serialize tags
         if let Some(tags) = &self.tags {
-            for (k,v) in tags {
-                let vals:Vec<&String> = v.iter().collect();
+            for (k, v) in tags {
+                let vals: Vec<&String> = v.iter().collect();
                 map.serialize_entry(&format!("#{k}"), &vals)?;
             }
         }
@@ -105,15 +106,16 @@ impl<'de> Deserialize<'de> for ReqFilter {
         for (key, val) in filter {
             // ids
             if key == "ids" {
-                let raw_ids: Option<Vec<String>>= Deserialize::deserialize(val).ok();
+                let raw_ids: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                 if let Some(a) = raw_ids.as_ref() {
                     if a.contains(&empty_string) {
                         return Err(serde::de::Error::invalid_type(
                             Unexpected::Other("prefix matches must not be empty strings"),
-                            &"a json object"));
+                            &"a json object",
+                        ));
                     }
                 }
-                rf.ids =raw_ids;
+                rf.ids = raw_ids;
             } else if key == "kinds" {
                 rf.kinds = Deserialize::deserialize(val).ok();
             } else if key == "since" {
@@ -123,12 +125,13 @@ impl<'de> Deserialize<'de> for ReqFilter {
             } else if key == "limit" {
                 rf.limit = Deserialize::deserialize(val).ok();
             } else if key == "authors" {
-                let raw_authors: Option<Vec<String>>= Deserialize::deserialize(val).ok();
+                let raw_authors: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                 if let Some(a) = raw_authors.as_ref() {
                     if a.contains(&empty_string) {
                         return Err(serde::de::Error::invalid_type(
                             Unexpected::Other("prefix matches must not be empty strings"),
-                            &"a json object"));
+                            &"a json object",
+                        ));
                     }
                 }
                 rf.authors = raw_authors;
@@ -232,19 +235,22 @@ impl<'de> Deserialize<'de> for Subscription {
 
 impl Subscription {
     /// Get a copy of the subscription identifier.
-    #[must_use] pub fn get_id(&self) -> String {
+    #[must_use]
+    pub fn get_id(&self) -> String {
         self.id.clone()
     }
 
     /// Determine if any filter is requesting historical (database)
     /// queries.  If every filter has limit:0, we do not need to query the DB.
-    #[must_use] pub fn needs_historical_events(&self) -> bool {
-        self.filters.iter().any(|f| f.limit!=Some(0))
+    #[must_use]
+    pub fn needs_historical_events(&self) -> bool {
+        self.filters.iter().any(|f| f.limit != Some(0))
     }
 
     /// Determine if this subscription matches a given [`Event`].  Any
     /// individual filter match is sufficient.
-    #[must_use] pub fn interested_in_event(&self, event: &Event) -> bool {
+    #[must_use]
+    pub fn interested_in_event(&self, event: &Event) -> bool {
         for f in &self.filters {
             if f.interested_in_event(event) {
                 return true;
@@ -305,13 +311,12 @@ impl ReqFilter {
 
     /// Check if this filter either matches, or does not care about the kind.
     fn kind_match(&self, kind: u64) -> bool {
-        self.kinds
-            .as_ref()
-            .map_or(true, |ks| ks.contains(&kind))
+        self.kinds.as_ref().map_or(true, |ks| ks.contains(&kind))
     }
 
     /// Determine if all populated fields in this filter match the provided event.
-    #[must_use] pub fn interested_in_event(&self, event: &Event) -> bool {
+    #[must_use]
+    pub fn interested_in_event(&self, event: &Event) -> bool {
         //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
         self.ids_match(event)
             && self.since.map_or(true, |t| event.created_at > t)
@@ -625,7 +630,9 @@ mod tests {
 
     #[test]
     fn serialize_filter() -> Result<()> {
-        let s: Subscription = serde_json::from_str(r##"["REQ","xyz",{"authors":["abc", "bcd"], "since": 10, "until": 20, "limit":100, "#e": ["foo", "bar"], "#d": ["test"]}]"##)?;
+        let s: Subscription = serde_json::from_str(
+            r##"["REQ","xyz",{"authors":["abc", "bcd"], "since": 10, "until": 20, "limit":100, "#e": ["foo", "bar"], "#d": ["test"]}]"##,
+        )?;
         let f = s.filters.get(0);
         let serialized = serde_json::to_string(&f)?;
         let serialized_wrapped = format!(r##"["REQ", "xyz",{}]"##, serialized);

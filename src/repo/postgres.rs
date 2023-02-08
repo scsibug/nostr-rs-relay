@@ -8,10 +8,11 @@ use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
 use sqlx::postgres::PgRow;
+use sqlx::Error::RowNotFound;
 use sqlx::{Error, Execute, FromRow, Postgres, QueryBuilder, Row};
 use std::time::{Duration, Instant};
-use sqlx::Error::RowNotFound;
 
+use crate::error;
 use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
 use crate::server::NostrMetrics;
@@ -19,8 +20,7 @@ use crate::utils::{is_hex, is_lower_hex, self};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::log::trace;
-use tracing::{debug, error, warn, info};
-use crate::error;
+use tracing::{debug, info, warn, error};
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
@@ -78,7 +78,6 @@ async fn delete_expired(conn:PostgresPool) -> Result<u64> {
 
 #[async_trait]
 impl NostrRepo for PostgresRepo {
-
     async fn start(&self) -> Result<()> {
         // begin a cleanup task for expired events.
         cleanup_expired(self.conn.clone(), Duration::from_secs(600)).await?;
@@ -116,7 +115,7 @@ impl NostrRepo for PostgresRepo {
             }
         }
         if let Some(d_tag) = e.distinct_param() {
-            let repl_count:i64 = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+            let repl_count: i64 = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
                 sqlx::query_scalar(
                     "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at >= $4 LIMIT 1;")
                     .bind(hex::decode(&e.pubkey).ok())
@@ -139,7 +138,7 @@ impl NostrRepo for PostgresRepo {
             // the same author/kind/tag value exist, and we can ignore
             // this event.
             if repl_count > 0 {
-                return Ok(0)
+                return Ok(0);
             }
         }
         // ignore if the event hash is a duplicate.
@@ -159,7 +158,6 @@ ON CONFLICT (id) DO NOTHING"#,
             .execute(&mut tx)
             .await?
             .rows_affected();
-
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
             // pubkey references.  This will abort the txn.
@@ -276,10 +274,10 @@ ON CONFLICT (id) DO NOTHING"#,
             LEFT JOIN tag t ON e.id = t.event_id \
             WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
             )
-                .bind(&pubkey_blob)
-                .bind(&id_blob)
-                .fetch_optional(&mut tx)
-                .await?;
+            .bind(&pubkey_blob)
+            .bind(&id_blob)
+            .fetch_optional(&mut tx)
+            .await?;
 
             // check if a the query returned a result, meaning we should
             // hid the current event
@@ -380,7 +378,10 @@ ON CONFLICT (id) DO NOTHING"#,
 
                 // check if this is still active; every 100 rows
                 if row_count % 100 == 0 && abandon_query_rx.try_recv().is_ok() {
-                    debug!("query cancelled by client (cid: {}, sub: {:?})", client_id, sub.id);
+                    debug!(
+                        "query cancelled by client (cid: {}, sub: {:?})",
+                        client_id, sub.id
+                    );
                     return Ok(());
                 }
 
@@ -396,7 +397,10 @@ ON CONFLICT (id) DO NOTHING"#,
                         if last_successful_send + abort_cutoff < Instant::now() {
                             // the queue has been full for too long, abort
                             info!("aborting database query due to slow client");
-                            metrics.query_aborts.with_label_values(&["slowclient"]).inc();
+                            metrics
+                                .query_aborts
+                                .with_label_values(&["slowclient"])
+                                .inc();
                             return Ok(());
                         }
                         // give the queue a chance to clear before trying again
@@ -467,9 +471,7 @@ ON CONFLICT (id) DO NOTHING"#,
         let verify_time = now_jitter(600);
 
         // update verification time and reset any failure count
-        sqlx::query(
-            "UPDATE user_verification SET verified_at = $1, fail_count = 0 WHERE id = $2",
-        )
+        sqlx::query("UPDATE user_verification SET verified_at = $1, fail_count = 0 WHERE id = $2")
             .bind(Utc.timestamp_opt(verify_time as i64, 0).unwrap())
             .bind(id as i64)
             .execute(&self.conn)
@@ -767,8 +769,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
 
 impl FromRow<'_, PgRow> for VerificationRecord {
     fn from_row(row: &'_ PgRow) -> std::result::Result<Self, Error> {
-        let name =
-            Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(RowNotFound))?;
+        let name = Nip05Name::try_from(row.get::<'_, &str, &str>("name")).or(Err(RowNotFound))?;
         Ok(VerificationRecord {
             rowid: row.get::<'_, i64, &str>("id") as u64,
             name,
