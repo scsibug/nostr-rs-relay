@@ -111,7 +111,8 @@ CREATE INDEX IF NOT EXISTS user_pubkey_index ON account(pubkey);
 -- Invoice table
 CREATE TABLE IF NOT EXISTS invoice (
 payment_hash TEXT PRIMARY KEY, 
-pubkey BLOB NOT NULL,
+pubkey TEXT NOT NULL,
+invoice TEXT NOT NULL,
 amount INTEGER NOT NULL,
 status TEXT CHECK ( status IN ('Paid', 'Unpaid', 'Expired' ) ) NOT NUll DEFAULT 'Unpaid',
 description TEXT,
@@ -793,10 +794,12 @@ CREATE TABLE IF NOT EXISTS invoice (
 payment_hash TEXT PRIMARY KEY,
 pubkey TEXT NOT NULL,
 amount INTEGER NOT NULL,
+invoice TEXT NOT NULL,
 status TEXT CHECK ( status IN ('Paid', 'Unpaid', 'Expired' ) ) NOT NUll DEFAULT 'pending',
 description TEXT,
 confirmed_at INTEGER,
 created_at INTEGER NOT NULL
+CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
 
 -- Create invoice index
@@ -809,7 +812,6 @@ pubkey TEXT PRIMARY KEY,
 is_admitted INTEGER NOT NULL DEFAULT 0,
 balance INTEGER NOT NULL DEFAULT 0,
 tos_accepted_at INTEGER,
-CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
 
 -- Create account index

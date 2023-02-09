@@ -26,6 +26,7 @@ terms_message = """This service ....
 """
 # Whether or not new sign ups should be allowed 
 sign_ups = true 
+secret_key = "<nostr secret key to send dms>"
 ```
 
 ## Design Overview

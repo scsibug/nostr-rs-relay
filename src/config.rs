@@ -88,7 +88,8 @@ pub struct PayToRelay {
     pub node_url: String,
     pub api_secret: String,
     pub terms_message: String,
-    pub sign_ups: bool // allow new users to sign up to relay
+    pub sign_ups: bool, // allow new users to sign up to relay
+    pub secret_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +222,14 @@ impl Settings {
         // initialize durations for verified users
         settings.verified_users.init();
 
-        // TODO: ensure pay to relay settings are correct
+        // Validate pay to relay settings
+        if settings.pay_to_relay.enabled {
+            assert_ne!(settings.pay_to_relay.api_secret, "");
+            // Should check that url is valid
+            assert_ne!(settings.pay_to_relay.node_url, "");
+            assert_ne!(settings.pay_to_relay.terms_message, "");
+            assert_ne!(settings.pay_to_relay.secret_key, "");
+        }
 
         Ok(settings)
     }
@@ -280,7 +288,8 @@ impl Default for Settings {
                 tor_proxy: None,
                 node_url: "".to_string(),
                 api_secret: "".to_string(),
-                sign_ups: false
+                sign_ups: false,
+                secret_key: "".to_string(),
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

@@ -6,8 +6,8 @@ use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::subscription::Subscription;
 use crate::utils::unix_time;
 use async_trait::async_trait;
-use rand::Rng;
 use nostr::Keys;
+use rand::Rng;
 
 pub mod sqlite;
 pub mod sqlite_migration;
@@ -61,22 +61,30 @@ pub trait NostrRepo: Send + Sync {
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord>;
 
     /// Create a new user
-    async fn create_account(&self, pubkey: &Keys) -> Result<bool>; 
+    async fn create_account(&self, pubkey: &Keys) -> Result<bool>;
 
-    /// Admit a user 
+    /// Admit a user
     async fn admit_account(&self, pubkey: &Keys) -> Result<()>;
 
     /// Gets user balance if they are an admitted pubkey
     async fn get_account_balance(&self, pubkey: &Keys) -> Result<(bool, u64)>;
 
     /// Update user balance
-    async fn update_account_balance(&self, pub_key: &Keys, positive: bool, new_balance: u64) -> Result<()>;
+    async fn update_account_balance(
+        &self,
+        pub_key: &Keys,
+        positive: bool,
+        new_balance: u64,
+    ) -> Result<()>;
 
     /// Create invoice record
     async fn create_invoice_record(&self, pubkey: &Keys, invoice_info: InvoiceInfo) -> Result<()>;
 
     /// Update Invoice 
     async fn update_invoice(&self, label: &str, status: InvoiceStatus) -> Result<String>;
+
+    /// Gets the current unpaid invoice for an account
+    async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>>;
 }
 
 // Current time, with a slight forward jitter in seconds

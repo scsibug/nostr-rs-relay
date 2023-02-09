@@ -14,7 +14,6 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::payment;
-use crate::payment::get_invoice;
 use crate::payment::LNBitsCallback;
 use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
@@ -185,6 +184,16 @@ async fn handle_web_request(
                     }
                 }
             }
+
+            // Redirect users to join page when pay to relay enabled
+            if settings.pay_to_relay.enabled {
+                return Ok(Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
+
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain")
@@ -235,6 +244,7 @@ async fn handle_web_request(
         }
         // Endpoint to allow users to sign up
         ("/join", false) => {
+            // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
                 return Ok(Response::builder()
                     .status(401)
@@ -244,11 +254,52 @@ async fn handle_web_request(
             }
 
             let html = r#"
-            <h1>Enter your pubkey</h1>
-            <form action="/invoice">
-  <input type="text" name="pubkey">
-  <button type="submit">Submit</button>
-</form>
+<!doctype HTML>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background-color: #6320a7;
+      color: white;
+    }
+
+    #copy-button {
+      background-color: #bb5f0d;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+    }
+
+    #copy-button:hover {
+      background-color: #8f29f4;
+    }
+
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 400px;
+    }
+
+    a {
+      color: pink;
+    }
+  </style>
+</head>
+<body>
+  <div style="width:75%;">
+    <h1>Enter your pubkey</h1>
+    <form action="/invoice"><input type="text" name="pubkey"><button type="submit">Submit</button></form>
+  </div>
+</body>
+</html>
             "#;
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -257,6 +308,7 @@ async fn handle_web_request(
         }
         // Endpoint to display invoice
         ("/invoice", false) => {
+            // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
                 return Ok(Response::builder()
                     .status(401)
@@ -264,15 +316,12 @@ async fn handle_web_request(
                     .body(Body::from("Sorry, joining is not allowed at the moment"))
                     .unwrap());
             }
-            let mut client = reqwest::Client::builder()
-                // REVIEW:
-                .danger_accept_invalid_certs(true)
-                .build()
-                .unwrap();
 
             let amount = settings.pay_to_relay.admission_cost;
 
             let query = request.uri().query().unwrap_or("").to_string();
+
+            // Gets the pubkey value from query string
             let pubkey = query.split('&').fold(None, |acc, pair| {
                 let mut parts = pair.splitn(2, '=');
                 let key = parts.next();
@@ -285,18 +334,15 @@ async fn handle_web_request(
             debug!("{:?}", pubkey);
 
             if let Some(pubkey) = pubkey {
-
                 let key = Keys::from_pk_str(&pubkey);
 
                 if key.is_err() {
                     return Ok(Response::builder()
                         .status(401)
                         .header("Content-Type", "text/plain")
-                        .body(Body::from("Looks like your key is invalid")).unwrap());
-
-
-
-                }  
+                        .body(Body::from("Looks like your key is invalid"))
+                        .unwrap());
+                }
 
                 if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                     if admission_status {
@@ -307,9 +353,17 @@ async fn handle_web_request(
                     }
                 }
 
-                let invoice_info = get_invoice(&mut client, &repo, &pubkey, amount, &settings)
-                    .await
-                    .unwrap();
+                let invoice_info =
+                    match payment::get_invoice_info(&repo, &pubkey, amount, &settings).await {
+                        Ok(invoice_info) => invoice_info,
+                        Err(err) => {
+                            debug!("{err}");
+                            return Ok(Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from("Could not generate invoice"))
+                                .unwrap());
+                        }
+                    };
 
                 let qr_code: String;
                 if let Ok(code) = QrCode::new(invoice_info.invoice.as_bytes()) {
@@ -324,25 +378,63 @@ async fn handle_web_request(
                 }
 
                 let html_result = format!(
-                    r#"<html>
+                    r#"
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="UTF-8">
+    <style>
+      body {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        background-color:  #6320a7 ;
+        color: white;
+      }}
+      #copy-button {{
+        background-color: #bb5f0d ;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        border: none;
+        cursor: pointer;
+      }}
+      #copy-button:hover {{
+        background-color: #8f29f4;
+      }}
+    .container {{
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 400px;
+    }}
+    a {{
+        color: pink;
+    }}
+    </style>
+  </head>
   <body>
-  <div>
-  <h3>
-  To use this relay requires an admission fee. By paying this fee you agree to these <a href='terms'>terms</a>
-  </h3>
-  </div>
+    <div style="width:75%;">
+      <h3>
+        To use this relay, an admission fee is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
+      </h3>
+    </div>
     <div>
-      <svg height='300' >
+      <svg height="300">
         {}
       </svg>
     </div>
     <div>
-    <p>{}</P>
+    <div style="width: 75%;">
+        <p style="overflow-wrap: break-word; width: 500px;">{}</p> 
         <button id="copy-button">Copy</button>
     </div>
-    
+    </div>
   </body>
-</html>
+</html>                  
+  
 
 <script>
   const copyButton = document.getElementById("copy-button");
@@ -368,10 +460,11 @@ async fn handle_web_request(
                     .body(Body::from(html_result))
                     .unwrap());
             }
-
+            // Redirect back to join page if no pub key is found in query string
             Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from("ok"))
+                .status(404)
+                .header("location", "/join")
+                .body(Body::empty())
                 .unwrap())
         }
         ("/favicon.ico", false) => {

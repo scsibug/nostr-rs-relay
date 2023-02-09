@@ -2,13 +2,12 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::repo::NostrRepo;
 use rand::Rng;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
 
+use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
-use nostr::key::FromPkStr;
 
 /// Payment handler
 pub struct Payment {
@@ -20,8 +19,6 @@ pub struct Payment {
     payment_rx: tokio::sync::broadcast::Receiver<Event>,
     /// Settings
     settings: crate::config::Settings,
-    // HTTP client
-    client: Client,
     // Api
     nostr_keys: Keys,
 }
@@ -111,11 +108,8 @@ impl Payment {
     ) -> Result<Self> {
         info!("Create payment handler");
 
-        let nostr_keys = Keys::generate();
-        let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let nostr_keys = Keys::from_sk_str(&settings.pay_to_relay.secret_key)?;
+        // let nostr_keys = Keys::generate();
 
         Ok(Payment {
             repo,
@@ -123,7 +117,6 @@ impl Payment {
             event_tx,
             settings,
             nostr_keys,
-            client,
         })
     }
 
@@ -146,7 +139,10 @@ impl Payment {
                 match m {
                     Ok(e) => {
                         info!("payment event for {:?}", e.pubkey);
-                        self.send_admission_message(&e.pubkey).await?;
+                        // REVIEW: This will need to change for cost per event
+                        let amount = self.settings.pay_to_relay.admission_cost;
+                        let invoice_info = get_invoice_info(&self.repo, &e.pubkey, amount, &self.settings).await?;
+                        self.send_admission_message(&e.pubkey, invoice_info).await?;
                     },
                     _ => todo!()
                 }
@@ -156,51 +152,15 @@ impl Payment {
         Ok(())
     }
 
-    pub async fn send_admission_message(&mut self, pubkey: &str) -> Result<()> {
+    pub async fn send_admission_message(
+        &mut self,
+        pubkey: &str,
+        invoice_info: InvoiceInfo,
+    ) -> Result<()> {
         // Create lighting address
         // Checks that node url is set other wise returns error
         // REVIEW: should maybe check this in config
-
-        // If use is already in DB this will be false
-        // This avoids resending admission invoices
-        // FIXME: It should be more intelligent resend after x time?
         let key = Keys::from_pk_str(pubkey)?;
-        if !self.repo.create_account(&key).await? {
-            return Err(Error::UnknownError);
-        }
-
-        // If tor proxy is setting is set send request via proxy
-        let invoice_info = match &self.settings.pay_to_relay.tor_proxy {
-            Some(proxy_url) => {
-                debug!("{proxy_url}");
-                /*
-                let proxy = ureq::Proxy::new(proxy_url).unwrap();
-                let agent = ureq::AgentBuilder::new().proxy(proxy).build();
-
-                // This is proxied.
-                let resp = agent
-                    .post(&node_url)
-                    .set("X-Access", "eUoort9EGSIPVpdmoxqn")
-                    //.set("Range", "payments=0-99")
-                    .send_json(ureq::json!({"method": "listsendpays"}));
-                debug!("{:?}", resp);
-                // resp
-                // .unwrap();
-                println!("{:?}", resp);
-                */
-                todo!();
-            }
-            None => {
-                get_invoice(
-                    &mut self.client,
-                    &self.repo,
-                    &key.public_key().to_string(),
-                    self.settings.pay_to_relay.admission_cost,
-                    &self.settings,
-                )
-                .await?
-            }
-        };
 
         let pubkey = key.public_key();
 
@@ -232,13 +192,50 @@ impl Payment {
     }
 }
 
-pub async fn get_invoice(
-    client: &mut Client,
+pub async fn get_invoice_info(
     repo: &Arc<dyn NostrRepo>,
     pubkey: &str,
     amount: u64,
     settings: &crate::config::Settings,
 ) -> Result<InvoiceInfo> {
+    // If use is already in DB this will be false
+    // This avoids resending admission invoices
+    // FIXME: It should be more intelligent resend after x time?
+    let key = Keys::from_pk_str(pubkey)?;
+    if !repo.create_account(&key).await.unwrap() {
+        if let Some(invoice_info) = repo.get_unpaid_invoice(&key).await? {
+            return Ok(invoice_info);
+        } else {
+            return Err(Error::UnknownError);
+        }
+    }
+    // If tor proxy is setting is set send request via proxy
+    let client = match &settings.pay_to_relay.tor_proxy {
+        Some(proxy_url) => {
+            // TODO: Implement tor
+
+            debug!("{proxy_url}");
+            /*
+            let proxy = ureq::Proxy::new(proxy_url).unwrap();
+            let agent = ureq::AgentBuilder::new().proxy(proxy).build();
+
+            // This is proxied.
+            let resp = agent
+                .post(&node_url)
+                .set("X-Access", "eUoort9EGSIPVpdmoxqn")
+                //.set("Range", "payments=0-99")
+                .send_json(ureq::json!({"method": "listsendpays"}));
+            debug!("{:?}", resp);
+            // resp
+            // .unwrap();
+            println!("{:?}", resp);
+            */
+            todo!();
+        }
+        None => reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()?,
+    };
 
     let key = Keys::from_pk_str(pubkey)?;
     let random_number: u16 = rand::thread_rng().gen();
@@ -268,10 +265,9 @@ pub async fn get_invoice(
         .header("X-Api-Key", &settings.pay_to_relay.api_secret)
         .json(&body)
         .send()
-        .await
-        .unwrap();
+        .await?;
 
-    let payment_response = res.json::<LNBitsCreateInvoiceResponse>().await.unwrap();
+    let payment_response = res.json::<LNBitsCreateInvoiceResponse>().await?;
 
     let invoice_info = InvoiceInfo {
         pubkey: key.public_key().to_string(),

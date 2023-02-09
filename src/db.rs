@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
-use nostr::key::Keys;
 use nostr::key::FromPkStr;
+use nostr::key::Keys;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
@@ -145,6 +145,22 @@ pub async fn db_writer(
         let event = subm_event.event;
         let notice_tx = subm_event.notice_tx;
 
+        // Check that event kind isn't blacklisted
+        let kinds_blacklist = &settings.limits.event_kind_blacklist.clone();
+        if let Some(event_kind_blacklist) = kinds_blacklist {
+            if event_kind_blacklist.contains(&event.kind) {
+                debug!(
+                    "rejecting event: {}, blacklisted kind: {}",
+                    &event.get_event_id_prefix(),
+                    &event.kind
+                );
+                notice_tx
+                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
+                    .ok();
+                continue;
+            }
+        }
+
         // Set to none until balance is got from db
         // Will stay none if user in whitelisted and does not have to pay to post
         // When pay to relay is enabled the whitelist is not a list of who can post
@@ -228,22 +244,6 @@ pub async fn db_writer(
                         continue;
                     }
                 }
-            }
-        }
-
-        // Check that event kind isn't blacklisted
-        let kinds_blacklist = &settings.limits.event_kind_blacklist.clone();
-        if let Some(event_kind_blacklist) = kinds_blacklist {
-            if event_kind_blacklist.contains(&event.kind) {
-                debug!(
-                    "rejecting event: {}, blacklisted kind: {}",
-                    &event.get_event_id_prefix(),
-                    &event.kind
-                );
-                notice_tx
-                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
-                    .ok();
-                continue;
             }
         }
 

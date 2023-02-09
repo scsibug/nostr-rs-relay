@@ -278,7 +278,7 @@ CREATE INDEX event_expires_at_idx ON "event" (expires_at);
 CREATE TABLE "account" (
     pubkey varchar NOT NULL,
     is_admitted BOOLEAN NOT NULL DEFAULT FALSE,
-    balance bigint NOT NULL,
+    balance bigint NOT NULL DEFAULT 0,
     tos_accepted_at TIMESTAMP,
     CONSTRAINT account_pkey PRIMARY KEY (pubkey)
 );
@@ -294,6 +294,7 @@ CREATE TABLE "invoice" (
     description varchar,
     confirmed_at timestamp,
     created_at timestamp,
+    invoice varchar,
     CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
     CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );

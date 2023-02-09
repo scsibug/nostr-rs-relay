@@ -76,6 +76,8 @@ pub enum Error {
     EventError(nostr::event::builder::Error),
     #[error("Nostr key error")]
     NostrKeyError(nostr::key::Error),
+    #[error("Reqwest error")]
+    ReqwestError(reqwest::Error),
     //#[error("Request error")]
    // ReqError(minreq::Error),
     #[error("Unknown/Undocumented")]
@@ -168,10 +170,16 @@ impl From<nostr::event::builder::Error> for Error {
 
 impl From<nostr::key::Error> for Error {
     /// Wrap nostr key error
-    fn from (r: nostr::key::Error) -> Self {
+    fn from(r: nostr::key::Error) -> Self {
         Error::NostrKeyError(r)
     }
+}
 
+impl From<reqwest::Error> for Error {
+    /// Wrap reqwest error
+    fn from(r: reqwest::Error) -> Self {
+        Error::ReqwestError(r)
+    }
 }
 
 /*
