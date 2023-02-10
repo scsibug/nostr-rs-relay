@@ -3,6 +3,7 @@ use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::payment::PaymentMessage;
 use crate::repo::postgres::{PostgresPool, PostgresRepo};
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::NostrRepo;
@@ -86,7 +87,7 @@ pub async fn db_writer(
     mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
     metadata_tx: tokio::sync::broadcast::Sender<Event>,
-    payment_tx: tokio::sync::broadcast::Sender<Event>,
+    payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<()> {
     // are we performing NIP-05 checking?
@@ -199,7 +200,9 @@ pub async fn db_writer(
 
                             // Only send admission message and invoice if sign ups enabled
                             if settings.pay_to_relay.sign_ups {
-                                payment_tx.send(event.clone()).ok();
+                                payment_tx
+                                    .send(PaymentMessage::NewAccount(event.pubkey))
+                                    .ok();
                             }
 
                             notice_tx
@@ -223,7 +226,9 @@ pub async fn db_writer(
                     Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
                         // User does not exist
                         info!("Unregistered user");
-                        payment_tx.send(event.clone()).ok();
+                        payment_tx
+                            .send(PaymentMessage::NewAccount(event.pubkey))
+                            .ok();
                         let msg = "Pubkey not registered";
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                         continue;
@@ -231,7 +236,9 @@ pub async fn db_writer(
                     Err(Error::SqlxError(sqlx::Error::RowNotFound)) => {
                         // User does not exist
                         info!("Unregistered user");
-                        payment_tx.send(event.clone()).ok();
+                        payment_tx
+                            .send(PaymentMessage::NewAccount(event.pubkey))
+                            .ok();
                         let msg = "Pubkey not registered";
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                         continue;

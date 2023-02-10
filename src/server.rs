@@ -14,7 +14,9 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::payment;
+use crate::payment::InvoiceInfo;
 use crate::payment::LNBitsCallback;
+use crate::payment::PaymentMessage;
 use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
 use futures::SinkExt;
@@ -72,6 +74,8 @@ async fn handle_web_request(
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
+    payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
+    // payment_rx: &mut tokio::sync::broadcast::Receiver<(String, Option<InvoiceInfo>)>,
     shutdown: Receiver<()>,
     favicon: Option<Vec<u8>>,
     registry: Registry,
@@ -219,13 +223,16 @@ async fn handle_web_request(
             let callback: LNBitsCallback =
                 serde_json::from_slice(&to_bytes(request.into_body()).await.unwrap()).unwrap();
 
-            let pubkey = repo
-                .update_invoice(&callback.payment_hash, payment::InvoiceStatus::Paid)
-                .await
-                .unwrap();
-
-            let key = Keys::from_pk_str(&pubkey).unwrap();
-            repo.admit_account(&key).await.unwrap();
+            if payment_tx
+                .send(PaymentMessage::InvoiceUpdate(callback))
+                .is_err()
+            {
+                warn!("Could not send invoice update");
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Error processing callback"))
+                    .unwrap());
+            }
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -233,15 +240,11 @@ async fn handle_web_request(
                 .unwrap())
         }
         // Endpoint for relays terms
-        ("/terms", false) => {
-            debug!("{}", settings.pay_to_relay.terms_message);
-
-            Ok(Response::builder()
-                .status(200)
-                .header("Content-Type", "text/plain")
-                .body(Body::from(settings.pay_to_relay.terms_message))
-                .unwrap())
-        }
+        ("/terms", false) => Ok(Response::builder()
+            .status(200)
+            .header("Content-Type", "text/plain")
+            .body(Body::from(settings.pay_to_relay.terms_message))
+            .unwrap()),
         // Endpoint to allow users to sign up
         ("/join", false) => {
             // Stops sign ups if disabled
@@ -267,20 +270,6 @@ async fn handle_web_request(
       background-color: #6320a7;
       color: white;
     }
-
-    #copy-button {
-      background-color: #bb5f0d;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 5px;
-      border: none;
-      cursor: pointer;
-    }
-
-    #copy-button:hover {
-      background-color: #8f29f4;
-    }
-
     .container {
       display: flex;
       justify-content: center;
@@ -296,8 +285,22 @@ async fn handle_web_request(
 <body>
   <div style="width:75%;">
     <h1>Enter your pubkey</h1>
-    <form action="/invoice"><input type="text" name="pubkey"><button type="submit">Submit</button></form>
+    <form action="/invoice" onsubmit="return checkForm(this);">
+      <input type="text" name="pubkey"><br><br>
+      <input type="checkbox" id="terms" required>
+      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
+      <button type="submit">Submit</button>
+    </form>
   </div>
+  <script>
+    function checkForm(form) {
+      if (!form.terms.checked) {
+        alert("Please agree to the terms and conditions");
+        return false;
+      }
+      return true;
+    }
+  </script>
 </body>
 </html>
             "#;
@@ -316,8 +319,6 @@ async fn handle_web_request(
                     .body(Body::from("Sorry, joining is not allowed at the moment"))
                     .unwrap());
             }
-
-            let amount = settings.pay_to_relay.admission_cost;
 
             let query = request.uri().query().unwrap_or("").to_string();
 
@@ -353,17 +354,39 @@ async fn handle_web_request(
                     }
                 }
 
-                let invoice_info =
-                    match payment::get_invoice_info(&repo, &pubkey, amount, &settings).await {
-                        Ok(invoice_info) => invoice_info,
-                        Err(err) => {
-                            debug!("{err}");
-                            return Ok(Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from("Could not generate invoice"))
-                                .unwrap());
-                        }
-                    };
+                // Send message on payment channel
+                if payment_tx
+                    .send(PaymentMessage::NewAccount(pubkey.clone()))
+                    .is_err()
+                {
+                    warn!("Could not send payment tx");
+                    return Ok(Response::builder()
+                        .status(501)
+                        .header("Content-Type", "text/plain")
+                        .body(Body::from("Sorry, something went wrong"))
+                        .unwrap());
+                }
+
+                // wait for message back that matched the pub key
+                let mut invoice_info: Option<InvoiceInfo> = None;
+                while let Ok(PaymentMessage::Invoice(m_pubkey, m_invoice_info)) =
+                    payment_tx.subscribe().recv().await
+                {
+                    if m_pubkey == pubkey.clone() {
+                        invoice_info = Some(m_invoice_info);
+                        break;
+                    }
+                }
+
+                if invoice_info.is_none() {
+                    return Ok(Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("Sorry, could not get invoice"))
+                        .unwrap());
+                }
+
+                // Since invoice is checked to be not none, unwrap
+                let invoice_info = invoice_info.unwrap();
 
                 let qr_code: String;
                 if let Ok(code) = QrCode::new(invoice_info.invoice.as_bytes()) {
@@ -376,6 +399,8 @@ async fn handle_web_request(
                 } else {
                     qr_code = "Could not render image".to_string();
                 }
+
+                let amount = settings.pay_to_relay.admission_cost;
 
                 let html_result = format!(
                     r#"
@@ -418,7 +443,7 @@ async fn handle_web_request(
   <body>
     <div style="width:75%;">
       <h3>
-        To use this relay, an admission fee is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
+        To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
       </h3>
     </div>
     <div>
@@ -453,7 +478,7 @@ async fn handle_web_request(
   }}
 </script>
 "#,
-                    qr_code, invoice_info.invoice, invoice_info.invoice
+                    amount, qr_code, invoice_info.invoice, invoice_info.invoice
                 );
                 return Ok(Response::builder()
                     .status(StatusCode::OK)
@@ -485,7 +510,7 @@ async fn handle_web_request(
             }
         }
         (_, _) => {
-            //handle any other url
+            // handle any other url
             Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from("Nothing here."))
@@ -705,7 +730,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
 
-        let (payment_tx, payment_rx) = broadcast::channel::<Event>(4096);
+        let (payment_tx, payment_rx) = broadcast::channel::<PaymentMessage>(4096);
 
         let (registry, metrics) = create_metrics();
         // build a repository for events
@@ -744,8 +769,13 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
 
         // Create payments thread if pay to relay enabled
         if settings.pay_to_relay.enabled {
-            let payment_opt =
-                payment::Payment::new(repo.clone(), payment_rx, bcast_tx.clone(), settings.clone());
+            let payment_opt = payment::Payment::new(
+                repo.clone(),
+                payment_tx.clone(),
+                payment_rx,
+                bcast_tx.clone(),
+                settings.clone(),
+            );
             if let Ok(mut p) = payment_opt {
                 tokio::task::spawn(async move {
                     info!("starting payment process ...");
@@ -795,6 +825,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let remote_addr = conn.remote_addr();
             let bcast = bcast_tx.clone();
             let event = event_tx.clone();
+            let payment_tx = payment_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
             let favicon = favicon.clone();
@@ -810,6 +841,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         remote_addr,
                         bcast.clone(),
                         event.clone(),
+                        payment_tx.clone(),
                         stop.subscribe(),
                         favicon.clone(),
                         registry.clone(),

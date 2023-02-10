@@ -732,16 +732,16 @@ impl NostrRepo for SqliteRepo {
     }
 
     /// Admit account
-    async fn admit_account(&self, pub_key: &Keys) -> Result<()> {
+    async fn admit_account(&self, pub_key: &Keys, admission_cost: u64) -> Result<()> {
         let pub_key = pub_key.public_key().to_string();
         let mut conn = self.write_pool.get()?;
         let pub_key = pub_key.to_owned();
         tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
             {
-                let query = "UPDATE account SET is_admitted = TRUE, tos_accepted_at =  strftime('%s','now') WHERE pubkey=?";
+                let query = "UPDATE account SET is_admitted = TRUE, tos_accepted_at =  strftime('%s','now'), balance = balance - ?1 WHERE pubkey=?2;";
                 let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![pub_key])?;
+                stmt.execute(params![admission_cost, pub_key])?;
             }
             tx.commit()?;
             let ok: Result<()> = Ok(());
@@ -805,7 +805,6 @@ impl NostrRepo for SqliteRepo {
         let pub_key = pub_key.to_owned();
         let mut conn = self.write_pool.get()?;
         tokio::task::spawn_blocking(move || {
-            debug!("CreareInvoice: {:?}", invoice_info);
             let tx = conn.transaction()?;
             {
                 let query = "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at, invoice) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), ?6);";
@@ -820,7 +819,7 @@ impl NostrRepo for SqliteRepo {
         Ok(())
     }
 
-    /// Update invoice
+    /// Update invoice record
     async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String> {
         let mut conn = self.write_pool.get()?;
         let payment_hash = payment_hash.to_owned();
@@ -829,6 +828,7 @@ impl NostrRepo for SqliteRepo {
             let pubkey: String;
             {
 
+                // Get required invoice info for given payment hash
                 let query = "SELECT pubkey, status, amount FROM invoice WHERE payment_hash=?1;";
                 let mut stmt = tx.prepare(query)?;
                 let (pub_key, prev_status, amount) = stmt.query_row(params![payment_hash], |r| {
@@ -841,22 +841,23 @@ impl NostrRepo for SqliteRepo {
 
                 })?;
 
-                // If the invoice is paid update the confirmed at timestamp
+                // If the invoice is paid update the confirmed_at timestamp
                 let query =  if status.eq(&InvoiceStatus::Paid) {
                     "UPDATE invoice SET status=?1, confirmed_at = strftime('%s', 'now') WHERE payment_hash=?2;"
                 } else {
                     "UPDATE invoice SET status=?1 WHERE payment_hash=?2;"
                 };
-
                 let mut stmt = tx.prepare(query)?;
                 stmt.execute(params![status.to_string(), payment_hash])?;
 
+                // Increase account balance by given invoice amount
                 if prev_status == "Unpaid" && status.eq(&InvoiceStatus::Paid) {
                     let query =
                             "UPDATE account SET balance = balance + ?1 WHERE pubkey = ?2;";
                     let mut stmt = tx.prepare(query)?;
                     stmt.execute(params![amount, pub_key])?;
                 }
+
                 pubkey = pub_key;
             }
 
@@ -869,6 +870,8 @@ impl NostrRepo for SqliteRepo {
 
     }
 
+    /// Get the most recent invoice for a given pubkey
+    /// invoice must be unpaid and not expired
     async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>> {
         let mut conn = self.write_pool.get()?;
 

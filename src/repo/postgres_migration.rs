@@ -278,7 +278,7 @@ CREATE INDEX event_expires_at_idx ON "event" (expires_at);
 CREATE TABLE "account" (
     pubkey varchar NOT NULL,
     is_admitted BOOLEAN NOT NULL DEFAULT FALSE,
-    balance bigint NOT NULL DEFAULT 0,
+    balance BIGINT NOT NULL DEFAULT 0,
     tos_accepted_at TIMESTAMP,
     CONSTRAINT account_pkey PRIMARY KEY (pubkey)
 );
@@ -289,7 +289,7 @@ CREATE TYPE status AS ENUM ('Paid', 'Unpaid', 'Expired');
 CREATE TABLE "invoice" (
     payment_hash varchar NOT NULL,
     pubkey varchar NOT NULL,
-    amount integer NOT NULL,
+    amount BIGINT NOT NULL,
     status status NOT NULL DEFAULT 'Unpaid',
     description varchar,
     confirmed_at timestamp,
