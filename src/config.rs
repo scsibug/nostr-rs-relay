@@ -282,8 +282,8 @@ impl Default for Settings {
             },
             pay_to_relay: PayToRelay {
                 enabled: false,
-                admission_cost: 0,
-                cost_per_event: 10,
+                admission_cost: 4200,
+                cost_per_event: 0,
                 terms_message: "".to_string(),
                 tor_proxy: None,
                 node_url: "".to_string(),
