@@ -809,7 +809,7 @@ impl NostrRepo for SqliteRepo {
             {
                 let query = "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at, invoice) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), ?6);";
                 let mut stmt = tx.prepare(query)?;
-                stmt.execute(params![&pub_key, invoice_info.payment_hash, invoice_info.amount, invoice_info.status.to_string(), invoice_info.memo, invoice_info.invoice])?;
+                stmt.execute(params![&pub_key, invoice_info.payment_hash, invoice_info.amount, invoice_info.status.to_string(), invoice_info.memo, invoice_info.bolt11])?;
             }
             tx.commit()?;
             let ok: Result<()> = Ok(());
@@ -902,7 +902,7 @@ LIMIT 1;
         Ok(Some(InvoiceInfo {
             pubkey: pubkey.public_key().to_string(),
             payment_hash,
-            invoice,
+            bolt11: invoice,
             amount,
             status: InvoiceStatus::Unpaid,
             memo: description,

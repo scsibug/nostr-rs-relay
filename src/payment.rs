@@ -5,6 +5,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+use bitcoin_hashes::{sha256, Hash};
 
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
@@ -88,7 +89,7 @@ impl ToString for InvoiceStatus {
 pub struct InvoiceInfo {
     pub pubkey: String,
     pub payment_hash: String,
-    pub invoice: String,
+    pub bolt11: String,
     pub amount: u64,
     pub status: InvoiceStatus,
     pub memo: String,
@@ -103,7 +104,7 @@ pub enum PaymentMessage {
     /// Invoice generated
     Invoice(String, InvoiceInfo),
     /// Invoice call back
-    InvoiceUpdate(LNBitsCallback),
+    InvoicePaid(LNBitsCallback),
 }
 
 impl Payment {
@@ -154,9 +155,15 @@ impl Payment {
                         // TODO: should handle this error
                         self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                     },
-                    Ok(PaymentMessage::InvoiceUpdate(callback)) => {
+                    Ok(PaymentMessage::InvoicePaid(callback)) => {
+                        //let pre_image_hash = &sha256::Hash::hash(callback.preimage.as_bytes()).to_string();
+                        // debug!("{pre_image_hash}");
+                        // debug!("{}", callback.payment_hash);
+                        //if callback.payment_hash.ne(pre_image_hash) {
+                        //    return Err(Error::PaymentHash)
+                        //}
                         let pubkey = self.repo
-                            .update_invoice(&callback.payment_hash, InvoiceStatus::Paid)
+                            .update_invoice(&callback.payment_hash.to_string(), InvoiceStatus::Paid)
                             .await
                             .unwrap();
 
@@ -199,7 +206,7 @@ impl Payment {
         let invoice_event: NostrEvent = EventBuilder::new_encrypted_direct_msg(
             &self.nostr_keys,
             pubkey,
-            &invoice_info.invoice,
+            &invoice_info.bolt11,
         )?
         .to_event(&self.nostr_keys)?;
 
@@ -222,7 +229,6 @@ impl Payment {
     ) -> Result<InvoiceInfo> {
         // If use is already in DB this will be false
         // This avoids resending admission invoices
-        // FIXME: It should be more intelligent resend after x time?
         // I think it will continue to send DMs with an invoice
         // If client continues to try and write to the event (will be same invoice)
         let key = Keys::from_pk_str(pubkey)?;
@@ -257,6 +263,8 @@ impl Payment {
                 todo!();
             }
             None => reqwest::Client::builder()
+                // Not ideal to accept all certs
+                // But enforcing certs may be too much of a burden on users 
                 .danger_accept_invalid_certs(true)
                 .build()?,
         };
@@ -297,7 +305,7 @@ impl Payment {
         let invoice_info = InvoiceInfo {
             pubkey: key.public_key().to_string(),
             payment_hash: payment_response.payment_hash,
-            invoice: payment_response.payment_request,
+            bolt11: payment_response.payment_request,
             amount,
             memo,
             status: InvoiceStatus::Unpaid,

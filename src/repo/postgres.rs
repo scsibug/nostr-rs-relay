@@ -639,7 +639,7 @@ ON CONFLICT (id) DO NOTHING"#,
         .bind(invoice_info.amount as i64)
         .bind(invoice_info.status)
         .bind(invoice_info.memo)
-        .bind(invoice_info.invoice)
+        .bind(invoice_info.bolt11)
         .execute(&mut tx)
         .await.unwrap();
 
@@ -688,7 +688,7 @@ ON CONFLICT (id) DO NOTHING"#,
     /// invoice must be unpaid and not expired
     async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>> {
         let query = r#"
-SELECT amount, payment_hash, description, invoice
+SELECT amount, payment_hash, description, invoice, pre_image
 FROM invoice
 WHERE pubkey = $1
 ORDER BY created_at DESC
@@ -700,10 +700,10 @@ LIMIT 1;
             .await
             .unwrap()
         {
-            Some((amount, payment_hash, description, invoice)) => Ok(Some(InvoiceInfo {
+            Some((amount, payment_hash, description, invoice,)) => Ok(Some(InvoiceInfo {
                 pubkey: pubkey.public_key().to_string(),
                 payment_hash,
-                invoice,
+                bolt11: invoice,
                 amount: amount as u64,
                 status: InvoiceStatus::Unpaid,
                 memo: description,

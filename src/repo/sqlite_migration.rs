@@ -793,12 +793,12 @@ fn mig_17_to_18(conn: &mut PooledConnection) -> Result<usize> {
 CREATE TABLE IF NOT EXISTS invoice (
 payment_hash TEXT PRIMARY KEY,
 pubkey TEXT NOT NULL,
-amount INTEGER NOT NULL,
 invoice TEXT NOT NULL,
+amount INTEGER NOT NULL,
 status TEXT CHECK ( status IN ('Paid', 'Unpaid', 'Expired' ) ) NOT NUll DEFAULT 'pending',
 description TEXT,
 confirmed_at INTEGER,
-created_at INTEGER NOT NULL
+created_at INTEGER NOT NULL,
 CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
 

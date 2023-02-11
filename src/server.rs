@@ -15,7 +15,6 @@ use crate::nip05;
 use crate::notice::Notice;
 use crate::payment;
 use crate::payment::InvoiceInfo;
-use crate::payment::LNBitsCallback;
 use crate::payment::PaymentMessage;
 use crate::repo::NostrRepo;
 use crate::subscription::Subscription;
@@ -216,18 +215,37 @@ async fn handle_web_request(
                 .body(Body::from(buffer))
                 .unwrap())
         }
+        ("/favicon.ico", false) => {
+            if let Some(favicon_bytes) = favicon {
+                info!("returning favicon");
+                Ok(Response::builder()
+                   .status(StatusCode::OK)
+                   .header("Content-Type", "image/x-icon")
+                   // 1 month cache
+                   .header("Cache-Control", "public, max-age=2419200")
+                   .body(Body::from(favicon_bytes))
+                   .unwrap())
+            } else {
+                Ok(Response::builder()
+                   .status(StatusCode::NOT_FOUND)
+                   .body(Body::from(""))
+                   .unwrap())
+            }
+        }
         // LN bits callback endpoint for paid invoices
         ("/lnbits", false) => {
-            // The status is returned as pending but webhook is only called when payed (i think)
-            // So think its okay to assume its paid
-            let callback: LNBitsCallback =
+            // REVIEW:
+            // The status is returned as pending but webhook is only called when payed
+            // Assuming payed for now should verify
+            // The the callback should return the preimage that could be used by
+            // Hashing it and verifying that mataches db preimage
+            // Lnbits is returning 00000
+            let callback =
                 serde_json::from_slice(&to_bytes(request.into_body()).await.unwrap()).unwrap();
+            debug!("LNBits callaback: {callback:?}");
 
-            if payment_tx
-                .send(PaymentMessage::InvoiceUpdate(callback))
-                .is_err()
-            {
-                warn!("Could not send invoice update");
+            if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback)) {
+                warn!("Could not send invoice update: {}", e);
                 return Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("Error processing callback"))
@@ -270,6 +288,7 @@ async fn handle_web_request(
       background-color: #6320a7;
       color: white;
     }
+
     .container {
       display: flex;
       justify-content: center;
@@ -279,6 +298,14 @@ async fn handle_web_request(
 
     a {
       color: pink;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        max-width: 500px;
+        box-sizing: border-box;
+        overflow-x: auto;
+        white-space: nowrap;
     }
   </style>
 </head>
@@ -320,90 +347,89 @@ async fn handle_web_request(
                     .unwrap());
             }
 
-            let query = request.uri().query().unwrap_or("").to_string();
+            let pubkey = get_pubkey(request);
 
-            // Gets the pubkey value from query string
-            let pubkey = query.split('&').fold(None, |acc, pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next();
-                let value = parts.next();
-                if key == Some("pubkey") {
-                    return value.map(|s| s.to_owned());
-                }
-                acc
-            });
-            debug!("{:?}", pubkey);
+            if pubkey.is_none() {
+                // Redirect back to join page if no pub key is found in query string
+                return Ok(Response::builder()
+                    .status(404)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
 
-            if let Some(pubkey) = pubkey {
-                let key = Keys::from_pk_str(&pubkey);
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Looks like your key is invalid"))
+                    .unwrap());
+            }
 
-                if key.is_err() {
+            // Checks if user is already admitted
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                if admission_status {
                     return Ok(Response::builder()
-                        .status(401)
-                        .header("Content-Type", "text/plain")
-                        .body(Body::from("Looks like your key is invalid"))
+                        .status(StatusCode::OK)
+                        .body(Body::from("Already admitted"))
                         .unwrap());
                 }
+            }
 
-                if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
-                    if admission_status {
-                        return Ok(Response::builder()
-                            .status(StatusCode::OK)
-                            .body(Body::from("Already admitted"))
-                            .unwrap());
-                    }
+            // Send message on payment channel requesting invoice
+            if payment_tx
+                .send(PaymentMessage::NewAccount(pubkey.clone()))
+                .is_err()
+            {
+                warn!("Could not send payment tx");
+                return Ok(Response::builder()
+                    .status(501)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, something went wrong"))
+                    .unwrap());
+            }
+
+            // wait for message with invoice back that matched the pub key
+            let mut invoice_info: Option<InvoiceInfo> = None;
+            while let Ok(PaymentMessage::Invoice(m_pubkey, m_invoice_info)) =
+                payment_tx.subscribe().recv().await
+            {
+                if m_pubkey == pubkey.clone() {
+                    invoice_info = Some(m_invoice_info);
+                    break;
                 }
+            }
 
-                // Send message on payment channel
-                if payment_tx
-                    .send(PaymentMessage::NewAccount(pubkey.clone()))
-                    .is_err()
-                {
-                    warn!("Could not send payment tx");
-                    return Ok(Response::builder()
-                        .status(501)
-                        .header("Content-Type", "text/plain")
-                        .body(Body::from("Sorry, something went wrong"))
-                        .unwrap());
-                }
+            // Return early if cant get invoice
+            if invoice_info.is_none() {
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Sorry, could not get invoice"))
+                    .unwrap());
+            }
 
-                // wait for message back that matched the pub key
-                let mut invoice_info: Option<InvoiceInfo> = None;
-                while let Ok(PaymentMessage::Invoice(m_pubkey, m_invoice_info)) =
-                    payment_tx.subscribe().recv().await
-                {
-                    if m_pubkey == pubkey.clone() {
-                        invoice_info = Some(m_invoice_info);
-                        break;
-                    }
-                }
+            // Since invoice is checked to be not none, unwrap
+            let invoice_info = invoice_info.unwrap();
 
-                if invoice_info.is_none() {
-                    return Ok(Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from("Sorry, could not get invoice"))
-                        .unwrap());
-                }
+            let qr_code: String;
+            if let Ok(code) = QrCode::new(invoice_info.bolt11.as_bytes()) {
+                qr_code = code
+                    .render()
+                    .min_dimensions(200, 200)
+                    .dark_color(svg::Color("#800000"))
+                    .light_color(svg::Color("#ffff80"))
+                    .build();
+            } else {
+                qr_code = "Could not render image".to_string();
+            }
 
-                // Since invoice is checked to be not none, unwrap
-                let invoice_info = invoice_info.unwrap();
+            let amount = settings.pay_to_relay.admission_cost;
 
-                let qr_code: String;
-                if let Ok(code) = QrCode::new(invoice_info.invoice.as_bytes()) {
-                    qr_code = code
-                        .render()
-                        .min_dimensions(200, 200)
-                        .dark_color(svg::Color("#800000"))
-                        .light_color(svg::Color("#ffff80"))
-                        .build();
-                } else {
-                    qr_code = "Could not render image".to_string();
-                }
-
-                let amount = settings.pay_to_relay.admission_cost;
-
-                let html_result = format!(
-                    r#"
+            let html_result = format!(
+                r#"
 <!DOCTYPE html>
 <html>
   <head>
@@ -456,6 +482,10 @@ async fn handle_web_request(
         <p style="overflow-wrap: break-word; width: 500px;">{}</p> 
         <button id="copy-button">Copy</button>
     </div>
+    <div>
+        <p> This page will not refresh </p>
+        <p> Verify admission <a href=/account?pubkey={}>here</a> once you have paid</p>
+    </div>
     </div>
   </body>
 </html>                  
@@ -478,37 +508,94 @@ async fn handle_web_request(
   }}
 </script>
 "#,
-                    amount, qr_code, invoice_info.invoice, invoice_info.invoice
-                );
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::from(html_result))
-                    .unwrap());
-            }
-            // Redirect back to join page if no pub key is found in query string
+                amount, qr_code, invoice_info.bolt11, pubkey, invoice_info.bolt11
+            );
+
             Ok(Response::builder()
-                .status(404)
-                .header("location", "/join")
-                .body(Body::empty())
+                .status(StatusCode::OK)
+                .body(Body::from(html_result))
                 .unwrap())
         }
-        ("/favicon.ico", false) => {
-            if let Some(favicon_bytes) = favicon {
-                info!("returning favicon");
-                Ok(Response::builder()
-                   .status(StatusCode::OK)
-                   .header("Content-Type", "image/x-icon")
-                   // 1 month cache
-                   .header("Cache-Control", "public, max-age=2419200")
-                   .body(Body::from(favicon_bytes))
-                   .unwrap())
-            } else {
-                Ok(Response::builder()
-                   .status(StatusCode::NOT_FOUND)
-                   .body(Body::from(""))
-                   .unwrap())
+        ("/account", false) => {
+            // Stops sign ups if disabled
+            if !settings.pay_to_relay.enabled {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("This relay is not paid"))
+                    .unwrap());
             }
+            let pubkey = get_pubkey(request);
+            
+            if pubkey.is_none() {
+                // Redirect back to join page if no pub key is found in query string
+                return Ok(Response::builder()
+                    .status(404)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
+            
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Looks like your key is invalid"))
+                    .unwrap());
+            }
+            
+            // Checks if user is already admitted
+            let text =  if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                if admission_status {
+                    r#"<span style="color: green;">is</span>"#
+                } else {
+                    "is not"
+                }
+            }   else  {
+                "Could not get admission status"
+
+            };
+            
+
+            let html_result = format!(r#"
+            <!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <style>
+      body {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        background-color: #6320a7;
+        color: white;
+        height: 100vh;
+      }}
+    </style>
+  </head>
+  <body>
+    <div>
+      <h5>{} {} admitted</h5>
+    </div>
+  </body>
+</html>
+
+            
+            "#, pubkey, text);
+            
+            
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html_result))
+                .unwrap())
+
         }
+        // later balance
         (_, _) => {
             // handle any other url
             Ok(Response::builder()
@@ -517,6 +604,22 @@ async fn handle_web_request(
                 .unwrap())
         }
     }
+}
+
+// Get pubkey from request query string
+fn get_pubkey(request: Request<Body>) -> Option<String> {
+    let query = request.uri().query().unwrap_or("").to_string();
+
+    // Gets the pubkey value from query string
+    query.split('&').fold(None, |acc, pair| {
+        let mut parts = pair.splitn(2, '=');
+        let key = parts.next();
+        let value = parts.next();
+        if key == Some("pubkey") {
+            return value.map(|s| s.to_owned());
+        }
+        acc
+    })
 }
 
 fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
@@ -984,9 +1087,7 @@ async fn nostr_server(
     let unspec = "<unspecified>".to_string();
     info!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
     let origin = client_info.origin.as_ref().unwrap_or_else(|| &unspec);
-    let user_agent = client_info
-        .user_agent.as_ref()
-        .unwrap_or_else(|| &unspec);
+    let user_agent = client_info.user_agent.as_ref().unwrap_or_else(|| &unspec);
     info!(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent

@@ -78,6 +78,8 @@ pub enum Error {
     NostrKeyError(nostr::key::Error),
     #[error("Reqwest error")]
     ReqwestError(reqwest::Error),
+    #[error("Payment hash mismatch")]
+    PaymentHash,
     //#[error("Request error")]
    // ReqError(minreq::Error),
     #[error("Unknown/Undocumented")]

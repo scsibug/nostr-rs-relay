@@ -289,12 +289,13 @@ CREATE TYPE status AS ENUM ('Paid', 'Unpaid', 'Expired');
 CREATE TABLE "invoice" (
     payment_hash varchar NOT NULL,
     pubkey varchar NOT NULL,
+    invoice bytea NOT NULL,
+    preimage bytea NOT NULL,
     amount BIGINT NOT NULL,
     status status NOT NULL DEFAULT 'Unpaid',
     description varchar,
     confirmed_at timestamp,
     created_at timestamp,
-    invoice varchar,
     CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
     CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
