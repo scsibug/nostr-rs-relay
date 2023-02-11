@@ -47,7 +47,7 @@ impl Authorization for EventAuthz {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
 
-    // A simple authorization engine that allows kinds 1, 2, and 3.
+    // A simple authorization engine that allows kinds 0-3
     let checker = EventAuthz {
         allowed_kinds: vec![0,1,2,3],
     };
