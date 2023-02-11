@@ -62,6 +62,8 @@ pub enum Error {
     HexError(hex::FromHexError),
     #[error("Delegation parse error")]
     DelegationParseError,
+    #[error("Channel closed error")]
+    ChannelClosed,
     #[error("Unknown/Undocumented")]
     UnknownError,
 }

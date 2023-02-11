@@ -257,8 +257,15 @@ impl Verifier {
         // run a loop, restarting on failure
         loop {
             let res = self.run_internal().await;
-            if let Err(e) = res {
+            match res {
+                Err(Error::ChannelClosed) => {
+                    // channel was closed, we are shutting down
+                    return;
+                },
+                Err(e) => {
                 info!("error in verifier: {:?}", e);
+                },
+                _ => {}
             }
         }
     }
@@ -305,6 +312,7 @@ impl Verifier {
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         info!("metadata broadcast channel closed");
+                        return Err(Error::ChannelClosed);
                     }
                 }
             },
