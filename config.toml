@@ -152,3 +152,16 @@ reject_future_seconds = 1800
 # How many consecutive failed checks before we give up on verifying
 # this author.
 #max_consecutive_failures = 20
+
+[antispam]
+mode = "keywords"
+keywords = [
+    "Binance","Click on the link","Damus VIP","QINGEN","Telegram",
+    "discord.com/invite/","discord群","isab.run","minepi","pdd","t.me",
+    "互帮互助","交流群","做爱","入群","刷粉","刷量","加v","加群","包邮","同城",
+    "同志浴室","复制品","复制该消息","大佬带飞","天天有","奈子","奶子","小群",
+    "币圈","成人网","抖阴","拼多多","日入","柰子","泡学","涩涩","激情四射",
+    "点击链接","牛子","猫超","直接到账","社群","空投红包","红包","约炮",
+    "网络项目","群交友","群发","群里","腾讯产品分享会","讨论群","请联系",
+    "购买","赌场","返利","进群","链接","黄色视频",
+]
