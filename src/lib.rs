@@ -9,6 +9,7 @@ pub mod event;
 pub mod hexrange;
 pub mod info;
 pub mod nip05;
+pub mod nauthz;
 pub mod notice;
 pub mod repo;
 pub mod subscription;

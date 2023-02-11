@@ -601,11 +601,13 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
+
+    let unspec = "<unspecified>".to_string();
     info!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
-    let origin = client_info.origin.unwrap_or_else(|| "<unspecified>".into());
+    let origin = client_info.origin.as_ref().unwrap_or_else(|| &unspec);
     let user_agent = client_info
-        .user_agent
-        .unwrap_or_else(|| "<unspecified>".into());
+        .user_agent.as_ref()
+        .unwrap_or_else(|| &unspec);
     info!(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
@@ -736,7 +738,7 @@ async fn nostr_server(
                                 // check if the event is too far in the future.
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
-                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string()};
+                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string(), origin: client_info.origin.clone(), user_agent: client_info.user_agent.clone()};
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                                 } else {

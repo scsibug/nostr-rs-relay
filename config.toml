@@ -48,6 +48,16 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # sqlite.
 #connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
+[grpc]
+# gRPC interfaces for externalized decisions and other extensions to
+# functionality.
+#
+# Events can be authorized through an external service, by providing
+# the URL below.  In the event the server is not accessible, events
+# will be permitted.  The protobuf3 schema used is available in
+# `proto/nauthz.proto`.
+# event_authorization_server = "http://[::1]:50051"
+
 [network]
 # Bind to this network address
 address = "0.0.0.0"

@@ -64,6 +64,10 @@ pub enum Error {
     DelegationParseError,
     #[error("Channel closed error")]
     ChannelClosed,
+    #[error("Authz error")]
+    AuthzError,
+    #[error("Tonic GRPC error")]
+    TonicError(tonic::Status),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -130,5 +134,12 @@ impl From<config::ConfigError> for Error {
     /// Wrap Config error
     fn from(r: config::ConfigError) -> Self {
         Error::ConfigError(r)
+    }
+}
+
+impl From<tonic::Status> for Error {
+    /// Wrap Config error
+    fn from(r: tonic::Status) -> Self {
+        Error::TonicError(r)
     }
 }

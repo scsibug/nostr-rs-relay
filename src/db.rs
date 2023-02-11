@@ -4,6 +4,7 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
 use crate::server::NostrMetrics;
+use crate::nauthz;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
@@ -27,6 +28,8 @@ pub struct SubmittedEvent {
     pub event: Event,
     pub notice_tx: tokio::sync::mpsc::Sender<Notice>,
     pub source_ip: String,
+    pub origin: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 /// Database file
@@ -101,6 +104,18 @@ pub async fn db_writer(
             lim_opt = Some(RateLimiter::direct(Quota::per_minute(quota)));
         }
     }
+    // create a client if GRPC is enabled.
+    // Check with externalized event admitter service, if one is defined.
+    let mut grpc_client = if let Some(svr) = settings.grpc.event_admission_server {
+        Some(nauthz::EventAuthzService::connect(&svr).await)
+    } else {
+        None
+    };
+
+    //let gprc_client = settings.grpc.event_admission_server.map(|s| {
+//        event_admitter_connect(&s);
+//    });
+
     loop {
         if shutdown.try_recv().is_ok() {
             info!("shutting down database writer");
@@ -165,9 +180,17 @@ pub async fn db_writer(
             metadata_tx.send(event.clone()).ok();
         }
 
+        // get a validation result for use in verification and GPRC
+        let validation = if nip05_active {
+            Some(repo.get_latest_user_verification(&event.pubkey).await)
+        } else {
+            None
+        };
+
+
         // check for  NIP-05 verification
-        if nip05_enabled {
-            match repo.get_latest_user_verification(&event.pubkey).await {
+        if nip05_enabled && validation.is_some() {
+            match validation.as_ref().unwrap() {
                 Ok(uv) => {
                     if uv.is_valid(&settings.verified_users) {
                         info!(
@@ -175,6 +198,7 @@ pub async fn db_writer(
                             uv.name.to_string(),
                             event.get_author_prefix()
                         );
+
                     } else {
                         info!(
                             "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
@@ -209,6 +233,35 @@ pub async fn db_writer(
                 }
             }
         }
+
+        // nip05 address
+        let nip05_address : Option<crate::nip05::Nip05Name> = validation.and_then(|x| x.ok().map(|y| y.name));
+
+        // GRPC check
+        if let Some(ref mut c) = grpc_client {
+            trace!("checking if grpc permits");
+            let grpc_start = Instant::now();
+            let decision_res = c.admit_event(&event, &subm_event.source_ip, subm_event.origin, subm_event.user_agent, nip05_address).await;
+            match decision_res {
+                Ok(decision) => {
+                    if !decision.permitted() {
+                        // GPRC returned a decision to reject this event
+                        info!("GRPC rejected event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
+                              event.get_event_id_prefix(),
+                              event.kind,
+                              event.get_author_prefix(),
+                              grpc_start.elapsed(),
+                              subm_event.source_ip);
+                        notice_tx.try_send(Notice::blocked(event.id, &decision.message().unwrap_or_else(|| "".to_string()))).ok();
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    warn!("GRPC server error: {:?}", e);
+                }
+            }
+        }
+
         // TODO: cache recent list of authors to remove a DB call.
         let start = Instant::now();
         if event.is_ephemeral() {

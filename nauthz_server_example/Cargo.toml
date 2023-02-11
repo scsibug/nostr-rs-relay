@@ -1,0 +1,13 @@
+[package]
+name = "nauthz-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Common dependencies
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+prost = "0.11"
+tonic = "0.8.3"
+
+[build-dependencies]
+tonic-build = { version="0.8.3", features = ["prost"] }

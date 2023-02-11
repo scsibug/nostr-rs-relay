@@ -27,6 +27,12 @@ pub struct Database {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Grpc {
+    pub event_admission_server: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Network {
     pub port: u16,
     pub address: String,
@@ -145,6 +151,7 @@ pub struct Settings {
     pub info: Info,
     pub diagnostics: Diagnostics,
     pub database: Database,
+    pub grpc: Grpc,
     pub network: Network,
     pub limits: Limits,
     pub authorization: Authorization,
@@ -219,6 +226,9 @@ impl Default for Settings {
                 min_conn: 4,
                 max_conn: 8,
 		connection: "".to_owned(),
+            },
+            grpc: Grpc {
+                event_admission_server: None,
             },
             network: Network {
                 port: 8080,

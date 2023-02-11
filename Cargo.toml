@@ -16,6 +16,8 @@ clap = { version = "4.0.32", features = ["env", "default", "derive"]}
 tracing = "0.1.36"
 tracing-subscriber = "0.2.0"
 tokio = { version = "1", features = ["full", "tracing", "signal"] }
+prost = "0.11"
+tonic = "0.8.3"
 console-subscriber = "0.1.8"
 futures = "0.3"
 futures-util = "0.3"
@@ -52,3 +54,6 @@ bech32 = "0.9.1"
 
 [dev-dependencies]
 anyhow = "1"
+
+[build-dependencies]
+tonic-build = { version="0.8.3", features = ["prost"] }

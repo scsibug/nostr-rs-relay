@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+// Nostr Authorization Services
+package nauthz;
+
+// Authorization for actions against a relay
+service Authorization {
+  // Determine if an event should be admitted to the relay
+  rpc EventAdmit(EventRequest) returns (EventReply) {}
+}
+
+message Event {
+  bytes id = 1;                // 32-byte SHA256 hash of serialized event
+  bytes pubkey = 2;            // 32-byte public key of event creator
+  fixed64 created_at = 3;      // UNIX timestamp provided by event creator
+  uint64 kind = 4;             // event kind
+  string content = 5;          // arbitrary event contents
+  repeated TagEntry tags = 6;  // event tag array
+  bytes sig = 7;               // 32-byte signature of the event id
+  // Individual values for a single tag
+  message TagEntry {
+    repeated string values = 1;
+  }
+}
+
+// Event data and metadata for authorization decisions
+message EventRequest {
+  Event event =
+      1;  // the event to be admitted for further relay processing
+  optional string ip_addr =
+      2;  // IP address of the client that submitted the event
+  optional string origin =
+      3;  // HTTP origin header from the client, if one exists
+  optional string user_agent =
+      4;  // HTTP user-agent header from the client, if one exists
+  optional bytes auth_pubkey =
+      5;  // the public key associated with a NIP-42 AUTH'd session, if
+          // authentication occurred
+  optional Nip05Name nip05 =
+      6; // NIP-05 address associated with the event pubkey, if it is
+         // known and has been validated by the relay
+  // A NIP_05 verification record
+  message Nip05Name {
+    string local = 1;
+    string domain = 2;
+  }
+}
+
+// A permit or deny decision
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_PERMIT = 1; // Admit this event for further processing
+  DECISION_DENY = 2; // Deny persisting or propagating this event
+}
+
+// Response to a event authorization request
+message EventReply {
+  Decision decision = 1;       // decision to enforce
+  optional string message = 2; // informative message for the client
+}

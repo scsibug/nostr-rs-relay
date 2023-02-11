@@ -42,8 +42,8 @@ pub struct Verifier {
 /// A NIP-05 identifier is a local part and domain.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Nip05Name {
-    local: String,
-    domain: String,
+    pub local: String,
+    pub domain: String,
 }
 
 impl Nip05Name {
