@@ -3,19 +3,19 @@ use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::notice::Notice;
+use crate::repo::postgres::{PostgresPool, PostgresRepo};
+use crate::repo::sqlite::SqliteRepo;
+use crate::repo::NostrRepo;
 use crate::server::NostrMetrics;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
-use std::sync::Arc;
-use std::thread;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::ConnectOptions;
-use crate::repo::sqlite::SqliteRepo;
-use crate::repo::postgres::{PostgresRepo,PostgresPool};
-use crate::repo::NostrRepo;
-use std::time::{Instant, Duration};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
 
@@ -38,8 +38,8 @@ pub const DB_FILE: &str = "nostr.db";
 /// Will panic if the pool could not be created.
 pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
-        "sqlite" => {Arc::new(build_sqlite_pool(settings, metrics).await)},
-        "postgres" => {Arc::new(build_postgres_pool(settings, metrics).await)},
+        "sqlite" => Arc::new(build_sqlite_pool(settings, metrics).await),
+        "postgres" => Arc::new(build_postgres_pool(settings, metrics).await),
         _ => panic!("Unknown database engine"),
     }
 }
@@ -78,11 +78,14 @@ pub async fn db_writer(
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
     metadata_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
+    metrics: NostrMetrics,
 ) -> Result<()> {
     // are we performing NIP-05 checking?
     let nip05_active = settings.verified_users.is_active();
     // are we requriing NIP-05 user verification?
     let nip05_enabled = settings.verified_users.is_enabled();
+    // are we requiring keyword filter?
+    let antispam_keywords_enabled = settings.antispam.use_keywords();
 
     //upgrade_db(&mut pool.get()?)?;
 
@@ -147,13 +150,34 @@ pub async fn db_writer(
                     &event.kind
                 );
                 notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "event kind is blocked by relay"
-                    ))
+                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
                     .ok();
                 continue;
             }
+        }
+
+        // drop events include keywords.
+        if antispam_keywords_enabled {
+            let start = Instant::now();
+            if Event::should_drop(settings.antispam.keywords.clone(), &event.content) {
+                info!(
+                    "rejecting spam event: {:?} form: {:?} in: {:?}",
+                    event.get_event_id_prefix(),
+                    event.get_author_prefix(),
+                    start.elapsed(),
+                );
+                metrics
+                    .spams
+                    .with_label_values(&[&event.get_author_prefix()])
+                    .inc();
+                notice_tx
+                    .try_send(Notice::blocked(
+                        event.id,
+                        "this event maybe spam, we droped it.",
+                    ))
+                    .ok();
+                continue;
+            };
         }
 
         // send any metadata events to the NIP-05 verifier

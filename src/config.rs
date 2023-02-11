@@ -4,6 +4,26 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::warn;
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum AntispamMode {
+    Keywords,
+    Disabled,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Antispam {
+    pub mode: AntispamMode,
+    pub keywords: Option<Vec<String>>,
+}
+
+impl Antispam {
+    #[must_use]
+    pub fn use_keywords(&self) -> bool {
+        self.mode == AntispamMode::Keywords
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
 pub struct Info {
@@ -62,7 +82,7 @@ pub struct Limits {
     pub max_ws_frame_bytes: Option<usize>,
     pub broadcast_buffer: usize, // events to buffer for subscribers (prevents slow readers from consuming memory)
     pub event_persist_buffer: usize, // events to buffer for database commits (block senders if database writes are too slow)
-    pub event_kind_blacklist: Option<Vec<u64>>
+    pub event_kind_blacklist: Option<Vec<u64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +171,7 @@ pub struct Settings {
     pub verified_users: VerifiedUsers,
     pub retention: Retention,
     pub options: Options,
+    pub antispam: Antispam,
 }
 
 impl Settings {
@@ -168,18 +189,20 @@ impl Settings {
         }
     }
 
-
-    fn new_from_default(default: &Settings, config_file_name: &Option<String>) -> Result<Self, ConfigError> {
+    fn new_from_default(
+        default: &Settings,
+        config_file_name: &Option<String>,
+    ) -> Result<Self, ConfigError> {
         let default_config_file_name = "config.toml".to_string();
         let config: &String = match config_file_name {
             Some(value) => value,
-            None => &default_config_file_name
+            None => &default_config_file_name,
         };
         let builder = Config::builder();
         let config: Config = builder
-        // use defaults
+            // use defaults
             .add_source(Config::try_from(default)?)
-        // override with file contents
+            // override with file contents
             .add_source(File::with_name(config))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
@@ -218,7 +241,7 @@ impl Default for Settings {
                 in_memory: false,
                 min_conn: 4,
                 max_conn: 8,
-		connection: "".to_owned(),
+                connection: "".to_owned(),
             },
             network: Network {
                 port: 8080,
@@ -259,6 +282,10 @@ impl Default for Settings {
             },
             options: Options {
                 reject_future_seconds: None, // Reject events in the future if defined
+            },
+            antispam: Antispam {
+                mode: AntispamMode::Disabled,
+                keywords: None,
             },
         }
     }
