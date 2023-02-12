@@ -223,7 +223,7 @@ impl SqliteRepo {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
             let del_count = tx.query_row(
-                "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value=? LIMIT 1;",
+                "SELECT e.id FROM event e WHERE e.author=? AND e.id IN (SELECT t.event_id FROM tag t WHERE t.name='e' AND t.kind=5 AND t.value=?) LIMIT 1;",
                 params![pubkey_blob, e.id], |row| row.get::<usize, usize>(0));
             // check if a the query returned a result, meaning we should
             // hid the current event
