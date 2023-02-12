@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use std::cmp::Ordering;
 use std::time::Instant;
 use tracing::{debug, error, info};
+use indicatif::{ProgressBar, ProgressStyle};
 
 /// Startup DB Pragmas
 pub const STARTUP_SQL: &str = r##"
@@ -22,7 +23,7 @@ pragma mmap_size = 17179869184; -- cap mmap at 16GB
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 15;
+pub const DB_VERSION: usize = 16;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -65,18 +66,21 @@ CREATE INDEX IF NOT EXISTS author_kind_index ON event(author,kind);
 -- Tag values are stored as either a BLOB (if they come in as a
 -- hex-string), or TEXT otherwise.
 -- This means that searches need to select the appropriate column.
+-- We duplicate the kind/created_at to make indexes much more efficient.
 CREATE TABLE IF NOT EXISTS tag (
 id INTEGER PRIMARY KEY,
 event_id INTEGER NOT NULL, -- an event ID that contains a tag.
 name TEXT, -- the tag name ("p", "e", whatever)
 value TEXT, -- the tag value, if not hex.
 value_hex BLOB, -- the tag value, if it can be interpreted as a lowercase hex string.
+created_at INTEGER NOT NULL, -- when the event was authored
+kind INTEGER NOT NULL, -- event kind
 FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
-CREATE INDEX IF NOT EXISTS tag_val_hex_index ON tag(value_hex);
-CREATE INDEX IF NOT EXISTS tag_composite_index ON tag(event_id,name,value_hex,value);
-CREATE INDEX IF NOT EXISTS tag_name_eid_index ON tag(name,event_id,value_hex);
+CREATE INDEX IF NOT EXISTS tag_composite_index ON tag(event_id,name,value);
+CREATE INDEX IF NOT EXISTS tag_name_eid_index ON tag(name,event_id,value);
+CREATE INDEX IF NOT EXISTS tag_covering_index ON tag(name,kind,value,created_at,event_id);
 
 -- NIP-05 User Validation
 CREATE TABLE IF NOT EXISTS user_verification (
@@ -200,6 +204,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<usize> {
             }
             if curr_version == 14 {
                 curr_version = mig_14_to_15(conn)?;
+            }
+            if curr_version == 15 {
+                curr_version = mig_15_to_16(conn)?;
             }
 
             if curr_version == DB_VERSION {
@@ -651,4 +658,74 @@ PRAGMA user_version = 15;
         }
     }
     Ok(15)
+}
+
+fn mig_15_to_16(conn: &mut PooledConnection) -> Result<usize> {
+    let count = db_event_count(conn)?;
+    info!("database schema needs update from 15->16");
+    let upgrade_sql = r##"
+DROP TABLE tag;
+CREATE TABLE tag (
+id INTEGER PRIMARY KEY,
+event_id INTEGER NOT NULL, -- an event ID that contains a tag.
+name TEXT, -- the tag name ("p", "e", whatever)
+value TEXT, -- the tag value, if not hex.
+created_at INTEGER NOT NULL, -- when the event was authored
+kind INTEGER NOT NULL, -- event kind
+FOREIGN KEY(event_id) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS tag_val_index ON tag(value);
+CREATE INDEX IF NOT EXISTS tag_composite_index ON tag(event_id,name,value);
+CREATE INDEX IF NOT EXISTS tag_name_eid_index ON tag(name,event_id,value);
+CREATE INDEX IF NOT EXISTS tag_covering_index ON tag(name,kind,value,created_at,event_id);
+"##;
+
+    let start = Instant::now();
+    let tx = conn.transaction()?;
+
+    let bar = ProgressBar::new(count.try_into().unwrap())
+        .with_message("rebuilding tags table");
+    bar.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.white/blue} {pos:>7}/{len:7} [{percent}%] {msg}",
+        )
+            .unwrap(),
+    );
+    {
+        tx.execute_batch(upgrade_sql)?;
+        let mut stmt = tx.prepare("select id, kind, created_at, content from event order by id;")?;
+        let mut tag_rows = stmt.query([])?;
+        let mut count = 0;
+        while let Some(row) = tag_rows.next()? {
+            count += 1;
+            if count%10==0 {
+                bar.inc(10);
+            }
+            let event_id: u64 = row.get(0)?;
+            let kind: u64 = row.get(1)?;
+            let created_at: u64 = row.get(2)?;
+            let event_json: String = row.get(3)?;
+            let event: Event = serde_json::from_str(&event_json)?;
+            // look at each event, and each tag, creating new tag entries if appropriate.
+            for t in event.tags.iter().filter(|x| x.len() > 1) {
+                let tagname = t.get(0).unwrap();
+                let tagnamechar_opt = single_char_tagname(tagname);
+                if tagnamechar_opt.is_none() {
+                    continue;
+                }
+                // safe because len was > 1
+                let tagval = t.get(1).unwrap();
+                // otherwise, insert as text
+                tx.execute(
+                    "INSERT INTO tag (event_id, name, value, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5);",
+                    params![event_id, tagname, &tagval, kind, created_at],
+                )?;
+            }
+        }
+        tx.execute("PRAGMA user_version = 16;", [])?;
+    }
+    bar.finish();
+    tx.commit()?;
+    info!("database schema upgraded v15 -> v16 in {:?}", start.elapsed());
+    Ok(16)
 }

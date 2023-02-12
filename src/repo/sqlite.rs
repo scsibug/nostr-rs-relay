@@ -6,7 +6,7 @@ use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
 use crate::repo::sqlite_migration::{STARTUP_SQL,upgrade_db};
-use crate::utils::{is_hex, is_lower_hex};
+use crate::utils::{is_hex};
 use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::subscription::{ReqFilter, Subscription};
 use crate::server::NostrMetrics;
@@ -123,15 +123,9 @@ impl SqliteRepo {
         }
         // check for parameterized replaceable events that would be hidden; don't insert these either.
         if let Some(d_tag) = e.distinct_param() {
-            let repl_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                tx.query_row(
-                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value_hex=? AND e.created_at >= ? LIMIT 1;",
-                    params![pubkey_blob, e.kind, hex::decode(d_tag).ok(), e.created_at],|row| row.get::<usize, usize>(0))
-            } else {
-                tx.query_row(
-                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value=? AND e.created_at >= ? LIMIT 1;",
-                    params![pubkey_blob, e.kind, d_tag, e.created_at],|row| row.get::<usize, usize>(0))
-            };
+            let repl_count = tx.query_row(
+                "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=? AND t.name='d' AND t.value=? AND e.created_at >= ? LIMIT 1;",
+                params![pubkey_blob, e.kind, d_tag, e.created_at],|row| row.get::<usize, usize>(0));
             // if any rows were returned, then some newer event with
             // the same author/kind/tag value exist, and we can ignore
             // this event.
@@ -162,18 +156,10 @@ impl SqliteRepo {
                 let tagchar_opt = single_char_tagname(tagname);
                 match &tagchar_opt {
                     Some(_) => {
-                        // if tagvalue is lowercase hex;
-                        if is_lower_hex(tagval) && (tagval.len() % 2 == 0) {
-                            tx.execute(
-                                "INSERT OR IGNORE INTO tag (event_id, name, value_hex) VALUES (?1, ?2, ?3)",
-                                params![ev_id, &tagname, hex::decode(tagval).ok()],
-                            )?;
-                        } else {
-                            tx.execute(
-                                "INSERT OR IGNORE INTO tag (event_id, name, value) VALUES (?1, ?2, ?3)",
-                                params![ev_id, &tagname, &tagval],
-                            )?;
-                        }
+                        tx.execute(
+                            "INSERT OR IGNORE INTO tag (event_id, name, value, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                            params![ev_id, &tagname, &tagval, e.kind, e.created_at],
+                        )?;
                     }
                     None => {}
                 }
@@ -200,15 +186,9 @@ impl SqliteRepo {
         }
         // if this event is parameterized replaceable, remove other events.
         if let Some(d_tag) = e.distinct_param() {
-            let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                tx.execute(
-                    "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value_hex=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
-                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, hex::decode(d_tag).ok()])?
-            } else {
-                tx.execute(
-                    "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
-                    params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?
-            };
+            let update_count = tx.execute(
+                "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
+                params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?;
             if update_count > 0 {
                 info!(
                     "removed {} older parameterized replaceable kind {} events for author: {:?}",
@@ -243,8 +223,8 @@ impl SqliteRepo {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
             let del_count = tx.query_row(
-                "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value_hex=? LIMIT 1;",
-                params![pubkey_blob, id_blob], |row| row.get::<usize, usize>(0));
+                "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND t.name='e' AND e.kind=5 AND t.value=? LIMIT 1;",
+                params![pubkey_blob, e.id], |row| row.get::<usize, usize>(0));
             // check if a the query returned a result, meaning we should
             // hid the current event
             if del_count.ok().is_some() {
@@ -801,58 +781,44 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     if let Some(map) = &f.tags {
         for (key, val) in map.iter() {
             let mut str_vals: Vec<Box<dyn ToSql>> = vec![];
-            let mut blob_vals: Vec<Box<dyn ToSql>> = vec![];
             for v in val {
-                if (v.len() % 2 == 0) && is_lower_hex(v) {
-                    if let Ok(h) = hex::decode(v) {
-                        blob_vals.push(Box::new(h));
-                    }
-                } else {
-                    str_vals.push(Box::new(v.clone()));
-                }
+                str_vals.push(Box::new(v.clone()));
             }
-            // do not mix value and value_hex; this is a temporary special case.
-            if str_vals.is_empty() {
-                // create clauses with "?" params for each tag value being searched
-                let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
-                // find evidence of the target tag name/value existing for this event.
-                let tag_clause = format!(
-                    "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {blob_clause}))",
-                );
-                // add the tag name as the first parameter
-                params.push(Box::new(key.to_string()));
-                // add all tag values that are blobs as params
-                params.append(&mut blob_vals);
-                filter_components.push(tag_clause);
-            } else if blob_vals.is_empty() {
-                // create clauses with "?" params for each tag value being searched
-                let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
-                // find evidence of the target tag name/value existing for this event.
-                let tag_clause = format!(
-		            "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND {str_clause}))",
-                );
-                // add the tag name as the first parameter
-                params.push(Box::new(key.to_string()));
-                // add all tag values that are blobs as params
-                params.append(&mut str_vals);
-                filter_components.push(tag_clause);
+            // create clauses with "?" params for each tag value being searched
+            let str_clause = format!("AND value IN ({})", repeat_vars(str_vals.len()));
+            // find evidence of the target tag name/value existing for this event.
+            // Query for Kind/Since/Until additionally, to reduce the number of tags that come back.
+            let kind_clause;
+            let since_clause;
+            let until_clause;
+            if let Some(ks) = &f.kinds {
+                // kind is number, no escaping needed
+                let str_kinds: Vec<String> = ks.iter().map(std::string::ToString::to_string).collect();
+                kind_clause = format!("AND kind IN ({})", str_kinds.join(", "));
             } else {
-                debug!("mixed string/blob query");
-                // create clauses with "?" params for each tag value being searched
-                let str_clause = format!("value IN ({})", repeat_vars(str_vals.len()));
-                let blob_clause = format!("value_hex IN ({})", repeat_vars(blob_vals.len()));
-                // find evidence of the target tag name/value existing for this event.
-                let tag_clause = format!(
-		            "e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND ({str_clause} OR {blob_clause})))",
-                );
-                // add the tag name as the first parameter
-                params.push(Box::new(key.to_string()));
-                // add all tag values that are plain strings as params
-                params.append(&mut str_vals);
-                // add all tag values that are blobs as params
-                params.append(&mut blob_vals);
-                filter_components.push(tag_clause);
-            }
+                kind_clause = format!("");
+            };
+            if f.since.is_some() {
+                since_clause = format!("AND created_at > {}", f.since.unwrap());
+            } else {
+                since_clause = format!("");
+            };
+            // Query for timestamp
+            if f.until.is_some() {
+                until_clause = format!("AND created_at < {}", f.until.unwrap());
+            } else {
+                until_clause = format!("");
+            };
+
+            let tag_clause = format!(
+		"e.id IN (SELECT t.event_id FROM tag t WHERE (name=? {str_clause} {kind_clause} {since_clause} {until_clause}))"
+            );
+
+            // add the tag name as the first parameter
+            params.push(Box::new(key.to_string()));
+            // add all tag values that are blobs as params
+            params.append(&mut str_vals);
+            filter_components.push(tag_clause);
         }
     }
     // Query for timestamp
