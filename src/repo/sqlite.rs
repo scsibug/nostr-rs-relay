@@ -342,7 +342,7 @@ impl NostrRepo for SqliteRepo {
                 for filter in sub.filters.iter() {
                     let filter_start = Instant::now();
                     filter_count += 1;
-                    let sql_gen_elapsed = start.elapsed();
+                    let sql_gen_elapsed = filter_start.elapsed();
                     let (q, p, idx) = query_from_filter(filter);
                     if sql_gen_elapsed > Duration::from_millis(10) {
                         debug!("SQL (slow) generated in {:?}", filter_start.elapsed());
