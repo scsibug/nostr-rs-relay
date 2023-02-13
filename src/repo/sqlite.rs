@@ -187,7 +187,7 @@ impl SqliteRepo {
         // if this event is parameterized replaceable, remove other events.
         if let Some(d_tag) = e.distinct_param() {
             let update_count = tx.execute(
-                "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY created_at DESC LIMIT -1 OFFSET 1);",
+                "DELETE FROM event WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? ORDER BY t.created_at DESC LIMIT -1 OFFSET 1);",
                 params![e.kind, pubkey_blob, e.kind, pubkey_blob, d_tag])?;
             if update_count > 0 {
                 info!(
