@@ -187,7 +187,6 @@ pub async fn db_writer(
             None
         };
 
-
         // check for  NIP-05 verification
         if nip05_enabled && validation.is_some() {
             match validation.as_ref().unwrap() {
