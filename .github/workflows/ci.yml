@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-      
+
 jobs:
   test_nostr-rs-relay:
     runs-on: ubuntu-latest
@@ -13,26 +13,27 @@ jobs:
 
       - name: Update local toolchain
         run: |
+          apt install -y protobuf-compiler
           rustup update
           rustup component add clippy
-          rustup install nightly          
+          rustup install nightly
 
       - name: Toolchain info
         run: |
           cargo --version --verbose
           rustc --version
-          cargo clippy --version          
+          cargo clippy --version
 
       # - name: Lint
       #   run: |
       #     cargo fmt -- --check
-      #     cargo clippy -- -D warnings          
+      #     cargo clippy -- -D warnings
 
       - name: Test
         run: |
           cargo check
-          cargo test --all          
+          cargo test --all
 
       - name: Build
         run: |
-          cargo build --release 
+          cargo build --release --locked
