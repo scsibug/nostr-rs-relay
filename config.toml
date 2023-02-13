@@ -56,7 +56,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # the URL below.  In the event the server is not accessible, events
 # will be permitted.  The protobuf3 schema used is available in
 # `proto/nauthz.proto`.
-# event_authorization_server = "http://[::1]:50051"
+# event_admission_server = "http://[::1]:50051"
 
 [network]
 # Bind to this network address
