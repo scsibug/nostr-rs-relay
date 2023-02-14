@@ -662,7 +662,7 @@ PRAGMA user_version = 15;
 
 fn mig_15_to_16(conn: &mut PooledConnection) -> Result<usize> {
     let count = db_event_count(conn)?;
-    info!("database schema needs update from 15->16 (this make take a few minutes)");
+    info!("database schema needs update from 15->16 (this may take a few minutes)");
     let upgrade_sql = r##"
 DROP TABLE tag;
 CREATE TABLE tag (
