@@ -1,6 +1,7 @@
 //! Common utility functions
 use bech32::FromBase32;
 use std::time::SystemTime;
+use url::Url;
 
 /// Seconds since 1970.
 #[must_use] pub fn unix_time() -> u64 {
@@ -31,6 +32,10 @@ pub fn nip19_to_hex(s: &str) -> Result<String, bech32::Error> {
     s.chars().all(|x| {
         (char::is_ascii_lowercase(&x) || char::is_ascii_digit(&x)) && char::is_ascii_hexdigit(&x)
     })
+}
+
+pub fn host_str(url: &String) -> Option<String> {
+    Url::parse(url).ok().and_then(|u| u.host_str().map(|s| s.to_string()))
 }
 
 #[cfg(test)]

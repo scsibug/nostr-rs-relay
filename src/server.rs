@@ -7,6 +7,8 @@ use crate::repo::NostrRepo;
 use crate::db;
 use crate::db::SubmittedEvent;
 use crate::error::{Error, Result};
+use crate::event::EventWrapper;
+use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::event::Event;
 use crate::event::EventCmd;
 use crate::info::RelayInfo;
@@ -48,6 +50,7 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
+use crate::server::Error::CommandUnknownError;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -157,7 +160,7 @@ async fn handle_web_request(
                     if mt_str.contains("application/nostr+json") {
                         // build a relay info response
                         debug!("Responding to server info request");
-                        let rinfo = RelayInfo::from(settings.info);
+                        let rinfo = RelayInfo::from(settings);
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
                                   .status(200)
@@ -268,6 +271,10 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         "nostr_cmd_close_total",
         "CLOSE commands",
     )).unwrap();
+    let cmd_auth = IntCounter::with_opts(Opts::new(
+        "nostr_cmd_auth_total",
+        "AUTH commands",
+    )).unwrap();
     let disconnects = IntCounterVec::new(
         Opts::new("nostr_disconnects_total", "Client disconnects"),
         vec!["reason"].as_slice(),
@@ -282,6 +289,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     registry.register(Box::new(cmd_req.clone())).unwrap();
     registry.register(Box::new(cmd_event.clone())).unwrap();
     registry.register(Box::new(cmd_close.clone())).unwrap();
+    registry.register(Box::new(cmd_auth.clone())).unwrap();
     registry.register(Box::new(disconnects.clone())).unwrap();
     let metrics = NostrMetrics {
         query_sub,
@@ -295,6 +303,7 @@ fn create_metrics() -> (Registry, NostrMetrics) {
 	cmd_req,
 	cmd_event,
 	cmd_close,
+        cmd_auth,
     };
     (registry,metrics)
 }
@@ -488,7 +497,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
 #[derive(Deserialize, Serialize, Clone, PartialEq, Eq, Debug)]
 #[serde(untagged)]
 pub enum NostrMessage {
-    /// An `EVENT` message
+    /// `EVENT` and  `AUTH` messages
     EventMsg(EventCmd),
     /// A `REQ` message
     SubMsg(Subscription),
@@ -528,6 +537,7 @@ fn make_notice_message(notice: &Notice) -> Message {
     let json = match notice {
         Notice::Message(ref msg) => json!(["NOTICE", msg]),
         Notice::EventResult(ref res) => json!(["OK", res.id, res.status.to_bool(), res.msg]),
+        Notice::AuthChallenge(ref challenge) => json!(["AUTH", challenge]),
     };
 
     Message::text(json.to_string())
@@ -615,6 +625,14 @@ async fn nostr_server(
 
     // Measure connections
     metrics.connections.inc();
+
+    if settings.authorization.nip42_auth {
+        conn.generate_auth_challenge();
+        if let Some(challenge) = conn.auth_challenge() {
+            ws_stream.send(
+                make_notice_message(&Notice::AuthChallenge(challenge.to_string()))).await.ok();
+        }
+    }
 
     loop {
         tokio::select! {
@@ -729,16 +747,17 @@ async fn nostr_server(
                         // An EventCmd needs to be validated to be converted into an Event
                         // handle each type of message
                         let evid = ec.event_id().to_owned();
-                        let parsed : Result<Event> = Result::<Event>::from(ec);
-			metrics.cmd_event.inc();
+                        let parsed : Result<EventWrapper> = Result::<EventWrapper>::from(ec);
                         match parsed {
-                            Ok(e) => {
+                            Ok(WrappedEvent(e)) => {
+                                metrics.cmd_event.inc();
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} (cid: {}, kind: {})", id_prefix, cid, e.kind);
                                 // check if the event is too far in the future.
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
-                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string(), origin: client_info.origin.clone(), user_agent: client_info.user_agent.clone()};
+                                    let auth_pubkey = conn.auth_pubkey().and_then(|pubkey| hex::decode(&pubkey).ok());
+                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string(), origin: client_info.origin.clone(), user_agent: client_info.user_agent.clone(), auth_pubkey };
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                                 } else {
@@ -750,7 +769,39 @@ async fn nostr_server(
                                     }
                                 }
                             },
+                            Ok(WrappedAuth(event)) => {
+                                metrics.cmd_auth.inc();
+                                if settings.authorization.nip42_auth {
+                                    let id_prefix:String = event.id.chars().take(8).collect();
+                                    debug!("successfully parsed auth: {:?} (cid: {})", id_prefix, cid);
+                                    match &settings.info.relay_url {
+                                        None => {
+                                            error!("AUTH command received, but relay_url is not set in the config file (cid: {})", cid);
+                                        },
+                                        Some(relay) => {
+                                            match conn.authenticate(&event, &relay) {
+                                                Ok(_) => {
+                                                    let pubkey = match conn.auth_pubkey() {
+                                                        Some(k) => k.chars().take(8).collect(),
+                                                        None => "<unspecified>".to_string(),
+                                                    };
+                                                    info!("client is authenticated: (cid: {}, pubkey: {:?})", cid, pubkey);
+                                                },
+                                                Err(e) => {
+                                                    info!("authentication error: {} (cid: {})", e, cid);
+                                                    ws_stream.send(make_notice_message(&Notice::message(format!("Authentication error: {e}")))).await.ok();
+                                                },
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    let e = CommandUnknownError;
+                                    info!("client sent an invalid event (cid: {})", cid);
+                                    ws_stream.send(make_notice_message(&Notice::invalid(evid, &format!("{e}")))).await.ok();
+                                }
+                            },
                             Err(e) => {
+                                metrics.cmd_event.inc();
                                 info!("client sent an invalid event (cid: {})", cid);
                                 ws_stream.send(make_notice_message(&Notice::invalid(evid, &format!("{e}")))).await.ok();
                             }
@@ -855,5 +906,6 @@ pub struct NostrMetrics {
     pub cmd_req: IntCounter, // count of REQ commands received
     pub cmd_event: IntCounter, // count of EVENT commands received
     pub cmd_close: IntCounter, // count of CLOSE commands received
+    pub cmd_auth: IntCounter, // count of AUTH commands received
 
 }

@@ -1,6 +1,6 @@
 //! Relay metadata using NIP-11
 /// Relay Info
-use crate::config;
+use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 
 pub const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
@@ -27,15 +27,24 @@ pub struct RelayInfo {
 }
 
 /// Convert an Info configuration into public Relay Info
-impl From<config::Info> for RelayInfo {
-    fn from(i: config::Info) -> Self {
+impl From<Settings> for RelayInfo {
+    fn from(c: Settings) -> Self {
+        let mut supported_nips = vec![1, 2, 9, 11, 12, 15, 16, 20, 22, 33];
+
+        if c.authorization.nip42_auth {
+            supported_nips.push(42);
+            supported_nips.sort();
+        }
+
+        let i = c.info;
+
         RelayInfo {
             id: i.relay_url,
             name: i.name,
             description: i.description,
             pubkey: i.pubkey,
             contact: i.contact,
-            supported_nips: Some(vec![1, 2, 9, 11, 12, 15, 16, 20, 22, 33]),
+            supported_nips: Some(supported_nips),
             software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(std::borrow::ToOwned::to_owned),
         }

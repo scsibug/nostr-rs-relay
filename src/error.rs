@@ -68,6 +68,8 @@ pub enum Error {
     AuthzError,
     #[error("Tonic GRPC error")]
     TonicError(tonic::Status),
+    #[error("Invalid AUTH message")]
+    AuthFailure,
     #[error("Unknown/Undocumented")]
     UnknownError,
 }

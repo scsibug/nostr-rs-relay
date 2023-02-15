@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
 use tracing::{debug, info};
+use crate::event::EventWrapper::WrappedEvent;
+use crate::event::EventWrapper::WrappedAuth;
 
 lazy_static! {
     /// Secp256k1 verification instance.
@@ -83,17 +85,27 @@ where
     }
 }
 
+
+pub enum EventWrapper {
+    WrappedEvent(Event),
+    WrappedAuth(Event)
+}
+
 /// Convert network event to parsed/validated event.
-impl From<EventCmd> for Result<Event> {
-    fn from(ec: EventCmd) -> Result<Event> {
+impl From<EventCmd> for Result<EventWrapper> {
+    fn from(ec: EventCmd) -> Result<EventWrapper> {
         // ensure command is correct
         if ec.cmd == "EVENT" {
             ec.event.validate().map(|_| {
                 let mut e = ec.event;
                 e.build_index();
                 e.update_delegation();
-                e
+                WrappedEvent(e)
             })
+        } else if ec.cmd == "AUTH" {
+            // we don't want to validate the event here, because NIP-42 can be disabled
+            // it will be validated later during the authentication process
+            Ok(WrappedAuth(ec.event))
         } else {
             Err(CommandUnknownError)
         }
@@ -326,7 +338,7 @@ impl Event {
     }
 
     /// Convert event to canonical representation for signing.
-    fn to_canonical(&self) -> Option<String> {
+    pub fn to_canonical(&self) -> Option<String> {
         // create a JsonValue for each event element
         let mut c: Vec<Value> = vec![];
         // id must be set to 0
