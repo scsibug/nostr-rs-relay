@@ -1,14 +1,16 @@
 use crate::error::{Error, Result};
 use crate::event::Event;
+use crate::payment::lnbits::LNBitsPaymentProcessor;
 use crate::repo::NostrRepo;
-use rand::Rng;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
+use async_trait::async_trait;
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
+
+pub mod lnbits;
 
 /// Payment handler
 pub struct Payment {
@@ -24,53 +26,21 @@ pub struct Payment {
     settings: crate::config::Settings,
     // Nostr Keys
     nostr_keys: Keys,
-    // Http client
-    client: Client,
+    /// Payment Processor
+    processor: Arc<dyn PaymentProcessor>,
 }
 
-/// Info LNBits expects in create invoice request
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LNBitsCreateInvoice {
-    out: bool,
-    amount: u64,
-    memo: String,
-    webhook: String,
-    unit: String,
-    internal: bool,
-    expiry: u64,
+#[async_trait]
+pub trait PaymentProcessor: Send + Sync {
+    /// Get invoice from processor
+    async fn get_invoice(&self, keys: &Keys, amount: u64) -> Result<InvoiceInfo, Error>;
+    /// Check payment status of an invoice
+    async fn check_invoice(&self, payment_hash: &str) -> Result<InvoiceStatus, Error>;
 }
 
-/// Invoice response for LN bits
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LNBitsCreateInvoiceResponse {
-    payment_hash: String,
-    payment_request: String,
-    // checking_id: String,
-    // lnurl_response: Option<String>,
-}
-
-/// LNBits call back response
-/// Used when an invoice is paid
-/// lnbits to post the status change to relay
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LNBitsCallback {
-    pub checking_id: String,
-    pub pending: bool,
-    pub amount: u64,
-    pub memo: String,
-    pub time: u64,
-    pub bolt11: String,
-    pub preimage: String,
-    pub payment_hash: String,
-    pub wallet_id: String,
-    pub webhook: String,
-    pub webhook_status: Option<String>,
-}
-
-/// LN Bits repose for check invoice endpoint
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LNBitsCheckInvoiceResponse {
-    paid: bool,
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum Processor {
+    LNBits,
 }
 
 /// Possible states of an invoice
@@ -111,10 +81,14 @@ pub enum PaymentMessage {
     NewAccount(String),
     /// Check account,
     CheckAccount(String),
+    /// Account Admitted
+    AccountAdmitted(String),
     /// Invoice generated
     Invoice(String, InvoiceInfo),
     /// Invoice call back
-    InvoicePaid(LNBitsCallback),
+    /// Payment hash is passed
+    // This may have to be changed to better support other processors
+    InvoicePaid(String),
 }
 
 impl Payment {
@@ -129,12 +103,11 @@ impl Payment {
 
         // Create nostr key from sk string
         let nostr_keys = Keys::from_sk_str(&settings.pay_to_relay.secret_key)?;
-        let client = reqwest::Client::builder()
-            // Not ideal to accept all certs
-            // But enforcing certs may be too much of a burden on users
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+
+        // Create processor kind defined in settings
+        let processor = match &settings.pay_to_relay.processor {
+            Processor::LNBits => Arc::new(LNBitsPaymentProcessor::new(&settings)),
+        };
 
         Ok(Payment {
             repo,
@@ -143,15 +116,13 @@ impl Payment {
             event_tx,
             settings,
             nostr_keys,
-            client,
+            processor,
         })
     }
 
     /// Perform Payment tasks
     pub async fn run(&mut self) {
         loop {
-            tokio::spawn(async move {});
-
             let res = self.run_internal().await;
             if let Err(e) = res {
                 info!("error in payment: {:?}", e);
@@ -168,20 +139,27 @@ impl Payment {
                         info!("payment event for {:?}", pubkey);
                         // REVIEW: This will need to change for cost per event
                         let amount = self.settings.pay_to_relay.admission_cost;
-                        let invoice_info = self.get_invoice_info(&pubkey, amount, &self.settings).await?;
+                        let invoice_info = self.get_invoice_info(&pubkey, amount).await?;
                         // TODO: should handle this error
                         self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                     },
-                    // Gets the most recent unpaid invoice from database 
+                    // Gets the most recent unpaid invoice from database
                     // Checks LNbits to verify if paid/unpaid
                     Ok(PaymentMessage::CheckAccount(pubkey)) => {
-                        let pubkey = Keys::from_pk_str(&pubkey)?;
+                        let keys = Keys::from_pk_str(&pubkey)?;
 
-                        if let Some(invoice_info) = self.repo.get_unpaid_invoice(&pubkey).await? {
-                            self.check_invoice_status(&invoice_info.payment_hash).await?;
+                        if let Some(invoice_info) = self.repo.get_unpaid_invoice(&keys).await? {
+                            match self.check_invoice_status(&invoice_info.payment_hash).await? {
+                                InvoiceStatus::Paid => {
+                                    self.payment_tx.send(PaymentMessage::AccountAdmitted(pubkey)).ok();
+                                }
+                                _ => {
+                                    self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
+                                }
+                            }
                         }
                     }
-                    Ok(PaymentMessage::InvoicePaid(callback)) => {
+                    Ok(PaymentMessage::InvoicePaid(payment_hash)) => {
                         //let pre_image_hash = &sha256::Hash::hash(callback.preimage.as_bytes()).to_string();
                         // debug!("{pre_image_hash}");
                         // debug!("{}", callback.payment_hash);
@@ -189,14 +167,14 @@ impl Payment {
                         //    return Err(Error::PaymentHash)
                         //}
                         let pubkey = self.repo
-                            .update_invoice(&callback.payment_hash.to_string(), InvoiceStatus::Paid)
+                            .update_invoice(&payment_hash, InvoiceStatus::Paid)
                             .await
                             .unwrap();
 
                          let key = Keys::from_pk_str(&pubkey)?;
                          self.repo.admit_account(&key, self.settings.pay_to_relay.admission_cost).await.unwrap();
                     }
-                    Ok(PaymentMessage::Invoice(_pubkey, _invoice)) => {
+                    Ok(_) => {
                         // For this variant nothing need to be done here
                         // it is used by `server`
                     }
@@ -244,13 +222,10 @@ impl Payment {
         Ok(())
     }
 
-    /// Get Invoice
-    pub async fn get_invoice_info(
-        &self,
-        pubkey: &str,
-        amount: u64,
-        settings: &crate::config::Settings,
-    ) -> Result<InvoiceInfo> {
+    /// Get Invoice Info
+    /// If the has an active invoice that will be return
+    /// Otherwise a new invoice will be generated by the payment processor
+    pub async fn get_invoice_info(&self, pubkey: &str, amount: u64) -> Result<InvoiceInfo> {
         // If user is already in DB this will be false
         // This avoids recreating admission invoices
         // I think it will continue to send DMs with the invoice
@@ -263,50 +238,8 @@ impl Payment {
         }
 
         let key = Keys::from_pk_str(pubkey)?;
-        let random_number: u16 = rand::thread_rng().gen();
 
-        let memo = format!("{}: {}", random_number, key.public_key());
-
-        let body = LNBitsCreateInvoice {
-            out: false,
-            amount,
-            memo: memo.clone(),
-            webhook: format!(
-                "{}lnbits",
-                &settings
-                    .info
-                    .relay_url
-                    .clone()
-                    .unwrap()
-                    .replace("ws", "http")
-            ),
-            unit: "sat".to_string(),
-            internal: false,
-            expiry: 3600,
-        };
-
-        let res = self
-            .client
-            .post(&settings.pay_to_relay.node_url)
-            .header("X-Api-Key", &settings.pay_to_relay.api_secret)
-            .json(&body)
-            .send()
-            .await?;
-
-        // Json to Struct of LNbits callback
-        let invoice_response = res.json::<LNBitsCreateInvoiceResponse>().await.unwrap();
-
-        debug!("{:?}", invoice_response);
-
-        let invoice_info = InvoiceInfo {
-            pubkey: key.public_key().to_string(),
-            payment_hash: invoice_response.payment_hash,
-            bolt11: invoice_response.payment_request,
-            amount,
-            memo,
-            status: InvoiceStatus::Unpaid,
-            confirmed_at: None,
-        };
+        let invoice_info = self.processor.get_invoice(&key, amount).await?;
 
         // Persist invoice to DB
         self.repo
@@ -322,24 +255,7 @@ impl Payment {
     /// Check paid status of invoice with LNbits
     pub async fn check_invoice_status(&self, payment_hash: &str) -> Result<InvoiceStatus, Error> {
         // Check base if passed expiry time
-
-        let res = self
-            .client
-            .get(format!(
-                "{}/{}",
-                &self.settings.pay_to_relay.node_url, payment_hash
-            ))
-            .header("X-Api-Key", &self.settings.pay_to_relay.api_secret)
-            .send()
-            .await?;
-
-        let invoice_response = res.json::<LNBitsCheckInvoiceResponse>().await.unwrap();
-
-        let status = if invoice_response.paid {
-            InvoiceStatus::Paid
-        } else {
-            InvoiceStatus::Unpaid
-        };
+        let status = self.processor.check_invoice(payment_hash).await?;
 
         self.repo
             .update_invoice(payment_hash, status.clone())

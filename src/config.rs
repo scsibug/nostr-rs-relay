@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::warn;
 
+use crate::payment::Processor;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
 pub struct Info {
@@ -90,6 +92,7 @@ pub struct PayToRelay {
     pub terms_message: String,
     pub sign_ups: bool, // allow new users to sign up to relay
     pub secret_key: String,
+    pub processor: Processor
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,6 +293,7 @@ impl Default for Settings {
                 api_secret: "".to_string(),
                 sign_ups: false,
                 secret_key: "".to_string(),
+                processor: Processor::LNBits
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

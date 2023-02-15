@@ -237,13 +237,13 @@ async fn handle_web_request(
             // The status is returned as pending but webhook is only called when payed
             // Assuming payed for now should verify
             // The the callback should return the preimage that could be used by
-            // Hashing it and verifying that mataches db preimage
+            // Hashing it and verifying it matches db payment hash
             // Lnbits is returning 00000
-            let callback =
+            let callback: payment::lnbits::LNBitsCallback =
                 serde_json::from_slice(&to_bytes(request.into_body()).await.unwrap()).unwrap();
             debug!("LNBits callaback: {callback:?}");
 
-            if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback)) {
+            if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback.payment_hash)) {
                 warn!("Could not send invoice update: {}", e);
                 return Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -370,20 +370,22 @@ async fn handle_web_request(
             }
 
             // Checks if user is already admitted
+            let payment_message;
             if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                 if admission_status {
                     return Ok(Response::builder()
                         .status(StatusCode::OK)
                         .body(Body::from("Already admitted"))
                         .unwrap());
+                } else {
+                    payment_message = PaymentMessage::CheckAccount(pubkey.clone());
                 }
+            } else {
+                payment_message = PaymentMessage::NewAccount(pubkey.clone());
             }
 
             // Send message on payment channel requesting invoice
-            if payment_tx
-                .send(PaymentMessage::NewAccount(pubkey.clone()))
-                .is_err()
-            {
+            if payment_tx.send(payment_message).is_err() {
                 warn!("Could not send payment tx");
                 return Ok(Response::builder()
                     .status(501)
@@ -394,12 +396,25 @@ async fn handle_web_request(
 
             // wait for message with invoice back that matched the pub key
             let mut invoice_info: Option<InvoiceInfo> = None;
-            while let Ok(PaymentMessage::Invoice(m_pubkey, m_invoice_info)) =
-                payment_tx.subscribe().recv().await
-            {
-                if m_pubkey == pubkey.clone() {
-                    invoice_info = Some(m_invoice_info);
-                    break;
+            while let Ok(msg) = payment_tx.subscribe().recv().await {
+                match msg {
+                    PaymentMessage::Invoice(m_pubkey, m_invoice_info) => {
+                        if m_pubkey == pubkey.clone() {
+                            invoice_info = Some(m_invoice_info);
+                            break;
+                        }
+                    }
+                    PaymentMessage::AccountAdmitted(m_pubkey) => {
+                        if m_pubkey == pubkey.clone() {
+                            return Ok(Response::builder()
+                                .status(StatusCode::OK)
+                                .body(Body::from("Already admitted"))
+                                .unwrap());
+                        }
+                    }
+                    _ => {
+                        ()
+                    }
                 }
             }
 
