@@ -74,7 +74,6 @@ async fn handle_web_request(
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
-    // payment_rx: &mut tokio::sync::broadcast::Receiver<(String, Option<InvoiceInfo>)>,
     shutdown: Receiver<()>,
     favicon: Option<Vec<u8>>,
     registry: Registry,
@@ -347,10 +346,11 @@ async fn handle_web_request(
                     .unwrap());
             }
 
+            // Get query pubkey from query string
             let pubkey = get_pubkey(request);
 
+            // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                // Redirect back to join page if no pub key is found in query string
                 return Ok(Response::builder()
                     .status(404)
                     .header("location", "/join")
@@ -426,8 +426,6 @@ async fn handle_web_request(
                 qr_code = "Could not render image".to_string();
             }
 
-            let amount = settings.pay_to_relay.admission_cost;
-
             let html_result = format!(
                 r#"
 <!DOCTYPE html>
@@ -473,9 +471,9 @@ async fn handle_web_request(
       </h3>
     </div>
     <div>
-      <svg height="300">
-        {}
-      </svg>
+        <div style="max-height: 300px;">
+            {}
+        </div>
     </div>
     <div>
     <div style="width: 75%;">
@@ -508,7 +506,11 @@ async fn handle_web_request(
   }}
 </script>
 "#,
-                amount, qr_code, invoice_info.bolt11, pubkey, invoice_info.bolt11
+                settings.pay_to_relay.admission_cost,
+                qr_code,
+                invoice_info.bolt11,
+                pubkey,
+                invoice_info.bolt11
             );
 
             Ok(Response::builder()
@@ -525,17 +527,19 @@ async fn handle_web_request(
                     .body(Body::from("This relay is not paid"))
                     .unwrap());
             }
+
+            // Gets the pubkey from query string
             let pubkey = get_pubkey(request);
-            
+
+            // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                // Redirect back to join page if no pub key is found in query string
                 return Ok(Response::builder()
                     .status(404)
                     .header("location", "/join")
                     .body(Body::empty())
                     .unwrap());
             }
-            
+
             // Checks key is valid
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
@@ -546,21 +550,21 @@ async fn handle_web_request(
                     .body(Body::from("Looks like your key is invalid"))
                     .unwrap());
             }
-            
+
             // Checks if user is already admitted
-            let text =  if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
-                if admission_status {
-                    r#"<span style="color: green;">is</span>"#
+            let text =
+                if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                    if admission_status {
+                        r#"<span style="color: green;">is</span>"#
+                    } else {
+                        r#"<span style="color: red;">is not</span>"#
+                    }
                 } else {
-                    "is not"
-                }
-            }   else  {
-                "Could not get admission status"
+                    "Could not get admission status"
+                };
 
-            };
-            
-
-            let html_result = format!(r#"
+            let html_result = format!(
+                r#"
             <!DOCTYPE html>
 <html>
   <head>
@@ -586,14 +590,14 @@ async fn handle_web_request(
 </html>
 
             
-            "#, pubkey, text);
-            
-            
+            "#,
+                pubkey, text
+            );
+
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(html_result))
                 .unwrap())
-
         }
         // later balance
         (_, _) => {

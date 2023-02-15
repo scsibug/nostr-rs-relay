@@ -2,10 +2,10 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::repo::NostrRepo;
 use rand::Rng;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-use bitcoin_hashes::{sha256, Hash};
 
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
@@ -24,6 +24,8 @@ pub struct Payment {
     settings: crate::config::Settings,
     // Nostr Keys
     nostr_keys: Keys,
+    // Http client
+    client: Client,
 }
 
 /// Info LNBits expects in create invoice request
@@ -43,8 +45,8 @@ pub struct LNBitsCreateInvoice {
 pub struct LNBitsCreateInvoiceResponse {
     payment_hash: String,
     payment_request: String,
-    checking_id: String,
-    lnurl_response: Option<String>,
+    // checking_id: String,
+    // lnurl_response: Option<String>,
 }
 
 /// LNBits call back response
@@ -63,6 +65,12 @@ pub struct LNBitsCallback {
     pub wallet_id: String,
     pub webhook: String,
     pub webhook_status: Option<String>,
+}
+
+/// LN Bits repose for check invoice endpoint
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LNBitsCheckInvoiceResponse {
+    paid: bool,
 }
 
 /// Possible states of an invoice
@@ -101,6 +109,8 @@ pub struct InvoiceInfo {
 pub enum PaymentMessage {
     /// New account
     NewAccount(String),
+    /// Check account,
+    CheckAccount(String),
     /// Invoice generated
     Invoice(String, InvoiceInfo),
     /// Invoice call back
@@ -119,6 +129,12 @@ impl Payment {
 
         // Create nostr key from sk string
         let nostr_keys = Keys::from_sk_str(&settings.pay_to_relay.secret_key)?;
+        let client = reqwest::Client::builder()
+            // Not ideal to accept all certs
+            // But enforcing certs may be too much of a burden on users
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap();
 
         Ok(Payment {
             repo,
@@ -127,6 +143,7 @@ impl Payment {
             event_tx,
             settings,
             nostr_keys,
+            client,
         })
     }
 
@@ -155,6 +172,15 @@ impl Payment {
                         // TODO: should handle this error
                         self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                     },
+                    // Gets the most recent unpaid invoice from database 
+                    // Checks LNbits to verify if paid/unpaid
+                    Ok(PaymentMessage::CheckAccount(pubkey)) => {
+                        let pubkey = Keys::from_pk_str(&pubkey)?;
+
+                        if let Some(invoice_info) = self.repo.get_unpaid_invoice(&pubkey).await? {
+                            self.check_invoice_status(&invoice_info.payment_hash).await?;
+                        }
+                    }
                     Ok(PaymentMessage::InvoicePaid(callback)) => {
                         //let pre_image_hash = &sha256::Hash::hash(callback.preimage.as_bytes()).to_string();
                         // debug!("{pre_image_hash}");
@@ -167,7 +193,7 @@ impl Payment {
                             .await
                             .unwrap();
 
-                         let key = Keys::from_pk_str(&pubkey).unwrap();
+                         let key = Keys::from_pk_str(&pubkey)?;
                          self.repo.admit_account(&key, self.settings.pay_to_relay.admission_cost).await.unwrap();
                     }
                     Ok(PaymentMessage::Invoice(_pubkey, _invoice)) => {
@@ -203,12 +229,9 @@ impl Payment {
         .to_event(&self.nostr_keys)?;
 
         // Event DM with invoice
-        let invoice_event: NostrEvent = EventBuilder::new_encrypted_direct_msg(
-            &self.nostr_keys,
-            pubkey,
-            &invoice_info.bolt11,
-        )?
-        .to_event(&self.nostr_keys)?;
+        let invoice_event: NostrEvent =
+            EventBuilder::new_encrypted_direct_msg(&self.nostr_keys, pubkey, &invoice_info.bolt11)?
+                .to_event(&self.nostr_keys)?;
 
         // Persist DM events to DB
         self.repo.write_event(&message_event.clone().into()).await?;
@@ -221,53 +244,23 @@ impl Payment {
         Ok(())
     }
 
+    /// Get Invoice
     pub async fn get_invoice_info(
         &self,
         pubkey: &str,
         amount: u64,
         settings: &crate::config::Settings,
     ) -> Result<InvoiceInfo> {
-        // If use is already in DB this will be false
-        // This avoids resending admission invoices
-        // I think it will continue to send DMs with an invoice
-        // If client continues to try and write to the event (will be same invoice)
+        // If user is already in DB this will be false
+        // This avoids recreating admission invoices
+        // I think it will continue to send DMs with the invoice
+        // If client continues to try and write to the relay (will be same invoice)
         let key = Keys::from_pk_str(pubkey)?;
         if !self.repo.create_account(&key).await.unwrap() {
-            if let Some(invoice_info) = self.repo.get_unpaid_invoice(&key).await? {
+            if let Ok(Some(invoice_info)) = self.repo.get_unpaid_invoice(&key).await {
                 return Ok(invoice_info);
-            } else {
-                return Err(Error::UnknownError);
             }
         }
-        // If tor proxy is setting is set send request via proxy
-        let client = match &settings.pay_to_relay.tor_proxy {
-            Some(proxy_url) => {
-                // TODO: Implement tor
-
-                debug!("{proxy_url}");
-                /*
-                let proxy = ureq::Proxy::new(proxy_url).unwrap();
-                let agent = ureq::AgentBuilder::new().proxy(proxy).build();
-
-                // This is proxied.
-                let resp = agent
-                    .post(&node_url)
-                    .set("X-Access", "eUoort9EGSIPVpdmoxqn")
-                    //.set("Range", "payments=0-99")
-                    .send_json(ureq::json!({"method": "listsendpays"}));
-                debug!("{:?}", resp);
-                // resp
-                // .unwrap();
-                println!("{:?}", resp);
-                */
-                todo!();
-            }
-            None => reqwest::Client::builder()
-                // Not ideal to accept all certs
-                // But enforcing certs may be too much of a burden on users 
-                .danger_accept_invalid_certs(true)
-                .build()?,
-        };
 
         let key = Keys::from_pk_str(pubkey)?;
         let random_number: u16 = rand::thread_rng().gen();
@@ -292,7 +285,8 @@ impl Payment {
             expiry: 3600,
         };
 
-        let res = client
+        let res = self
+            .client
             .post(&settings.pay_to_relay.node_url)
             .header("X-Api-Key", &settings.pay_to_relay.api_secret)
             .json(&body)
@@ -300,12 +294,14 @@ impl Payment {
             .await?;
 
         // Json to Struct of LNbits callback
-        let payment_response = res.json::<LNBitsCreateInvoiceResponse>().await?;
+        let invoice_response = res.json::<LNBitsCreateInvoiceResponse>().await.unwrap();
+
+        debug!("{:?}", invoice_response);
 
         let invoice_info = InvoiceInfo {
             pubkey: key.public_key().to_string(),
-            payment_hash: payment_response.payment_hash,
-            bolt11: payment_response.payment_request,
+            payment_hash: invoice_response.payment_hash,
+            bolt11: invoice_response.payment_request,
             amount,
             memo,
             status: InvoiceStatus::Unpaid,
@@ -321,5 +317,34 @@ impl Payment {
         self.send_admission_message(pubkey, &invoice_info).await?;
 
         Ok(invoice_info)
+    }
+
+    /// Check paid status of invoice with LNbits
+    pub async fn check_invoice_status(&self, payment_hash: &str) -> Result<InvoiceStatus, Error> {
+        // Check base if passed expiry time
+
+        let res = self
+            .client
+            .get(format!(
+                "{}/{}",
+                &self.settings.pay_to_relay.node_url, payment_hash
+            ))
+            .header("X-Api-Key", &self.settings.pay_to_relay.api_secret)
+            .send()
+            .await?;
+
+        let invoice_response = res.json::<LNBitsCheckInvoiceResponse>().await.unwrap();
+
+        let status = if invoice_response.paid {
+            InvoiceStatus::Paid
+        } else {
+            InvoiceStatus::Unpaid
+        };
+
+        self.repo
+            .update_invoice(payment_hash, status.clone())
+            .await?;
+
+        Ok(status)
     }
 }

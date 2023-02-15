@@ -2,13 +2,13 @@
 use crate::config::Settings;
 use crate::error::{Error, Result};
 use crate::event::Event;
+use crate::nauthz;
 use crate::notice::Notice;
 use crate::payment::PaymentMessage;
 use crate::repo::postgres::{PostgresPool, PostgresRepo};
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::NostrRepo;
 use crate::server::NostrMetrics;
-use crate::nauthz;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
@@ -125,8 +125,8 @@ pub async fn db_writer(
     };
 
     //let gprc_client = settings.grpc.event_admission_server.map(|s| {
-//        event_admitter_connect(&s);
-//    });
+    //        event_admitter_connect(&s);
+    //    });
 
     loop {
         if shutdown.try_recv().is_ok() {
@@ -196,7 +196,7 @@ pub async fn db_writer(
                     Ok((user_admitted, balance)) => {
                         // Checks to make sure user is admitted
                         if !user_admitted {
-                            debug!("user: {}, is not admitted", &event.pubkey,);
+                            debug!("user: {}, is not admitted", &event.pubkey);
 
                             // Only send admission message and invoice if sign ups enabled
                             if settings.pay_to_relay.sign_ups {
@@ -223,22 +223,17 @@ pub async fn db_writer(
                         user_balance = Some(balance);
                         debug!("User balance: {:?}", user_balance);
                     }
-                    Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+                    Err(
+                        Error::SqlError(rusqlite::Error::QueryReturnedNoRows)
+                        | Error::SqlxError(sqlx::Error::RowNotFound),
+                    ) => {
                         // User does not exist
                         info!("Unregistered user");
-                        payment_tx
-                            .send(PaymentMessage::NewAccount(event.pubkey))
-                            .ok();
-                        let msg = "Pubkey not registered";
-                        notice_tx.try_send(Notice::error(event.id, msg)).ok();
-                        continue;
-                    }
-                    Err(Error::SqlxError(sqlx::Error::RowNotFound)) => {
-                        // User does not exist
-                        info!("Unregistered user");
-                        payment_tx
-                            .send(PaymentMessage::NewAccount(event.pubkey))
-                            .ok();
+                        if settings.pay_to_relay.sign_ups {
+                            payment_tx
+                                .send(PaymentMessage::NewAccount(event.pubkey))
+                                .ok();
+                        }
                         let msg = "Pubkey not registered";
                         notice_tx.try_send(Notice::error(event.id, msg)).ok();
                         continue;
@@ -280,7 +275,6 @@ pub async fn db_writer(
                             uv.name.to_string(),
                             event.get_author_prefix()
                         );
-
                     } else {
                         info!(
                             "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
@@ -317,7 +311,8 @@ pub async fn db_writer(
         }
 
         // nip05 address
-        let nip05_address : Option<crate::nip05::Nip05Name> = validation.and_then(|x| x.ok().map(|y| y.name));
+        let nip05_address: Option<crate::nip05::Nip05Name> =
+            validation.and_then(|x| x.ok().map(|y| y.name));
 
         // GRPC check
         if let Some(ref mut c) = grpc_client {
@@ -328,16 +323,23 @@ pub async fn db_writer(
                 Ok(decision) => {
                     if !decision.permitted() {
                         // GPRC returned a decision to reject this event
-                        info!("GRPC rejected event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
-                              event.get_event_id_prefix(),
-                              event.kind,
-                              event.get_author_prefix(),
-                              grpc_start.elapsed(),
-                              subm_event.source_ip);
-                        notice_tx.try_send(Notice::blocked(event.id, &decision.message().unwrap_or_else(|| "".to_string()))).ok();
+                        info!(
+                            "GRPC rejected event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
+                            event.get_event_id_prefix(),
+                            event.kind,
+                            event.get_author_prefix(),
+                            grpc_start.elapsed(),
+                            subm_event.source_ip
+                        );
+                        notice_tx
+                            .try_send(Notice::blocked(
+                                event.id,
+                                &decision.message().unwrap_or_else(|| "".to_string()),
+                            ))
+                            .ok();
                         continue;
                     }
-                },
+                }
                 Err(e) => {
                     warn!("GRPC server error: {:?}", e);
                 }
