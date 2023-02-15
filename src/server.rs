@@ -781,8 +781,10 @@ async fn nostr_server(
                                         Some(relay) => {
                                             match conn.authenticate(&event, &relay) {
                                                 Ok(_) => {
-                                                    let unset = "<UNSET PUBKEY!!!>".to_string();
-                                                    let pubkey = conn.auth_pubkey().unwrap_or(&unset);
+                                                    let pubkey = match conn.auth_pubkey() {
+                                                        Some(k) => k.chars().take(8).collect(),
+                                                        None => "<unspecified>".to_string(),
+                                                    };
                                                     info!("client is authenticated: (cid: {}, pubkey: {:?})", cid, pubkey);
                                                 },
                                                 Err(e) => {
