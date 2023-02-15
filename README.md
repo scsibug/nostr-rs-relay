@@ -139,7 +139,7 @@ settings.
 
 For examples of putting the relay behind a reverse proxy (for TLS
 termination, load balancing, and other features), see [Reverse
-Proxy](reverse-proxy.md).
+Proxy](docs/reverse-proxy.md).
 
 ## Dev Channel
 
