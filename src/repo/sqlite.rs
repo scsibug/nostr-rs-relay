@@ -1,7 +1,7 @@
 //! Event persistence and querying
 //use crate::config::SETTINGS;
 use crate::config::Settings;
-use crate::error::Result;
+use crate::error::{Result,Error::SqlError};
 use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
@@ -264,6 +264,8 @@ impl NostrRepo for SqliteRepo {
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
         let start = Instant::now();
+        let max_write_attempts = 10;
+        let mut attempts = 0;
         let _write_guard = self.write_in_progress.lock().await;
         // spawn a blocking thread
         //let mut conn = self.write_pool.get()?;
@@ -271,7 +273,26 @@ impl NostrRepo for SqliteRepo {
         let e = e.clone();
         let event_count = task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            SqliteRepo::persist_event(&mut conn, &e)
+            // this could fail because the database was busy; try
+            // multiple times before giving up.
+            loop {
+                attempts+=1;
+                let wr = SqliteRepo::persist_event(&mut conn, &e);
+                match wr {
+                    Err(SqlError(rusqlite::Error::SqliteFailure(e,_))) => {
+                        // this basically means that NIP-05 was
+                        // writing to the database between us reading
+                        // and promoting the connection to a write
+                        // lock.
+                        info!("event write failed, DB locked (attempt: {}); sqlite err: {}",
+                        attempts, e.extended_code);
+                    },
+                    _ => {return wr;},
+                }
+                if attempts >= max_write_attempts {
+                    return wr;
+                }
+            }
         }).await?;
         self.metrics
             .write_events
