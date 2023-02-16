@@ -209,7 +209,6 @@ impl Settings {
             .add_source(File::with_name(config))
             .build()?;
         let mut settings: Settings = config.try_deserialize()?;
-        println!("Settings: {settings:?}");
         // ensure connection pool size is logical
         assert!(
             settings.database.min_conn <= settings.database.max_conn,

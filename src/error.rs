@@ -78,8 +78,10 @@ pub enum Error {
     NostrKeyError(nostr::key::Error),
     #[error("Payment hash mismatch")]
     PaymentHash,
-    #[error("Reqwest error")]
-    ReqwestError(reqwest::Error),
+    #[error("Error parsing url")]
+    URLParseError(url::ParseError),
+    #[error("HTTP error")]
+    HTTPError(http::Error),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -175,9 +177,16 @@ impl From<nostr::key::Error> for Error {
     }
 }
 
-impl From<reqwest::Error> for Error {
-    /// Wrap reqwest error
-    fn from(r: reqwest::Error) -> Self {
-        Error::ReqwestError(r)
+impl From<url::ParseError> for Error {
+    /// Wrap nostr key error
+    fn from(r: url::ParseError) -> Self {
+        Error::URLParseError(r)
+    }
+}
+
+impl From<http::Error> for Error {
+    /// Wrap nostr key error
+    fn from(r: http::Error) -> Self {
+        Error::HTTPError(r)
     }
 }

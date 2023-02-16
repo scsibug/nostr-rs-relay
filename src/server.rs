@@ -6,10 +6,9 @@ use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
 use crate::error::{Error, Result};
-use crate::event::EventWrapper;
-use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::event::Event;
 use crate::event::EventCmd;
+use crate::event::EventWrapper;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
@@ -17,6 +16,8 @@ use crate::payment;
 use crate::payment::InvoiceInfo;
 use crate::payment::PaymentMessage;
 use crate::repo::NostrRepo;
+use crate::server::Error::CommandUnknownError;
+use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -59,7 +60,6 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
-use crate::server::Error::CommandUnknownError;
 
 use nostr::key::FromPkStr;
 use nostr::key::Keys;
@@ -233,15 +233,10 @@ async fn handle_web_request(
         }
         // LN bits callback endpoint for paid invoices
         ("/lnbits", false) => {
-            // REVIEW:
-            // The status is returned as pending but webhook is only called when payed
-            // Assuming payed for now should verify
-            // The the callback should return the preimage that could be used by
-            // Hashing it and verifying it matches db payment hash
-            // Lnbits is returning 00000
+            
             let callback: payment::lnbits::LNBitsCallback =
                 serde_json::from_slice(&to_bytes(request.into_body()).await.unwrap()).unwrap();
-            debug!("LNBits callaback: {callback:?}");
+            debug!("LNBits callback: {callback:?}");
 
             if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback.payment_hash)) {
                 warn!("Could not send invoice update: {}", e);
@@ -412,9 +407,7 @@ async fn handle_web_request(
                                 .unwrap());
                         }
                     }
-                    _ => {
-                        ()
-                    }
+                    _ => (),
                 }
             }
 
@@ -704,23 +697,15 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     let query_aborts = IntCounterVec::new(
         Opts::new("nostr_query_abort_total", "Aborted queries"),
         vec!["reason"].as_slice(),
-    ).unwrap();
-    let cmd_req = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_req_total",
-        "REQ commands",
-    )).unwrap();
-    let cmd_event = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_event_total",
-        "EVENT commands",
-    )).unwrap();
-    let cmd_close = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_close_total",
-        "CLOSE commands",
-    )).unwrap();
-    let cmd_auth = IntCounter::with_opts(Opts::new(
-        "nostr_cmd_auth_total",
-        "AUTH commands",
-    )).unwrap();
+    )
+    .unwrap();
+    let cmd_req = IntCounter::with_opts(Opts::new("nostr_cmd_req_total", "REQ commands")).unwrap();
+    let cmd_event =
+        IntCounter::with_opts(Opts::new("nostr_cmd_event_total", "EVENT commands")).unwrap();
+    let cmd_close =
+        IntCounter::with_opts(Opts::new("nostr_cmd_close_total", "CLOSE commands")).unwrap();
+    let cmd_auth =
+        IntCounter::with_opts(Opts::new("nostr_cmd_auth_total", "AUTH commands")).unwrap();
     let disconnects = IntCounterVec::new(
         Opts::new("nostr_disconnects_total", "Client disconnects"),
         vec!["reason"].as_slice(),
@@ -747,9 +732,9 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         db_connections,
         disconnects,
         query_aborts,
-	    cmd_req,
-	    cmd_event,
-	    cmd_close,
+        cmd_req,
+        cmd_event,
+        cmd_close,
         cmd_auth,
     };
     (registry, metrics)
@@ -1118,8 +1103,12 @@ async fn nostr_server(
     if settings.authorization.nip42_auth {
         conn.generate_auth_challenge();
         if let Some(challenge) = conn.auth_challenge() {
-            ws_stream.send(
-                make_notice_message(&Notice::AuthChallenge(challenge.to_string()))).await.ok();
+            ws_stream
+                .send(make_notice_message(&Notice::AuthChallenge(
+                    challenge.to_string(),
+                )))
+                .await
+                .ok();
         }
     }
 
@@ -1402,9 +1391,8 @@ pub struct NostrMetrics {
     pub connections: IntCounter,     // count of websocket connections
     pub disconnects: IntCounterVec,  // client disconnects
     pub query_aborts: IntCounterVec, // count of queries aborted by server
-    pub cmd_req: IntCounter, // count of REQ commands received
-    pub cmd_event: IntCounter, // count of EVENT commands received
-    pub cmd_close: IntCounter, // count of CLOSE commands received
-    pub cmd_auth: IntCounter, // count of AUTH commands received
-
+    pub cmd_req: IntCounter,         // count of REQ commands received
+    pub cmd_event: IntCounter,       // count of EVENT commands received
+    pub cmd_close: IntCounter,       // count of CLOSE commands received
+    pub cmd_auth: IntCounter,        // count of AUTH commands received
 }

@@ -396,8 +396,7 @@ pub async fn db_writer(
                 if let Some(_balance) = user_balance {
                     let pubkey = Keys::from_pk_str(&event.pubkey)?;
                     repo.update_account_balance(&pubkey, false, cost_per_event)
-                        .await
-                        .unwrap();
+                        .await?;
                 }
             }
             if let Some(ref lim) = lim_opt {

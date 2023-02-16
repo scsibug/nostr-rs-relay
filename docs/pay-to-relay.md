@@ -15,8 +15,6 @@ enabled = true
 admission_cost = 1000
 # The cost in sats per post
 cost_per_event = 0
-# Tor proxy url (not implemented)
-#tor_proxy = "socks5://localhost:9050"
 # Url of lnbits api
 node_url = "https://<IP of node>:5001/api/v1/payments"
 # LNBits api secret
@@ -28,6 +26,8 @@ terms_message = """This service ....
 sign_ups = true 
 secret_key = "<nostr secret key to send dms>"
 ```
+
+The LNBits instance must have a signed HTTPS a self signed certificate will not work.  
 
 ## Design Overview
 

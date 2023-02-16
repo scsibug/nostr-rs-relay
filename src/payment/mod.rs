@@ -151,6 +151,7 @@ impl Payment {
                         if let Some(invoice_info) = self.repo.get_unpaid_invoice(&keys).await? {
                             match self.check_invoice_status(&invoice_info.payment_hash).await? {
                                 InvoiceStatus::Paid => {
+                                    self.repo.admit_account(&keys, self.settings.pay_to_relay.admission_cost).await?;
                                     self.payment_tx.send(PaymentMessage::AccountAdmitted(pubkey)).ok();
                                 }
                                 _ => {
@@ -160,19 +161,14 @@ impl Payment {
                         }
                     }
                     Ok(PaymentMessage::InvoicePaid(payment_hash)) => {
-                        //let pre_image_hash = &sha256::Hash::hash(callback.preimage.as_bytes()).to_string();
-                        // debug!("{pre_image_hash}");
-                        // debug!("{}", callback.payment_hash);
-                        //if callback.payment_hash.ne(pre_image_hash) {
-                        //    return Err(Error::PaymentHash)
-                        //}
-                        let pubkey = self.repo
-                            .update_invoice(&payment_hash, InvoiceStatus::Paid)
-                            .await
-                            .unwrap();
+                        if self.check_invoice_status(&payment_hash).await?.eq(&InvoiceStatus::Paid) {
+                            let pubkey = self.repo
+                                .update_invoice(&payment_hash, InvoiceStatus::Paid)
+                                .await?;
 
-                         let key = Keys::from_pk_str(&pubkey)?;
-                         self.repo.admit_account(&key, self.settings.pay_to_relay.admission_cost).await.unwrap();
+                            let key = Keys::from_pk_str(&pubkey)?;
+                            self.repo.admit_account(&key, self.settings.pay_to_relay.admission_cost).await?;
+                        }
                     }
                     Ok(_) => {
                         // For this variant nothing need to be done here
@@ -231,7 +227,7 @@ impl Payment {
         // I think it will continue to send DMs with the invoice
         // If client continues to try and write to the relay (will be same invoice)
         let key = Keys::from_pk_str(pubkey)?;
-        if !self.repo.create_account(&key).await.unwrap() {
+        if !self.repo.create_account(&key).await? {
             if let Ok(Some(invoice_info)) = self.repo.get_unpaid_invoice(&key).await {
                 return Ok(invoice_info);
             }
@@ -256,7 +252,6 @@ impl Payment {
     pub async fn check_invoice_status(&self, payment_hash: &str) -> Result<InvoiceStatus, Error> {
         // Check base if passed expiry time
         let status = self.processor.check_invoice(payment_hash).await?;
-
         self.repo
             .update_invoice(payment_hash, status.clone())
             .await?;

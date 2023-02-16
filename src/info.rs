@@ -69,24 +69,25 @@ impl From<Settings> for RelayInfo {
         }
 
         let i = c.info;
+        let p = c.pay_to_relay;
         
         let limitations = Limitation {
-            payment_required: Some(c.pay_to_relay.enabled),
+            payment_required: Some(p.enabled),
         };
 
-        let (payment_url, fees) = if c.pay_to_relay.enabled {
-            let admission_fee = if c.pay_to_relay.admission_cost > 0 {
+        let (payment_url, fees) = if p.enabled {
+            let admission_fee = if p.admission_cost > 0 {
                 Some(vec![Fee {
-                    amount: c.pay_to_relay.admission_cost,
+                    amount: p.admission_cost,
                     unit: UNIT.to_string(),
                 }])
             } else {
                 None
             };
 
-            let post_fee = if c.pay_to_relay.cost_per_event > 0 {
+            let post_fee = if p.cost_per_event > 0 {
                 Some(vec![Fee {
-                    amount: c.pay_to_relay.cost_per_event,
+                    amount: p.cost_per_event,
                     unit: UNIT.to_string(),
                 }])
             } else {
@@ -98,7 +99,7 @@ impl From<Settings> for RelayInfo {
                 publication: post_fee,
             };
 
-            let payment_url = if c.pay_to_relay.enabled && i.relay_url.is_some() {
+            let payment_url = if p.enabled && i.relay_url.is_some() {
                 Some(format!(
                     "{}join",
                     i.relay_url.clone().unwrap().replace("ws", "http")
