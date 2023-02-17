@@ -217,11 +217,11 @@ pub async fn submitted_event_validation(
                                     &decision.message().unwrap_or_else(|| "".to_string()),
                                 ))
                                 .ok();
-                            continue;
                         }
 
-                        // event admited for further processing
+                        continue;
                     }
+                    // event admited for further processing
                 }
                 Err(e) => {
                     warn!("GRPC server error: {:?}", e);

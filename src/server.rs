@@ -459,9 +459,8 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // build a repository for events
         let repo = db::build_repo(&settings, metrics.clone()).await;
 
-        // start the database writer task.  Give it a channel for
-        // writing events, and for publishing events that have been
-        // written (to all connected clients).
+        // start validation task.  Give it a channel for writing events,
+        // and for publishing events are validated and ready to store/broadcast.
         tokio::task::spawn(
             validation::submitted_event_validation(
                 repo.clone(),
