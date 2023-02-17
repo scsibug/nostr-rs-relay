@@ -104,7 +104,7 @@ http {
 
 ### Nginx Notes
 
-The above configuration was tested on `nginx` `1.18.0` was tested on `Ubuntu 20.04`.
+The above configuration was tested on `nginx` `1.18.0` on `Ubuntu` `20.04` and `22.04`
 
 For help installing `nginx` on `Ubuntu`, see [this guide](https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-20-04).
 

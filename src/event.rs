@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
 use tracing::{debug, info};
+use crate::event::EventWrapper::WrappedEvent;
+use crate::event::EventWrapper::WrappedAuth;
 
 lazy_static! {
     /// Secp256k1 verification instance.
@@ -83,17 +85,27 @@ where
     }
 }
 
+
+pub enum EventWrapper {
+    WrappedEvent(Event),
+    WrappedAuth(Event)
+}
+
 /// Convert network event to parsed/validated event.
-impl From<EventCmd> for Result<Event> {
-    fn from(ec: EventCmd) -> Result<Event> {
+impl From<EventCmd> for Result<EventWrapper> {
+    fn from(ec: EventCmd) -> Result<EventWrapper> {
         // ensure command is correct
         if ec.cmd == "EVENT" {
             ec.event.validate().map(|_| {
                 let mut e = ec.event;
                 e.build_index();
                 e.update_delegation();
-                e
+                WrappedEvent(e)
             })
+        } else if ec.cmd == "AUTH" {
+            // we don't want to validate the event here, because NIP-42 can be disabled
+            // it will be validated later during the authentication process
+            Ok(WrappedAuth(ec.event))
         } else {
             Err(CommandUnknownError)
         }
@@ -125,6 +137,28 @@ impl Event {
         self.kind >= 20000 && self.kind < 30000
     }
 
+    /// Is this event currently expired?
+    pub fn is_expired(&self) -> bool {
+        if let Some(exp) = self.expiration() {
+            exp <= unix_time()
+        } else {
+            false
+        }
+    }
+
+    /// Determine the time at which this event should expire
+    pub fn expiration(&self) -> Option<u64> {
+        let default = "".to_string();
+        let dvals:Vec<&String> = self.tags
+            .iter()
+            .filter(|x| !x.is_empty())
+            .filter(|x| x.get(0).unwrap() == "expiration")
+            .map(|x| x.get(1).unwrap_or(&default)).take(1)
+            .collect();
+        let val_first = dvals.get(0);
+        val_first.and_then(|t| t.parse::<u64>().ok())
+    }
+
     /// Should this event be replaced with newer timestamps from same author?
     #[must_use] pub fn is_replaceable(&self) -> bool {
         self.kind == 0 || self.kind == 3 || self.kind == 41 || (self.kind >= 10000 && self.kind < 20000)
@@ -134,8 +168,6 @@ impl Event {
     #[must_use] pub fn is_param_replaceable(&self) -> bool {
         self.kind >= 30000 && self.kind < 40000
     }
-
-    /// What is the replaceable `d` tag value?
 
     /// Should this event be replaced with newer timestamps from same author, for distinct `d` tag values?
     #[must_use] pub fn distinct_param(&self) -> Option<String> {
@@ -315,7 +347,7 @@ impl Event {
     }
 
     /// Convert event to canonical representation for signing.
-    fn to_canonical(&self) -> Option<String> {
+    pub fn to_canonical(&self) -> Option<String> {
         // create a JsonValue for each event element
         let mut c: Vec<Value> = vec![];
         // id must be set to 0
@@ -654,4 +686,85 @@ mod tests {
         assert_eq!(event.distinct_param(), Some("".to_string()));
     }
 
+    #[test]
+    fn expiring_event_none() {
+        // regular events do not expire
+        let mut event = Event::simple_event();
+        event.kind = 7;
+        event.tags = vec![
+            vec!["test".to_string(), "foo".to_string()],
+        ];
+        assert_eq!(event.expiration(), None);
+    }
+
+    #[test]
+    fn expiring_event_empty() {
+        // regular events do not expire
+        let mut event = Event::simple_event();
+        event.kind = 7;
+        event.tags = vec![
+            vec!["expiration".to_string()],
+        ];
+        assert_eq!(event.expiration(), None);
+    }
+
+    #[test]
+    fn expiring_event_future() {
+        // a normal expiring event
+        let exp:u64 = 1676264138;
+        let mut event = Event::simple_event();
+        event.kind = 1;
+        event.tags = vec![
+            vec!["expiration".to_string(), exp.to_string()],
+        ];
+        assert_eq!(event.expiration(), Some(exp));
+    }
+
+    #[test]
+    fn expiring_event_negative() {
+        // expiration set to a negative value (invalid)
+        let exp:i64 = -90;
+        let mut event = Event::simple_event();
+        event.kind = 1;
+        event.tags = vec![
+            vec!["expiration".to_string(), exp.to_string()],
+        ];
+        assert_eq!(event.expiration(), None);
+    }
+
+    #[test]
+    fn expiring_event_zero() {
+        // a normal expiring event set to zero
+        let exp:i64 = 0;
+        let mut event = Event::simple_event();
+        event.kind = 1;
+        event.tags = vec![
+            vec!["expiration".to_string(), exp.to_string()],
+        ];
+        assert_eq!(event.expiration(), Some(0));
+    }
+
+    #[test]
+    fn expiring_event_fraction() {
+        // expiration is fractional (invalid)
+        let exp:f64 = 23.334;
+        let mut event = Event::simple_event();
+        event.kind = 1;
+        event.tags = vec![
+            vec!["expiration".to_string(), exp.to_string()],
+        ];
+        assert_eq!(event.expiration(), None);
+    }
+
+    #[test]
+    fn expiring_event_multiple() {
+        // multiple values, we just take the first
+        let mut event = Event::simple_event();
+        event.kind = 1;
+        event.tags = vec![
+            vec!["expiration".to_string(), (10).to_string()],
+            vec!["expiration".to_string(), (20).to_string()],
+        ];
+        assert_eq!(event.expiration(), Some(10));
+    }
 }

@@ -20,6 +20,7 @@ pub struct SubmittedEvent {
     pub source_ip: String,
     pub origin: Option<String>,
     pub user_agent: Option<String>,
+    pub auth_pubkey: Option<Vec<u8>>,
 }
 
 
@@ -110,7 +111,10 @@ pub async fn submitted_event_validation(
                     &event.kind
                 );
                 notice_tx
-                    .try_send(Notice::blocked(event.id, "event kind is blocked by relay"))
+                    .try_send(Notice::blocked(
+                        event.id,
+                        "event kind is blocked by relay"
+                    ))
                     .ok();
                 continue;
             }
@@ -142,6 +146,7 @@ pub async fn submitted_event_validation(
                             uv.name.to_string(),
                             event.get_author_prefix()
                         );
+
                     } else {
                         info!(
                             "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
@@ -178,7 +183,7 @@ pub async fn submitted_event_validation(
         }
 
         // nip05 address
-        let nip05_address: Option<crate::nip05::Nip05Name> =
+        let nip05_address : Option<crate::nip05::Nip05Name> =
             validation.and_then(|x| x.ok().map(|y| y.name));
 
         // optional GRPC client check
@@ -192,6 +197,7 @@ pub async fn submitted_event_validation(
                     subm_event.origin,
                     subm_event.user_agent,
                     nip05_address,
+                    subm_event.auth_pubkey,
                 )
                 .await;
             match decision_res {

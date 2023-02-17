@@ -68,6 +68,10 @@ pub enum Error {
     AuthzError,
     #[error("Tonic GRPC error")]
     TonicError(tonic::Status),
+    #[error("Invalid AUTH message")]
+    AuthFailure,
+    #[error("I/O Error")]
+    IoError(std::io::Error),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -141,5 +145,11 @@ impl From<tonic::Status> for Error {
     /// Wrap Config error
     fn from(r: tonic::Status) -> Self {
         Error::TonicError(r)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(r: std::io::Error) -> Self {
+        Error::IoError(r)
     }
 }

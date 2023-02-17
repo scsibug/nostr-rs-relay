@@ -16,6 +16,10 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Administrative contact URI
 #contact = "mailto:contact@example.com"
 
+# Favicon location.  Relative to the current directory.  Assumes an
+# ICO format.
+#favicon = "favicon.ico"
+
 [diagnostics]
 # Enable tokio tracing (for use with tokio-console)
 #tracing = false
@@ -140,6 +144,8 @@ reject_future_seconds = 1800
 #  "35d26e4690cbe1a898af61cc3515661eb5fa763b57bd0b42e45099c8b32fd50f",
 #  "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
 #]
+# Enable NIP-42 authentication
+#nip42_auth = false
 
 [verified_users]
 # NIP-05 verification of users.  Can be "enabled" to require NIP-05
