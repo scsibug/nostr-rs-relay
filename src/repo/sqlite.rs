@@ -6,7 +6,7 @@ use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
 use crate::repo::sqlite_migration::{STARTUP_SQL,upgrade_db};
-use crate::utils::{is_hex};
+use crate::utils::{is_hex,unix_time};
 use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::subscription::{ReqFilter, Subscription};
 use crate::server::NostrMetrics;
@@ -135,8 +135,8 @@ impl SqliteRepo {
         }
         // ignore if the event hash is a duplicate.
         let mut ins_count = tx.execute(
-            "INSERT OR IGNORE INTO event (event_hash, created_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'), FALSE);",
-            params![id_blob, e.created_at, e.kind, pubkey_blob, delegator_blob, event_str]
+            "INSERT OR IGNORE INTO event (event_hash, created_at, expires_at, kind, author, delegated_by, content, first_seen, hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%s','now'), FALSE);",
+            params![id_blob, e.created_at, e.expiration(), e.kind, pubkey_blob, delegator_blob, event_str]
         )? as u64;
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
@@ -251,7 +251,8 @@ impl SqliteRepo {
 impl NostrRepo for SqliteRepo {
 
     async fn start(&self) -> Result<()> {
-        db_checkpoint_task(self.maint_pool.clone(), Duration::from_secs(60), self.checkpoint_in_progress.clone()).await
+        db_checkpoint_task(self.maint_pool.clone(), Duration::from_secs(60), self.checkpoint_in_progress.clone()).await?;
+        cleanup_expired(self.maint_pool.clone(), Duration::from_secs(5), self.write_in_progress.clone()).await
     }
 
     async fn migrate_up(&self) -> Result<usize> {
@@ -280,10 +281,10 @@ impl NostrRepo for SqliteRepo {
                 let wr = SqliteRepo::persist_event(&mut conn, &e);
                 match wr {
                     Err(SqlError(rusqlite::Error::SqliteFailure(e,_))) => {
-                        // this basically means that NIP-05 was
-                        // writing to the database between us reading
-                        // and promoting the connection to a write
-                        // lock.
+                        // this basically means that NIP-05 or another
+                        // writer was using the database between us
+                        // reading and promoting the connection to a
+                        // write lock.
                         info!("event write failed, DB locked (attempt: {}); sqlite err: {}",
                         attempts, e.extended_code);
                     },
@@ -375,7 +376,7 @@ impl NostrRepo for SqliteRepo {
                     let mut last_successful_send = Instant::now();
                     // execute the query.
                     // make the actual SQL query (with parameters inserted) available
-                    conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
+                    conn.trace(Some(|x| {info!("SQL trace: {:?}", x)}));
                     let mut stmt = conn.prepare_cached(&q)?;
                     let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
 
@@ -854,6 +855,9 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     }
     // never display hidden events
     query.push_str(" WHERE hidden!=TRUE");
+    // never display hidden events
+    filter_components.push("(expires_at IS NULL OR expires_at > ?)".to_string());
+    params.push(Box::new(unix_time()));
     // build filter component conditions
     if !filter_components.is_empty() {
         query.push_str(" AND ");
@@ -941,6 +945,54 @@ pub fn build_pool(
         name, min_size, max_size
     );
     pool
+}
+
+/// Cleanup expired events on a regular basis
+async fn cleanup_expired(pool: SqlitePool, frequency: Duration, write_in_progress: Arc<Mutex<u64>>) -> Result<()> {
+    tokio::task::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(frequency) => {
+                    if let Ok(mut conn) = pool.get() {
+                        let mut _guard:Option<MutexGuard<u64>> = None;
+                        // take a write lock to prevent event writes
+                        // from proceeding while we are deleting
+                        // events.  This isn't necessary, but
+                        // minimizes the chances of forcing event
+                        // persistence to be retried.
+                        _guard = Some(write_in_progress.lock().await);
+                        let start = Instant::now();
+                        let exp_res = tokio::task::spawn_blocking(move || {
+                            delete_expired(&mut conn)
+                        }).await;
+                        match exp_res {
+                            Ok(Ok(count)) => {
+                                if count > 0 {
+                                    info!("removed {} expired events in: {:?}", count, start.elapsed());
+                                }
+                            },
+                            _ => {
+                                // either the task or underlying query failed
+                                info!("there was an error cleaning up expired events: {:?}", exp_res);
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    });
+    Ok(())
+}
+
+/// Execute a query to delete all expired events
+pub fn delete_expired(conn: &mut PooledConnection) -> Result<usize> {
+    let tx = conn.transaction()?;
+    let update_count = tx.execute(
+        "DELETE FROM event WHERE expires_at <= ?",
+        params![unix_time()],
+    )?;
+    tx.commit()?;
+    Ok(update_count)
 }
 
 /// Perform database WAL checkpoint on a regular basis

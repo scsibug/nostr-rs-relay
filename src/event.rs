@@ -137,6 +137,15 @@ impl Event {
         self.kind >= 20000 && self.kind < 30000
     }
 
+    /// Is this event currently expired?
+    pub fn is_expired(&self) -> bool {
+        if let Some(exp) = self.expiration() {
+            exp <= unix_time()
+        } else {
+            false
+        }
+    }
+
     /// Determine the time at which this event should expire
     pub fn expiration(&self) -> Option<u64> {
         let default = "".to_string();

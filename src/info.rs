@@ -29,7 +29,7 @@ pub struct RelayInfo {
 /// Convert an Info configuration into public Relay Info
 impl From<Settings> for RelayInfo {
     fn from(c: Settings) -> Self {
-        let mut supported_nips = vec![1, 2, 9, 11, 12, 15, 16, 20, 22, 33];
+        let mut supported_nips = vec![1, 2, 9, 11, 12, 15, 16, 20, 22, 33, 40];
 
         if c.authorization.nip42_auth {
             supported_nips.push(42);

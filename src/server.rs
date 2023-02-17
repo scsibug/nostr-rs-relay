@@ -791,11 +791,21 @@ async fn nostr_server(
                                 metrics.cmd_event.inc();
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} (cid: {}, kind: {})", id_prefix, cid, e.kind);
-                                // check if the event is too far in the future.
-                                if e.is_valid_timestamp(settings.options.reject_future_seconds) {
+                                // check if event is expired
+                                if e.is_expired() {
+                                    let notice = Notice::invalid(e.id, "The event has already expired");
+                                    ws_stream.send(make_notice_message(&notice)).await.ok();
+                                    // check if the event is too far in the future.
+                                } else if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
                                     let auth_pubkey = conn.auth_pubkey().and_then(|pubkey| hex::decode(&pubkey).ok());
-                                    let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string(), origin: client_info.origin.clone(), user_agent: client_info.user_agent.clone(), auth_pubkey };
+                                    let submit_event = SubmittedEvent {
+                                        event: e.clone(),
+                                        notice_tx: notice_tx.clone(),
+                                        source_ip: conn.ip().to_string(),
+                                        origin: client_info.origin.clone(),
+                                        user_agent: client_info.user_agent.clone(),
+                                        auth_pubkey };
                                     event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                                 } else {
