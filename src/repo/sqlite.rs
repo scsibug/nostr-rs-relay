@@ -252,7 +252,7 @@ impl NostrRepo for SqliteRepo {
 
     async fn start(&self) -> Result<()> {
         db_checkpoint_task(self.maint_pool.clone(), Duration::from_secs(60), self.checkpoint_in_progress.clone()).await?;
-        cleanup_expired(self.maint_pool.clone(), Duration::from_secs(5), self.write_in_progress.clone()).await
+        cleanup_expired(self.maint_pool.clone(), Duration::from_secs(600), self.write_in_progress.clone()).await
     }
 
     async fn migrate_up(&self) -> Result<usize> {
