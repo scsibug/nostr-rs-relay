@@ -198,13 +198,11 @@ pub async fn db_writer(
                         if !user_admitted {
                             debug!("user: {}, is not admitted", &event.pubkey);
 
-                            // Only send admission message and invoice if sign ups enabled
-                            if settings.pay_to_relay.sign_ups {
-                                payment_tx
-                                    .send(PaymentMessage::NewAccount(event.pubkey))
-                                    .ok();
-                            }
-
+                            // If the user is in DB but not admitted
+                            // Send meeage to payment thread to check if outstanding invoice has been paid
+                            payment_tx
+                                .send(PaymentMessage::CheckAccount(event.pubkey))
+                                .ok();
                             notice_tx
                                 .try_send(Notice::blocked(event.id, "User is not admitted"))
                                 .ok();
@@ -318,7 +316,16 @@ pub async fn db_writer(
         if let Some(ref mut c) = grpc_client {
             trace!("checking if grpc permits");
             let grpc_start = Instant::now();
-            let decision_res = c.admit_event(&event, &subm_event.source_ip, subm_event.origin, subm_event.user_agent, nip05_address, subm_event.auth_pubkey).await;
+            let decision_res = c
+                .admit_event(
+                    &event,
+                    &subm_event.source_ip,
+                    subm_event.origin,
+                    subm_event.user_agent,
+                    nip05_address,
+                    subm_event.auth_pubkey,
+                )
+                .await;
             match decision_res {
                 Ok(decision) => {
                     if !decision.permitted() {

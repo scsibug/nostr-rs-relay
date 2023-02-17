@@ -47,11 +47,12 @@ Authors are stored in a dedicated table. This tracks:
 Invoice information is stored in a dedicated table. This tracks:
 * `payment_hash` the payment hash of the lighting invoice
 * `pubkey` of the author the invoice is issued to
+* `invoice` bolt11 invoice
 * `amount` in sats
 * `status` (Paid/Unpaid/Expired)
 * `description`
-* `confirmed_at` timestamp of payment
 * `created_at` timestamp of creation
+* `confirmed_at` timestamp of payment
 
 ### Event Handling 
 
