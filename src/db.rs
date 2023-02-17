@@ -71,6 +71,8 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
     // Panic on migration failure
     let version = repo.migrate_up().await.unwrap();
     info!("Postgres migration completed, at v{}", version);
+    // startup scheduled tasks
+    repo.start().await.ok();
     repo
 }
 

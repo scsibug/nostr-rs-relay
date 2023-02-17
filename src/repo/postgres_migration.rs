@@ -35,6 +35,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
         m002::rebuild_tags(db).await?;
     }
     run_migration(m003::migration(), db).await;
+    run_migration(m004::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -251,6 +252,26 @@ mod m003 {
                 r#"
 -- Add unique constraint on tag
 ALTER TABLE tag ADD CONSTRAINT unique_constraint_name UNIQUE (event_id, "name", value, value_hex);
+        "#,
+            ],
+        }
+    }
+}
+
+mod m004 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 4;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Add expiration time for events
+ALTER TABLE event ADD COLUMN expires_at timestamp(0) with time zone;
+-- Index expiration time
+CREATE INDEX event_expires_at_idx ON "event" (expires_at);
         "#,
             ],
         }
