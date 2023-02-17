@@ -32,6 +32,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fs::File;
+use std::io::BufReader;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -62,6 +65,7 @@ async fn handle_web_request(
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
+    favicon: Option<Vec<u8>>,
     registry: Registry,
     metrics: NostrMetrics,
 ) -> Result<Response<Body>, Infallible> {
@@ -189,6 +193,23 @@ async fn handle_web_request(
                .body(Body::from(buffer))
                .unwrap())
         }
+        ("/favicon.ico", false) => {
+            if let Some(favicon_bytes) = favicon {
+                info!("returning favicon");
+                Ok(Response::builder()
+                   .status(StatusCode::OK)
+                   .header("Content-Type", "image/x-icon")
+                   // 1 month cache
+                   .header("Cache-Control", "public, max-age=2419200")
+                   .body(Body::from(favicon_bytes))
+                   .unwrap())
+            } else {
+                Ok(Response::builder()
+                   .status(StatusCode::NOT_FOUND)
+                   .body(Body::from(""))
+                   .unwrap())
+            }
+        }
         (_, _) => {
             //handle any other url
             Ok(Response::builder()
@@ -306,6 +327,15 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         cmd_auth,
     };
     (registry,metrics)
+}
+
+fn file_bytes(path: &str) -> Result<Vec<u8>> {
+    let f = File::open(path)?;
+    let mut reader = BufReader::new(f);
+    let mut buffer = Vec::new();
+    // Read file into vector.
+    reader.read_to_end(&mut buffer)?;
+    Ok(buffer)
 }
 
 /// Start running a Nostr relay server.
@@ -454,6 +484,12 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         //let pool_monitor = pool.clone();
         //tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
 
+        // Read in the favicon if it exists
+        let favicon = settings.info.favicon.as_ref().and_then(|x| {
+            info!("reading favicon...");
+            file_bytes(x).ok()
+        });
+
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
         let make_svc = make_service_fn(|conn: &AddrStream| {
@@ -463,6 +499,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let event = event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
+            let favicon = favicon.clone();
             let registry = registry.clone();
             let metrics = metrics.clone();
             async move {
@@ -476,6 +513,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         bcast.clone(),
                         event.clone(),
                         stop.subscribe(),
+                        favicon.clone(),
                         registry.clone(),
                         metrics.clone(),
                     )

@@ -12,6 +12,7 @@ pub struct Info {
     pub description: Option<String>,
     pub pubkey: Option<String>,
     pub contact: Option<String>,
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +219,7 @@ impl Default for Settings {
                 description: None,
                 pubkey: None,
                 contact: None,
+                favicon: None,
             },
             diagnostics: Diagnostics { tracing: false },
             database: Database {
