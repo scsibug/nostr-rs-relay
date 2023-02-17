@@ -12,12 +12,16 @@ pub mod nauthz_grpc {
 // A decision for the DB to act upon
 pub trait AuthzDecision: Send + Sync {
     fn permitted(&self) -> bool;
+    fn denied(&self) -> bool;
     fn message(&self) -> Option<String>;
 }
 
 impl AuthzDecision for EventReply {
     fn permitted(&self) -> bool {
         self.decision == Decision::Permit as i32
+    }
+    fn denied(&self) -> bool {
+        self.decision == Decision::Deny as i32
     }
     fn message(&self) -> Option<String> {
         self.message.clone()

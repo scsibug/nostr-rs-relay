@@ -1,10 +1,9 @@
 //! Event persistence and querying
 use crate::config::Settings;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::event::Event;
 use crate::notice::Notice;
 use crate::server::NostrMetrics;
-use crate::nauthz;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
 use r2d2;
@@ -23,13 +22,10 @@ use tracing::{debug, info, trace, warn};
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
 
-/// Events submitted from a client, with a return channel for notices
-pub struct SubmittedEvent {
+#[derive(Debug)]
+pub struct AdmittedEvent {
     pub event: Event,
     pub notice_tx: tokio::sync::mpsc::Sender<Notice>,
-    pub source_ip: String,
-    pub origin: Option<String>,
-    pub user_agent: Option<String>,
 }
 
 /// Database file
@@ -77,26 +73,18 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
 pub async fn db_writer(
     repo: Arc<dyn NostrRepo>,
     settings: Settings,
-    mut event_rx: tokio::sync::mpsc::Receiver<SubmittedEvent>,
+    mut admitted_event_rx: tokio::sync::mpsc::Receiver<AdmittedEvent>,
     bcast_tx: tokio::sync::broadcast::Sender<Event>,
-    metadata_tx: tokio::sync::broadcast::Sender<Event>,
     mut shutdown: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<()> {
-    // are we performing NIP-05 checking?
-    let nip05_active = settings.verified_users.is_active();
-    // are we requriing NIP-05 user verification?
-    let nip05_enabled = settings.verified_users.is_enabled();
-
     //upgrade_db(&mut pool.get()?)?;
-
-    // Make a copy of the whitelist
-    let whitelist = &settings.authorization.pubkey_whitelist.clone();
 
     // get rate limit settings
     let rps_setting = settings.limits.messages_per_sec;
     let mut most_recent_rate_limit = Instant::now();
     let mut lim_opt = None;
     let clock = governor::clock::QuantaClock::default();
+
     if let Some(rps) = rps_setting {
         if rps > 0 {
             info!("Enabling rate limits for event creation ({}/sec)", rps);
@@ -104,17 +92,6 @@ pub async fn db_writer(
             lim_opt = Some(RateLimiter::direct(Quota::per_minute(quota)));
         }
     }
-    // create a client if GRPC is enabled.
-    // Check with externalized event admitter service, if one is defined.
-    let mut grpc_client = if let Some(svr) = settings.grpc.event_admission_server {
-        Some(nauthz::EventAuthzService::connect(&svr).await)
-    } else {
-        None
-    };
-
-    //let gprc_client = settings.grpc.event_admission_server.map(|s| {
-//        event_admitter_connect(&s);
-//    });
 
     loop {
         if shutdown.try_recv().is_ok() {
@@ -122,7 +99,7 @@ pub async fn db_writer(
             break;
         }
         // call blocking read on channel
-        let next_event = event_rx.recv().await;
+        let next_event = admitted_event_rx.recv().await;
         // if the channel has closed, we will never get work
         if next_event.is_none() {
             break;
@@ -133,133 +110,6 @@ pub async fn db_writer(
         let subm_event = next_event.unwrap();
         let event = subm_event.event;
         let notice_tx = subm_event.notice_tx;
-        // check if this event is authorized.
-        if let Some(allowed_addrs) = whitelist {
-            // TODO: incorporate delegated pubkeys
-            // if the event address is not in allowed_addrs.
-            if !allowed_addrs.contains(&event.pubkey) {
-                debug!(
-                    "rejecting event: {}, unauthorized author",
-                    event.get_event_id_prefix()
-                );
-                notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "pubkey is not allowed to publish to this relay",
-                    ))
-                    .ok();
-                continue;
-            }
-        }
-
-        // Check that event kind isn't blacklisted
-        let kinds_blacklist = &settings.limits.event_kind_blacklist.clone();
-        if let Some(event_kind_blacklist) = kinds_blacklist {
-            if event_kind_blacklist.contains(&event.kind) {
-                debug!(
-                    "rejecting event: {}, blacklisted kind: {}",
-                    &event.get_event_id_prefix(),
-                    &event.kind
-                );
-                notice_tx
-                    .try_send(Notice::blocked(
-                        event.id,
-                        "event kind is blocked by relay"
-                    ))
-                    .ok();
-                continue;
-            }
-        }
-
-        // send any metadata events to the NIP-05 verifier
-        if nip05_active && event.is_kind_metadata() {
-            // we are sending this prior to even deciding if we
-            // persist it.  this allows the nip05 module to
-            // inspect it, update if necessary, or persist a new
-            // event and broadcast it itself.
-            metadata_tx.send(event.clone()).ok();
-        }
-
-        // get a validation result for use in verification and GPRC
-        let validation = if nip05_active {
-            Some(repo.get_latest_user_verification(&event.pubkey).await)
-        } else {
-            None
-        };
-
-        // check for  NIP-05 verification
-        if nip05_enabled && validation.is_some() {
-            match validation.as_ref().unwrap() {
-                Ok(uv) => {
-                    if uv.is_valid(&settings.verified_users) {
-                        info!(
-                            "new event from verified author ({:?},{:?})",
-                            uv.name.to_string(),
-                            event.get_author_prefix()
-                        );
-
-                    } else {
-                        info!(
-                            "rejecting event, author ({:?} / {:?}) verification invalid (expired/wrong domain)",
-                            uv.name.to_string(),
-                            event.get_author_prefix()
-                        );
-                        notice_tx
-                            .try_send(Notice::blocked(
-                                event.id,
-                                "NIP-05 verification is no longer valid (expired/wrong domain)",
-                            ))
-                            .ok();
-                        continue;
-                    }
-                }
-                Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
-                    debug!(
-                        "no verification records found for pubkey: {:?}",
-                        event.get_author_prefix()
-                    );
-                    notice_tx
-                        .try_send(Notice::blocked(
-                            event.id,
-                            "NIP-05 verification needed to publish events",
-                        ))
-                        .ok();
-                    continue;
-                }
-                Err(e) => {
-                    warn!("checking nip05 verification status failed: {:?}", e);
-                    continue;
-                }
-            }
-        }
-
-        // nip05 address
-        let nip05_address : Option<crate::nip05::Nip05Name> = validation.and_then(|x| x.ok().map(|y| y.name));
-
-        // GRPC check
-        if let Some(ref mut c) = grpc_client {
-            trace!("checking if grpc permits");
-            let grpc_start = Instant::now();
-            let decision_res = c.admit_event(&event, &subm_event.source_ip, subm_event.origin, subm_event.user_agent, nip05_address).await;
-            match decision_res {
-                Ok(decision) => {
-                    if !decision.permitted() {
-                        // GPRC returned a decision to reject this event
-                        info!("GRPC rejected event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
-                              event.get_event_id_prefix(),
-                              event.kind,
-                              event.get_author_prefix(),
-                              grpc_start.elapsed(),
-                              subm_event.source_ip);
-                        notice_tx.try_send(Notice::blocked(event.id, &decision.message().unwrap_or_else(|| "".to_string()))).ok();
-                        continue;
-                    }
-                },
-                Err(e) => {
-                    warn!("GRPC server error: {:?}", e);
-                }
-            }
-        }
 
         // TODO: cache recent list of authors to remove a DB call.
         let start = Instant::now();
@@ -280,12 +130,11 @@ pub async fn db_writer(
                         notice_tx.try_send(Notice::duplicate(event.id)).ok();
                     } else {
                         info!(
-                            "persisted event: {:?} (kind: {}) from: {:?} in: {:?} (IP: {:?})",
+                            "persisted event: {:?} (kind: {}) from: {:?} in: {:?}",
                             event.get_event_id_prefix(),
                             event.kind,
                             event.get_author_prefix(),
                             start.elapsed(),
-                            subm_event.source_ip,
                         );
                         event_write = true;
                         // send this out to all clients

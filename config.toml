@@ -119,9 +119,13 @@ reject_future_seconds = 1800
 # readers from consuming memory.
 #broadcast_buffer = 16384
 
+# Event submit channel buffer size, in number of events
+#event_submit_buffer = 4096
+
 # Event persistence buffer size, in number of events.  This provides
 # backpressure to senders if writes are slow.
 #event_persist_buffer = 4096
+
 
 # Event kind blacklist. Events with these kinds will be discarded.
 #event_kind_blacklist = [

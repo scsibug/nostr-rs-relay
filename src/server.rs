@@ -3,9 +3,9 @@ use crate::close::Close;
 use crate::close::CloseCmd;
 use crate::config::{Settings, VerifiedUsersMode};
 use crate::conn;
+use crate::db::AdmittedEvent;
 use crate::repo::NostrRepo;
 use crate::db;
-use crate::db::SubmittedEvent;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::event::EventCmd;
@@ -13,6 +13,8 @@ use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::subscription::Subscription;
+use crate::validation;
+use crate::validation::SubmittedEvent;
 use prometheus::IntCounterVec;
 use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, IntCounter, HistogramOpts, Opts, Registry, TextEncoder};
@@ -57,7 +59,7 @@ async fn handle_web_request(
     settings: Settings,
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
-    event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
+    submitted_event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     shutdown: Receiver<()>,
     registry: Registry,
     metrics: NostrMetrics,
@@ -120,7 +122,7 @@ async fn handle_web_request(
                                     settings,
                                     ws_stream,
                                     broadcast,
-                                    event_tx,
+                                    submitted_event_tx,
                                     shutdown,
                                     metrics,
                                 ));
@@ -360,22 +362,47 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         .unwrap();
     // start tokio
     rt.block_on(async {
-        let broadcast_buffer_limit = settings.limits.broadcast_buffer;
-        let persist_buffer_limit = settings.limits.event_persist_buffer;
         let verified_users_active = settings.verified_users.is_active();
+        let submit_buffer_limit = settings.limits.event_submit_buffer;
+        let persist_buffer_limit = settings.limits.event_persist_buffer;
+        let broadcast_buffer_limit = settings.limits.broadcast_buffer;
+
         let settings = settings.clone();
+
         info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
         // to accomodate slower readers (messages are dropped if
         // clients can not keep up).
         let (bcast_tx, _) = broadcast::channel::<Event>(broadcast_buffer_limit);
-        // validated events that need to be persisted are sent to the
-        // database on via this channel.
-        let (event_tx, event_rx) = mpsc::channel::<SubmittedEvent>(persist_buffer_limit);
+
+        // CHANNELS FLOW:
+        // WS_EVENT
+        // -> SUBMITTED (event validaiton, optional submisison grpc server)
+        // submitted channel  -> |
+        // grpc client        -> |-> ADMITTED (db_write if not ephemeral, broadcast to other clients)
+
+        // submitted events from ws that need to be validated
+        // and admitted (optional grpc server admission)
+        let (
+            submitted_event_tx, 
+            submitted_event_rx
+        ) = mpsc::channel::<SubmittedEvent>(submit_buffer_limit);
+
+        // admitted events that need to be persisted (if ephemeral) are sent to the
+        // database on via this channel and broadcasted to other clients
+        let (
+            admitted_event_tx, 
+            admitted_event_rx
+        ) = mpsc::channel::<AdmittedEvent>(persist_buffer_limit);
+
         // establish a channel for letting all threads now about a
         // requested server shutdown.
-        let (invoke_shutdown, shutdown_listen) = broadcast::channel::<()>(1);
+        let (
+            invoke_shutdown, 
+            shutdown_listen
+        ) = broadcast::channel::<()>(1);
+
         // create a channel for sending any new metadata event.  These
         // will get processed relatively slowly (a potentially
         // multi-second blocking HTTP call) on a single thread, so we
@@ -384,11 +411,29 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // it difficult to setup initial metadata in bulk, since
         // overwhelming this will drop events and won't register
         // metadata events.
-        let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
+        let (
+            metadata_tx, 
+            metadata_rx
+        ) = broadcast::channel::<Event>(4096);
 
-	let (registry, metrics) = create_metrics();
+	    let (registry, metrics) = create_metrics();
         // build a repository for events
         let repo = db::build_repo(&settings, metrics.clone()).await;
+
+        // start the database writer task.  Give it a channel for
+        // writing events, and for publishing events that have been
+        // written (to all connected clients).
+        tokio::task::spawn(
+            validation::submitted_event_validation(
+                repo.clone(),
+                settings.clone(),
+                submitted_event_rx,
+                admitted_event_tx.clone(),
+                metadata_tx,
+                shutdown_listen.resubscribe(),
+            ));
+        info!("event submit validator created");
+
         // start the database writer task.  Give it a channel for
         // writing events, and for publishing events that have been
         // written (to all connected clients).
@@ -396,9 +441,8 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             db::db_writer(
                 repo.clone(),
                 settings.clone(),
-                event_rx,
+                admitted_event_rx,
                 bcast_tx.clone(),
-                metadata_tx.clone(),
                 shutdown_listen,
             ));
         info!("db writer created");
@@ -451,7 +495,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let repo = repo.clone();
             let remote_addr = conn.remote_addr();
             let bcast = bcast_tx.clone();
-            let event = event_tx.clone();
+            let event = submitted_event_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
             let registry = registry.clone();
@@ -548,7 +592,7 @@ async fn nostr_server(
     settings: Settings,
     mut ws_stream: WebSocketStream<Upgraded>,
     broadcast: Sender<Event>,
-    event_tx: mpsc::Sender<SubmittedEvent>,
+    submitted_event_tx: mpsc::Sender<SubmittedEvent>,
     mut shutdown: Receiver<()>,
     metrics: NostrMetrics,
 ) {
@@ -704,20 +748,20 @@ async fn nostr_server(
                              WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
                             debug!("websocket close from client (cid: {}, ip: {:?})",cid, conn.ip());
-			    metrics.disconnects.with_label_values(&["normal"]).inc();
+			                metrics.disconnects.with_label_values(&["normal"]).inc();
                             break;
                         },
                     Some(Err(WsError::Io(e))) => {
                         // IO errors are considered fatal
                         warn!("IO error (cid: {}, ip: {:?}): {:?}", cid, conn.ip(), e);
-			metrics.disconnects.with_label_values(&["error"]).inc();
+			            metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
                     x => {
                         // default condition on error is to close the client connection
                         info!("unknown error (cid: {}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
-			metrics.disconnects.with_label_values(&["error"]).inc();
+			            metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
@@ -730,7 +774,7 @@ async fn nostr_server(
                         // handle each type of message
                         let evid = ec.event_id().to_owned();
                         let parsed : Result<Event> = Result::<Event>::from(ec);
-			metrics.cmd_event.inc();
+			            metrics.cmd_event.inc();
                         match parsed {
                             Ok(e) => {
                                 let id_prefix:String = e.id.chars().take(8).collect();
@@ -739,7 +783,7 @@ async fn nostr_server(
                                 if e.is_valid_timestamp(settings.options.reject_future_seconds) {
                                     // Write this to the database.
                                     let submit_event = SubmittedEvent { event: e.clone(), notice_tx: notice_tx.clone(), source_ip: conn.ip().to_string(), origin: client_info.origin.clone(), user_agent: client_info.user_agent.clone()};
-                                    event_tx.send(submit_event).await.ok();
+                                    submitted_event_tx.send(submit_event).await.ok();
                                     client_published_event_count += 1;
                                 } else {
                                     info!("client: {} sent a far future-dated event", cid);
@@ -767,7 +811,7 @@ async fn nostr_server(
                         if conn.has_subscription(&s) {
                             info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
                         } else {
-			    metrics.cmd_req.inc();
+			                metrics.cmd_req.inc();
                             if let Some(ref lim) = sub_lim_opt {
                                 lim.until_ready_with_jitter(jitter).await;
                             }
@@ -794,7 +838,7 @@ async fn nostr_server(
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
                         if let Ok(c) = parsed {
-			    metrics.cmd_close.inc();
+			                metrics.cmd_close.inc();
                             // check if a query is currently
                             // running, and remove it if so.
                             let stop_tx = running_queries.remove(&c.id);
