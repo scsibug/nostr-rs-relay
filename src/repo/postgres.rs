@@ -550,6 +550,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
 
     let mut query = QueryBuilder::new("SELECT e.\"content\", e.created_at FROM \"event\" e WHERE ");
 
+    // This tracks whether we need to push a prefix AND before adding another clause
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
@@ -747,13 +748,9 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     } else {
         query.push("e.hidden != 1::bit(1)");
     }
-
     // never display expired events
-    if push_and {
-        query.push(" AND ");
-    }
     query
-        .push("(e.expires_at IS NULL OR e.expires_at > ")
+        .push(" AND (e.expires_at IS NULL OR e.expires_at > ")
         .push_bind(Utc.timestamp_opt(utils::unix_time() as i64, 0).unwrap()).push(")");
 
     // Apply per-filter limit to this query.
