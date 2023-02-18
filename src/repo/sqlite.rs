@@ -376,7 +376,7 @@ impl NostrRepo for SqliteRepo {
                     let mut last_successful_send = Instant::now();
                     // execute the query.
                     // make the actual SQL query (with parameters inserted) available
-                    conn.trace(Some(|x| {info!("SQL trace: {:?}", x)}));
+                    conn.trace(Some(|x| {trace!("SQL trace: {:?}", x)}));
                     let mut stmt = conn.prepare_cached(&q)?;
                     let mut event_rows = stmt.query(rusqlite::params_from_iter(p))?;
 
