@@ -86,7 +86,6 @@ pub struct PayToRelay {
     pub enabled: bool,
     pub admission_cost: u64, // Cost to have pubkey whitelisted
     pub cost_per_event: u64, // Cost author to pay per event
-    pub tor_proxy: Option<String>,
     pub node_url: String,
     pub api_secret: String,
     pub terms_message: String,
@@ -287,7 +286,6 @@ impl Default for Settings {
                 admission_cost: 4200,
                 cost_per_event: 0,
                 terms_message: "".to_string(),
-                tor_proxy: None,
                 node_url: "".to_string(),
                 api_secret: "".to_string(),
                 sign_ups: false,
