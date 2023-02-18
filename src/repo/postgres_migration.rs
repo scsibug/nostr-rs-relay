@@ -36,6 +36,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     }
     run_migration(m003::migration(), db).await;
     run_migration(m004::migration(), db).await;
+    run_migration(m005::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -268,12 +269,26 @@ mod m004 {
             serial_number: VERSION,
             sql: vec![
                 r#"
-<<<<<<< HEAD
 -- Add expiration time for events
 ALTER TABLE event ADD COLUMN expires_at timestamp(0) with time zone;
 -- Index expiration time
 CREATE INDEX event_expires_at_idx ON "event" (expires_at);
-=======
+        "#,
+            ],
+        }
+    }
+}
+
+mod m005 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 5;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
 -- Create account table
 CREATE TABLE "account" (
     pubkey varchar NOT NULL,
@@ -298,9 +313,9 @@ CREATE TABLE "invoice" (
     CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
     CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
->>>>>>> c72a41b (feat: pay to relay flow working)
         "#,
             ],
         }
     }
+
 }

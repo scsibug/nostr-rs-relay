@@ -688,13 +688,13 @@ ON CONFLICT (id) DO NOTHING"#,
     /// invoice must be unpaid and not expired
     async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>> {
         let query = r#"
-SELECT amount, payment_hash, description, invoice, pre_image
+SELECT amount, payment_hash, description, invoice
 FROM invoice
 WHERE pubkey = $1
 ORDER BY created_at DESC
 LIMIT 1;
         "#;
-        match sqlx::query_as::<_, (i32, String, String, String)>(query)
+        match sqlx::query_as::<_, (i64, String, String, String)>(query)
             .bind(pubkey.public_key().to_string())
             .fetch_optional(&self.conn)
             .await
