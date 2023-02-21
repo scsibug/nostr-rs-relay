@@ -932,7 +932,7 @@ pub fn build_pool(
         }
     }
     let manager = if settings.database.in_memory {
-        SqliteConnectionManager::memory()
+        SqliteConnectionManager::file("file::memory:?cache=shared")
             .with_flags(flags)
             .with_init(|c| c.execute_batch(STARTUP_SQL))
     } else {
