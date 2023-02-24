@@ -1,8 +1,8 @@
 # Reverse Proxy Setup Guide
 
 It is recommended to run `nostr-rs-relay` behind a reverse proxy such
-as `haproxy` or `nginx` to provide TLS termination.  Simple examples
-of `haproxy` and `nginx` configurations are documented here.
+as `haproxy`, `nginx` or `traefik` to provide TLS termination.  Simple examples
+for `haproxy`, `nginx` and `traefik` configurations are documented here.
 
 ## Minimal HAProxy Configuration
 
@@ -109,3 +109,91 @@ The above configuration was tested on `nginx` `1.18.0` on `Ubuntu` `20.04` and `
 For help installing `nginx` on `Ubuntu`, see [this guide](https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-20-04).
 
 For guidance on using `letsencrypt` to obtain a cert on `Ubuntu`, including an `nginx` plugin, see [this post](https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-20-04).
+
+
+## Example Traefik Configuration
+
+Assumptions:
+
+* `Traefik` version is `2.9` (other versions not tested).
+* `Traefik` is used for provisioning of Let's Encrypt certificates.
+* `Traefik` is running in `Docker`, using `docker compose` and labels for the static configuration. An equivalent setup useing a Traefik config file is possible too (but not covered here).
+* Strict Transport Security is enabled.
+* Hostname for the relay is `relay.example.com`, email adres for ACME certificates provider is `name@example.com`.
+* ipv6 is enabled, a viable private ipv6 subnet is specified in the example below. 
+* Relay is running on port `8080`.
+
+```
+version: '3'
+
+networks:
+  nostr:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:db8:a::/64
+          gateway: fd00:db8:a::1
+
+services:
+  traefik:
+    image: traefik:v2.9
+    networks:
+      nostr:
+    command:
+      - "--log.level=ERROR"
+      # letsencrypt configuration
+      - "--certificatesResolvers.http.acme.email==name@example.com"
+      - "--certificatesResolvers.http.acme.storage=/certs/acme.json"
+      - "--certificatesResolvers.http.acme.httpChallenge.entryPoint=http"
+      # define entrypoints
+      - "--entryPoints.http.address=:80"
+      - "--entryPoints.http.http.redirections.entryPoint.to=https"
+      - "--entryPoints.http.http.redirections.entryPoint.scheme=https"
+      - "--entryPoints.https.address=:443"
+      - "--entryPoints.https.forwardedHeaders.insecure=true"
+      - "--entryPoints.https.proxyProtocol.insecure=true"
+      # docker provider (get configuration from container labels)
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.file.directory=/config"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "$(pwd)/traefik/certs:/certs"
+      - "$(pwd)/traefik/config:/config"
+    logging:
+      driver: "local"
+    restart: always
+
+  # example nostr config. only labels: section is relevant for Traefik config
+  nostr:
+   image: nostr-rs-relay:latest
+   container_name: nostr-relay
+   networks:
+     nostr:
+   restart: always
+   user: 100:100
+   volumes:
+   - '$(pwd)/nostr/data:/usr/src/app/db:Z'
+   - '$(pwd)/nostr/config/config.toml:/usr/src/app/config.toml:ro,Z'
+   labels:
+     - "traefik.enable=true"
+     - "traefik.http.routers.nostr.entrypoints=https"
+     - "traefik.http.routers.nostr.rule=Host(`relay.example.com`)"
+     - "traefik.http.routers.nostr.tls.certresolver=http"
+     - "traefik.http.routers.nostr.service=nostr"
+     - "traefik.http.services.nostr.loadbalancer.server.port=8080"
+     - "traefik.http.services.nostr.loadbalancer.passHostHeader=true"
+     - "traefik.http.middlewares.nostr.headers.sslredirect=true"
+     - "traefik.http.middlewares.nostr.headers.stsincludesubdomains=true"
+     - "traefik.http.middlewares.nostr.headers.stspreload=true"
+     - "traefik.http.middlewares.nostr.headers.stsseconds=63072000"
+     - "traefik.http.routers.nostr.middlewares=nostr"
+```
+
+### Traefik Notes
+
+Traefik will take care of the provisioning and renewal of certificates. In case of an ipv4-only relay, simply detele the `enable_ipv6:` and `ipam:` entries in the `networks:` section of the docker-compose file.
