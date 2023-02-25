@@ -72,6 +72,16 @@ pub enum Error {
     AuthFailure,
     #[error("I/O Error")]
     IoError(std::io::Error),
+    #[error("Event builder error")]
+    EventError(nostr::event::builder::Error),
+    #[error("Nostr key error")]
+    NostrKeyError(nostr::key::Error),
+    #[error("Payment hash mismatch")]
+    PaymentHash,
+    #[error("Error parsing url")]
+    URLParseError(url::ParseError),
+    #[error("HTTP error")]
+    HTTPError(http::Error),
     #[error("Unknown/Undocumented")]
     UnknownError,
 }
@@ -151,5 +161,32 @@ impl From<tonic::Status> for Error {
 impl From<std::io::Error> for Error {
     fn from(r: std::io::Error) -> Self {
         Error::IoError(r)
+    }
+}
+impl From<nostr::event::builder::Error> for Error {
+    /// Wrap event builder error
+    fn from(r: nostr::event::builder::Error) -> Self {
+        Error::EventError(r)
+    }
+}
+
+impl From<nostr::key::Error> for Error {
+    /// Wrap nostr key error
+    fn from(r: nostr::key::Error) -> Self {
+        Error::NostrKeyError(r)
+    }
+}
+
+impl From<url::ParseError> for Error {
+    /// Wrap nostr key error
+    fn from(r: url::ParseError) -> Self {
+        Error::URLParseError(r)
+    }
+}
+
+impl From<http::Error> for Error {
+    /// Wrap nostr key error
+    fn from(r: http::Error) -> Self {
+        Error::HTTPError(r)
     }
 }

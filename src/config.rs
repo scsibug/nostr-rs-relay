@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::warn;
 
+use crate::payment::Processor;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
 pub struct Info {
@@ -78,6 +80,20 @@ pub struct Limits {
 pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
     pub nip42_auth: bool,                      // if true enables NIP-42 authentication
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(unused)]
+pub struct PayToRelay {
+    pub enabled: bool,
+    pub admission_cost: u64, // Cost to have pubkey whitelisted
+    pub cost_per_event: u64, // Cost author to pay per event
+    pub node_url: String,
+    pub api_secret: String,
+    pub terms_message: String,
+    pub sign_ups: bool, // allow new users to sign up to relay
+    pub secret_key: String,
+    pub processor: Processor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +174,7 @@ pub struct Settings {
     pub network: Network,
     pub limits: Limits,
     pub authorization: Authorization,
+    pub pay_to_relay: PayToRelay,
     pub verified_users: VerifiedUsers,
     pub retention: Retention,
     pub options: Options,
@@ -209,6 +226,16 @@ impl Settings {
         );
         // initialize durations for verified users
         settings.verified_users.init();
+
+        // Validate pay to relay settings
+        if settings.pay_to_relay.enabled {
+            assert_ne!(settings.pay_to_relay.api_secret, "");
+            // Should check that url is valid
+            assert_ne!(settings.pay_to_relay.node_url, "");
+            assert_ne!(settings.pay_to_relay.terms_message, "");
+            assert_ne!(settings.pay_to_relay.secret_key, "");
+        }
+
         Ok(settings)
     }
 }
@@ -258,6 +285,17 @@ impl Default for Settings {
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish
                 nip42_auth: false,      // Disable NIP-42 authentication
+            },
+            pay_to_relay: PayToRelay {
+                enabled: false,
+                admission_cost: 4200,
+                cost_per_event: 0,
+                terms_message: "".to_string(),
+                node_url: "".to_string(),
+                api_secret: "".to_string(),
+                sign_ups: false,
+                secret_key: "".to_string(),
+                processor: Processor::LNBits,
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

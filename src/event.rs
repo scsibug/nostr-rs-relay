@@ -424,6 +424,22 @@ impl Event {
     }
 }
 
+impl From<nostr::Event> for Event {
+    fn from(nostr_event: nostr::Event) -> Self {
+        Event {
+            id: nostr_event.id.to_hex(),
+            pubkey: nostr_event.pubkey.to_string(),
+            created_at: nostr_event.created_at.as_u64(),
+            kind: nostr_event.kind.as_u64(),
+            tags: nostr_event.tags.iter().map(|x| x.as_vec()).collect(),
+            content: nostr_event.content,
+            sig: nostr_event.sig.to_string(),
+            delegated_by: None,
+            tagidx: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

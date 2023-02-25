@@ -36,6 +36,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     }
     run_migration(m003::migration(), db).await;
     run_migration(m004::migration(), db).await;
+    run_migration(m005::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -272,6 +273,46 @@ mod m004 {
 ALTER TABLE event ADD COLUMN expires_at timestamp(0) with time zone;
 -- Index expiration time
 CREATE INDEX event_expires_at_idx ON "event" (expires_at);
+        "#,
+            ],
+        }
+    }
+}
+
+mod m005 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 5;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Create account table
+CREATE TABLE "account" (
+    pubkey varchar NOT NULL,
+    is_admitted BOOLEAN NOT NULL DEFAULT FALSE,
+    balance BIGINT NOT NULL DEFAULT 0,
+    tos_accepted_at TIMESTAMP,
+    CONSTRAINT account_pkey PRIMARY KEY (pubkey)
+);
+
+CREATE TYPE status AS ENUM ('Paid', 'Unpaid', 'Expired');
+
+
+CREATE TABLE "invoice" (
+    payment_hash varchar NOT NULL,
+    pubkey varchar NOT NULL,
+    invoice varchar NOT NULL,
+    amount BIGINT NOT NULL,
+    status status NOT NULL DEFAULT 'Unpaid',
+    description varchar,
+    created_at timestamp,
+    confirmed_at timestamp,
+    CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
+    CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
+);
         "#,
             ],
         }

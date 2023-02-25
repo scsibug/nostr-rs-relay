@@ -12,6 +12,9 @@ use crate::event::EventWrapper;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
+use crate::payment;
+use crate::payment::InvoiceInfo;
+use crate::payment::PaymentMessage;
 use crate::repo::NostrRepo;
 use crate::server::Error::CommandUnknownError;
 use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
@@ -20,6 +23,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 use http::header::HeaderMap;
+use hyper::body::to_bytes;
 use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::upgrade::Upgraded;
@@ -29,6 +33,8 @@ use hyper::{
 use prometheus::IntCounterVec;
 use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
+use qrcode::render::svg;
+use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -54,6 +60,8 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
+use nostr::key::FromPkStr;
+use nostr::key::Keys;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -64,11 +72,13 @@ async fn handle_web_request(
     remote_addr: SocketAddr,
     broadcast: Sender<Event>,
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
+    payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
     shutdown: Receiver<()>,
     favicon: Option<Vec<u8>>,
     registry: Registry,
     metrics: NostrMetrics,
 ) -> Result<Response<Body>, Infallible> {
+    debug!("{:?}", request);
     match (
         request.uri().path(),
         request.headers().contains_key(header::UPGRADE),
@@ -175,6 +185,16 @@ async fn handle_web_request(
                     }
                 }
             }
+
+            // Redirect users to join page when pay to relay enabled
+            if settings.pay_to_relay.enabled {
+                return Ok(Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
+
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain")
@@ -210,14 +230,406 @@ async fn handle_web_request(
                     .unwrap())
             }
         }
+        // LN bits callback endpoint for paid invoices
+        ("/lnbits", false) => {
+            let callback: payment::lnbits::LNBitsCallback =
+                serde_json::from_slice(&to_bytes(request.into_body()).await.unwrap()).unwrap();
+            debug!("LNBits callback: {callback:?}");
+
+            if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback.payment_hash)) {
+                warn!("Could not send invoice update: {}", e);
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Error processing callback"))
+                    .unwrap());
+            }
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from("ok"))
+                .unwrap())
+        }
+        // Endpoint for relays terms
+        ("/terms", false) => Ok(Response::builder()
+            .status(200)
+            .header("Content-Type", "text/plain")
+            .body(Body::from(settings.pay_to_relay.terms_message))
+            .unwrap()),
+        // Endpoint to allow users to sign up
+        ("/join", false) => {
+            // Stops sign ups if disabled
+            if !settings.pay_to_relay.sign_ups {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, joining is not allowed at the moment"))
+                    .unwrap());
+            }
+
+            let html = r#"
+<!doctype HTML>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background-color: #6320a7;
+      color: white;
+    }
+
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 400px;
+    }
+
+    a {
+      color: pink;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        max-width: 500px;
+        box-sizing: border-box;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div style="width:75%;">
+    <h1>Enter your pubkey</h1>
+    <form action="/invoice" onsubmit="return checkForm(this);">
+      <input type="text" name="pubkey"><br><br>
+      <input type="checkbox" id="terms" required>
+      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
+      <button type="submit">Submit</button>
+    </form>
+  </div>
+  <script>
+    function checkForm(form) {
+      if (!form.terms.checked) {
+        alert("Please agree to the terms and conditions");
+        return false;
+      }
+      return true;
+    }
+  </script>
+</body>
+</html>
+            "#;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html))
+                .unwrap())
+        }
+        // Endpoint to display invoice
+        ("/invoice", false) => {
+            // Stops sign ups if disabled
+            if !settings.pay_to_relay.sign_ups {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, joining is not allowed at the moment"))
+                    .unwrap());
+            }
+
+            // Get query pubkey from query string
+            let pubkey = get_pubkey(request);
+
+            // Redirect back to join page if no pub key is found in query string
+            if pubkey.is_none() {
+                return Ok(Response::builder()
+                    .status(404)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
+
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Looks like your key is invalid"))
+                    .unwrap());
+            }
+
+            // Checks if user is already admitted
+            let payment_message;
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                if admission_status {
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .body(Body::from("Already admitted"))
+                        .unwrap());
+                } else {
+                    payment_message = PaymentMessage::CheckAccount(pubkey.clone());
+                }
+            } else {
+                payment_message = PaymentMessage::NewAccount(pubkey.clone());
+            }
+
+            // Send message on payment channel requesting invoice
+            if payment_tx.send(payment_message).is_err() {
+                warn!("Could not send payment tx");
+                return Ok(Response::builder()
+                    .status(501)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Sorry, something went wrong"))
+                    .unwrap());
+            }
+
+            // wait for message with invoice back that matched the pub key
+            let mut invoice_info: Option<InvoiceInfo> = None;
+            while let Ok(msg) = payment_tx.subscribe().recv().await {
+                match msg {
+                    PaymentMessage::Invoice(m_pubkey, m_invoice_info) => {
+                        if m_pubkey == pubkey.clone() {
+                            invoice_info = Some(m_invoice_info);
+                            break;
+                        }
+                    }
+                    PaymentMessage::AccountAdmitted(m_pubkey) => {
+                        if m_pubkey == pubkey.clone() {
+                            return Ok(Response::builder()
+                                .status(StatusCode::OK)
+                                .body(Body::from("Already admitted"))
+                                .unwrap());
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            // Return early if cant get invoice
+            if invoice_info.is_none() {
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Sorry, could not get invoice"))
+                    .unwrap());
+            }
+
+            // Since invoice is checked to be not none, unwrap
+            let invoice_info = invoice_info.unwrap();
+
+            let qr_code: String;
+            if let Ok(code) = QrCode::new(invoice_info.bolt11.as_bytes()) {
+                qr_code = code
+                    .render()
+                    .min_dimensions(200, 200)
+                    .dark_color(svg::Color("#800000"))
+                    .light_color(svg::Color("#ffff80"))
+                    .build();
+            } else {
+                qr_code = "Could not render image".to_string();
+            }
+
+            let html_result = format!(
+                r#"
+<!DOCTYPE html>
+<html>
+  <head>
+  <meta charset="UTF-8">
+    <style>
+      body {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        background-color:  #6320a7 ;
+        color: white;
+      }}
+      #copy-button {{
+        background-color: #bb5f0d ;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        border: none;
+        cursor: pointer;
+      }}
+      #copy-button:hover {{
+        background-color: #8f29f4;
+      }}
+    .container {{
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 400px;
+    }}
+    a {{
+        color: pink;
+    }}
+    </style>
+  </head>
+  <body>
+    <div style="width:75%;">
+      <h3>
+        To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
+      </h3>
+    </div>
+    <div>
+        <div style="max-height: 300px;">
+            {}
+        </div>
+    </div>
+    <div>
+    <div style="width: 75%;">
+        <p style="overflow-wrap: break-word; width: 500px;">{}</p>
+        <button id="copy-button">Copy</button>
+    </div>
+    <div>
+        <p> This page will not refresh </p>
+        <p> Verify admission <a href=/account?pubkey={}>here</a> once you have paid</p>
+    </div>
+    </div>
+  </body>
+</html>
+
+
+<script>
+  const copyButton = document.getElementById("copy-button");
+  if (navigator.clipboard) {{
+    copyButton.addEventListener("click", function() {{
+      const textToCopy = "{}";
+      navigator.clipboard.writeText(textToCopy).then(function() {{
+        console.log("Text copied to clipboard");
+      }}, function(err) {{
+        console.error("Could not copy text: ", err);
+      }});
+    }});
+  }} else {{
+    copyButton.style.display = "none";
+    console.warn("Clipboard API is not supported in this browser");
+  }}
+</script>
+"#,
+                settings.pay_to_relay.admission_cost,
+                qr_code,
+                invoice_info.bolt11,
+                pubkey,
+                invoice_info.bolt11
+            );
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html_result))
+                .unwrap())
+        }
+        ("/account", false) => {
+            // Stops sign ups if disabled
+            if !settings.pay_to_relay.enabled {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("This relay is not paid"))
+                    .unwrap());
+            }
+
+            // Gets the pubkey from query string
+            let pubkey = get_pubkey(request);
+
+            // Redirect back to join page if no pub key is found in query string
+            if pubkey.is_none() {
+                return Ok(Response::builder()
+                    .status(404)
+                    .header("location", "/join")
+                    .body(Body::empty())
+                    .unwrap());
+            }
+
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(Response::builder()
+                    .status(401)
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from("Looks like your key is invalid"))
+                    .unwrap());
+            }
+
+            // Checks if user is already admitted
+            let text =
+                if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                    if admission_status {
+                        r#"<span style="color: green;">is</span>"#
+                    } else {
+                        r#"<span style="color: red;">is not</span>"#
+                    }
+                } else {
+                    "Could not get admission status"
+                };
+
+            let html_result = format!(
+                r#"
+            <!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <style>
+      body {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        background-color: #6320a7;
+        color: white;
+        height: 100vh;
+      }}
+    </style>
+  </head>
+  <body>
+    <div>
+      <h5>{} {} admitted</h5>
+    </div>
+  </body>
+</html>
+
+
+            "#,
+                pubkey, text
+            );
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html_result))
+                .unwrap())
+        }
+        // later balance
         (_, _) => {
-            //handle any other url
+            // handle any other url
             Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from("Nothing here."))
                 .unwrap())
         }
     }
+}
+
+// Get pubkey from request query string
+fn get_pubkey(request: Request<Body>) -> Option<String> {
+    let query = request.uri().query().unwrap_or("").to_string();
+
+    // Gets the pubkey value from query string
+    query.split('&').fold(None, |acc, pair| {
+        let mut parts = pair.splitn(2, '=');
+        let key = parts.next();
+        let value = parts.next();
+        if key == Some("pubkey") {
+            return value.map(|s| s.to_owned());
+        }
+        acc
+    })
 }
 
 fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
@@ -423,7 +835,10 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // metadata events.
         let (metadata_tx, metadata_rx) = broadcast::channel::<Event>(4096);
 
+        let (payment_tx, payment_rx) = broadcast::channel::<PaymentMessage>(4096);
+
         let (registry, metrics) = create_metrics();
+
         // build a repository for events
         let repo = db::build_repo(&settings, metrics.clone()).await;
         // start the database writer task.  Give it a channel for
@@ -435,6 +850,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             event_rx,
             bcast_tx.clone(),
             metadata_tx.clone(),
+            payment_tx.clone(),
             shutdown_listen,
         ));
         info!("db writer created");
@@ -454,6 +870,23 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         v.run().await;
                     });
                 }
+            }
+        }
+
+        // Create payments thread if pay to relay enabled
+        if settings.pay_to_relay.enabled {
+            let payment_opt = payment::Payment::new(
+                repo.clone(),
+                payment_tx.clone(),
+                payment_rx,
+                bcast_tx.clone(),
+                settings.clone(),
+            );
+            if let Ok(mut p) = payment_opt {
+                tokio::task::spawn(async move {
+                    info!("starting payment process ...");
+                    p.run().await;
+                });
             }
         }
 
@@ -498,6 +931,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let remote_addr = conn.remote_addr();
             let bcast = bcast_tx.clone();
             let event = event_tx.clone();
+            let payment_tx = payment_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
             let favicon = favicon.clone();
@@ -513,6 +947,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         remote_addr,
                         bcast.clone(),
                         event.clone(),
+                        payment_tx.clone(),
                         stop.subscribe(),
                         favicon.clone(),
                         registry.clone(),

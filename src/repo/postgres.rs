@@ -2,6 +2,7 @@ use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::nip05::{Nip05Name, VerificationRecord};
+use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::repo::{now_jitter, NostrRepo};
 use crate::subscription::{ReqFilter, Subscription};
 use async_std::stream::StreamExt;
@@ -17,6 +18,7 @@ use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
 use crate::server::NostrMetrics;
 use crate::utils::{self, is_hex, is_lower_hex};
+use nostr::key::Keys;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::log::trace;
@@ -160,6 +162,7 @@ ON CONFLICT (id) DO NOTHING"#,
         .execute(&mut tx)
         .await?
         .rows_affected();
+
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
             // pubkey references.  This will abort the txn.
@@ -184,7 +187,8 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(hex::decode(tag_val).ok())
                                 .execute(&mut tx)
-                                .await?;
+                                .await
+                                .unwrap();
                         } else {
                             sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
                     ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
@@ -192,7 +196,8 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(tag_val.as_bytes())
                                 .execute(&mut tx)
-                                .await?;
+                                .await
+                                .unwrap();
                         }
                     }
                     None => {}
@@ -542,6 +547,172 @@ ON CONFLICT (id) DO NOTHING"#,
             .fetch_optional(&self.conn)
             .await?
             .ok_or(error::Error::SqlxError(RowNotFound))
+    }
+
+    async fn create_account(&self, pub_key: &Keys) -> Result<bool> {
+        let pub_key = pub_key.public_key().to_string();
+        let mut tx = self.conn.begin().await?;
+
+        let result = sqlx::query("INSERT INTO account (pubkey, balance) VALUES ($1, 0);")
+            .bind(pub_key)
+            .execute(&mut tx)
+            .await;
+
+        let success = match result {
+            Ok(res) => {
+                tx.commit().await?;
+                res.rows_affected() == 1
+            }
+            Err(_err) => false,
+        };
+
+        Ok(success)
+    }
+
+    /// Admit account
+    async fn admit_account(&self, pub_key: &Keys, admission_cost: u64) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        sqlx::query(
+            "UPDATE account SET is_admitted = TRUE, balance = balance - $1 WHERE pubkey = $2",
+        )
+        .bind(admission_cost as i64)
+        .bind(pub_key)
+        .execute(&self.conn)
+        .await?;
+        Ok(())
+    }
+
+    /// Gets if the account is admitted and balance
+    async fn get_account_balance(&self, pub_key: &Keys) -> Result<(bool, u64)> {
+        let pub_key = pub_key.public_key().to_string();
+        let query = r#"SELECT
+            is_admitted,
+            balance
+            FROM account
+            WHERE pubkey = $1
+            LIMIT 1"#;
+
+        let result = sqlx::query_as::<_, (bool, i64)>(query)
+            .bind(pub_key)
+            .fetch_optional(&self.conn)
+            .await?
+            .ok_or(error::Error::SqlxError(RowNotFound))?;
+
+        Ok((result.0, result.1 as u64))
+    }
+
+    /// Update account balance
+    async fn update_account_balance(
+        &self,
+        pub_key: &Keys,
+        positive: bool,
+        new_balance: u64,
+    ) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        match positive {
+            true => {
+                sqlx::query("UPDATE account SET balance = balance + $1 WHERE pubkey = $2")
+                    .bind(new_balance as i64)
+                    .bind(pub_key)
+                    .execute(&self.conn)
+                    .await?
+            }
+            false => {
+                sqlx::query("UPDATE account SET balance = balance - $1 WHERE pubkey = $2")
+                    .bind(new_balance as i64)
+                    .bind(pub_key)
+                    .execute(&self.conn)
+                    .await?
+            }
+        };
+        Ok(())
+    }
+
+    /// Create invoice record
+    async fn create_invoice_record(&self, pub_key: &Keys, invoice_info: InvoiceInfo) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        let mut tx = self.conn.begin().await?;
+
+        sqlx::query(
+            "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at, invoice) VALUES ($1, $2, $3, $4, $5, now(), $6)",
+        )
+        .bind(pub_key)
+        .bind(invoice_info.payment_hash)
+        .bind(invoice_info.amount as i64)
+        .bind(invoice_info.status)
+        .bind(invoice_info.memo)
+        .bind(invoice_info.bolt11)
+        .execute(&mut tx)
+        .await.unwrap();
+
+        debug!("Invoice added");
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Update invoice record
+    async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String> {
+        debug!("Payment Hash: {}", payment_hash);
+        let query = "SELECT pubkey, status, amount FROM invoice WHERE payment_hash=$1;";
+        let (pubkey, prev_invoice_status, amount) =
+            sqlx::query_as::<_, (String, InvoiceStatus, i64)>(query)
+                .bind(payment_hash)
+                .fetch_optional(&self.conn)
+                .await?
+                .ok_or(error::Error::SqlxError(RowNotFound))?;
+
+        // If the invoice is paid update the confirmed at timestamp
+        let query = if status.eq(&InvoiceStatus::Paid) {
+            "UPDATE invoice SET status=$1, confirmed_at = now() WHERE payment_hash=$2;"
+        } else {
+            "UPDATE invoice SET status=$1 WHERE payment_hash=$2;"
+        };
+
+        sqlx::query(query)
+            .bind(&status)
+            .bind(payment_hash)
+            .execute(&self.conn)
+            .await?;
+
+        if prev_invoice_status.eq(&InvoiceStatus::Unpaid) && status.eq(&InvoiceStatus::Paid) {
+            sqlx::query("UPDATE account SET balance = balance + $1 WHERE pubkey = $2")
+                .bind(amount)
+                .bind(&pubkey)
+                .execute(&self.conn)
+                .await?;
+        }
+
+        Ok(pubkey)
+    }
+
+    /// Get the most recent invoice for a given pubkey
+    /// invoice must be unpaid and not expired
+    async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>> {
+        let query = r#"
+SELECT amount, payment_hash, description, invoice
+FROM invoice
+WHERE pubkey = $1
+ORDER BY created_at DESC
+LIMIT 1;
+        "#;
+        match sqlx::query_as::<_, (i64, String, String, String)>(query)
+            .bind(pubkey.public_key().to_string())
+            .fetch_optional(&self.conn)
+            .await
+            .unwrap()
+        {
+            Some((amount, payment_hash, description, invoice)) => Ok(Some(InvoiceInfo {
+                pubkey: pubkey.public_key().to_string(),
+                payment_hash,
+                bolt11: invoice,
+                amount: amount as u64,
+                status: InvoiceStatus::Unpaid,
+                memo: description,
+                confirmed_at: None,
+            })),
+            None => Ok(None),
+        }
     }
 }
 

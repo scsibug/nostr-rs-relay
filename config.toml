@@ -52,6 +52,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # sqlite.
 #connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
+
 [grpc]
 # gRPC interfaces for externalized decisions and other extensions to
 # functionality.
@@ -173,3 +174,37 @@ reject_future_seconds = 1800
 # How many consecutive failed checks before we give up on verifying
 # this author.
 #max_consecutive_failures = 20
+
+[pay_to_relay]
+# Enable pay to relay
+enabled = true
+# The cost to be admitted to relay
+admission_cost = 1000
+# The cost in sats per post
+cost_per_event = 0
+# Url of lnbits api
+node_url = "<node url>"
+# LNBits api secret
+api_secret = "<ln bits api>"
+# Terms of service
+terms_message = """
+This service (and supporting services) are provided "as is", without warranty of any kind, express or implied.
+
+By using this service, you agree:
+* Not to engage in spam or abuse the relay service
+* Not to disseminate illegal content
+* That requests to delete content cannot be guaranteed
+* To use the service in compliance with all applicable laws
+* To grant necessary rights to your content for unlimited time
+* To be of legal age and have capacity to use this service
+* That the service may be terminated at any time without notice
+* That the content you publish may be removed at any time without notice
+* To have your IP address collected to detect abuse or misuse
+* To cooperate with the relay to combat abuse or misuse
+* You may be exposed to content that you might find triggering or distasteful
+* The relay operator is not liable for content produced by users of the relay
+"""
+# Whether or not new sign ups should be allowed 
+sign_ups = true
+secret_key = "<nostr nsec>" 
+

@@ -2,9 +2,11 @@ use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::Event;
 use crate::nip05::VerificationRecord;
+use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::subscription::Subscription;
 use crate::utils::unix_time;
 use async_trait::async_trait;
+use nostr::Keys;
 use rand::Rng;
 
 pub mod postgres;
@@ -57,6 +59,33 @@ pub trait NostrRepo: Send + Sync {
 
     /// Get oldest verification before timestamp
     async fn get_oldest_user_verification(&self, before: u64) -> Result<VerificationRecord>;
+
+    /// Create a new account
+    async fn create_account(&self, pubkey: &Keys) -> Result<bool>;
+
+    /// Admit an account
+    async fn admit_account(&self, pubkey: &Keys, admission_cost: u64) -> Result<()>;
+
+    /// Gets user balance if they are an admitted pubkey
+    async fn get_account_balance(&self, pubkey: &Keys) -> Result<(bool, u64)>;
+
+    /// Update account balance
+    async fn update_account_balance(
+        &self,
+        pub_key: &Keys,
+        positive: bool,
+        new_balance: u64,
+    ) -> Result<()>;
+
+    /// Create invoice record
+    async fn create_invoice_record(&self, pubkey: &Keys, invoice_info: InvoiceInfo) -> Result<()>;
+
+    /// Update Invoice for given payment hash
+    async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String>;
+
+    /// Get the most recent invoice for a given pubkey
+    /// invoice must be unpaid and not expired
+    async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>>;
 }
 
 // Current time, with a slight forward jitter in seconds

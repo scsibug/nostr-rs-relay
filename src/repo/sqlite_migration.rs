@@ -23,7 +23,7 @@ pragma mmap_size = 17179869184; -- cap mmap at 16GB
 "##;
 
 /// Latest database version
-pub const DB_VERSION: usize = 17;
+pub const DB_VERSION: usize = 18;
 
 /// Schema definition
 const INIT_SQL: &str = formatcp!(
@@ -96,6 +96,35 @@ FOREIGN KEY(metadata_event) REFERENCES event(id) ON UPDATE CASCADE ON DELETE CAS
 );
 CREATE INDEX IF NOT EXISTS user_verification_name_index ON user_verification(name);
 CREATE INDEX IF NOT EXISTS user_verification_event_index ON user_verification(metadata_event);
+
+-- Create account table
+CREATE TABLE IF NOT EXISTS account (
+pubkey TEXT PRIMARY KEY,
+is_admitted INTEGER NOT NULL DEFAULT 0,
+balance INTEGER NOT NULL DEFAULT 0,
+tos_accepted_at INTEGER
+);
+
+-- Create account index
+CREATE INDEX IF NOT EXISTS user_pubkey_index ON account(pubkey);
+
+-- Invoice table
+CREATE TABLE IF NOT EXISTS invoice (
+payment_hash TEXT PRIMARY KEY,
+pubkey TEXT NOT NULL,
+invoice TEXT NOT NULL,
+amount INTEGER NOT NULL,
+status TEXT CHECK ( status IN ('Paid', 'Unpaid', 'Expired' ) ) NOT NUll DEFAULT 'Unpaid',
+description TEXT,
+created_at INTEGER NOT NULL,
+confirmed_at INTEGER,
+CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
+);
+
+-- Create invoice index
+CREATE INDEX IF NOT EXISTS invoice_pubkey_index ON invoice(pubkey);
+
+
 "##,
     DB_VERSION
 );
@@ -212,6 +241,9 @@ pub fn upgrade_db(conn: &mut PooledConnection) -> Result<usize> {
             }
             if curr_version == 16 {
                 curr_version = mig_16_to_17(conn)?;
+            }
+            if curr_version == 17 {
+                curr_version = mig_17_to_18(conn)?;
             }
 
             if curr_version == DB_VERSION {
@@ -759,4 +791,51 @@ PRAGMA user_version = 17;
         }
     }
     Ok(17)
+}
+
+fn mig_17_to_18(conn: &mut PooledConnection) -> Result<usize> {
+    info!("database schema needs update from 17->18");
+    let upgrade_sql = r##"
+-- Create invoices table
+CREATE TABLE IF NOT EXISTS invoice (
+payment_hash TEXT PRIMARY KEY,
+pubkey TEXT NOT NULL,
+invoice TEXT NOT NULL,
+amount INTEGER NOT NULL,
+status TEXT CHECK ( status IN ('Paid', 'Unpaid', 'Expired' ) ) NOT NUll DEFAULT 'Unpaid',
+description TEXT,
+created_at INTEGER NOT NULL,
+confirmed_at INTEGER,
+CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
+);
+
+-- Create invoice index
+CREATE INDEX IF NOT EXISTS invoice_pubkey_index ON invoice(pubkey);
+
+-- Create account table
+
+CREATE TABLE IF NOT EXISTS account (
+pubkey TEXT PRIMARY KEY,
+is_admitted INTEGER NOT NULL DEFAULT 0,
+balance INTEGER NOT NULL DEFAULT 0,
+tos_accepted_at INTEGER
+);
+
+-- Create account index
+CREATE INDEX IF NOT EXISTS account_pubkey_index ON account(pubkey);
+
+
+pragma optimize;
+PRAGMA user_version = 17;
+"##;
+    match conn.execute_batch(upgrade_sql) {
+        Ok(()) => {
+            info!("database schema upgraded v17 -> v18");
+        }
+        Err(err) => {
+            error!("update failed: {}", err);
+            panic!("database could not be upgraded");
+        }
+    }
+    Ok(18)
 }

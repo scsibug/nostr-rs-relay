@@ -2,12 +2,12 @@
 //use crate::config::SETTINGS;
 use crate::config::Settings;
 use crate::db::QueryResult;
-use crate::error::Error::SqlError;
-use crate::error::Result;
+use crate::error::{Error::SqlError, Result};
 use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
 use crate::nip05::{Nip05Name, VerificationRecord};
+use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::repo::sqlite_migration::{upgrade_db, STARTUP_SQL};
 use crate::server::NostrMetrics;
 use crate::subscription::{ReqFilter, Subscription};
@@ -30,6 +30,7 @@ use tokio::task;
 use tracing::{debug, info, trace, warn};
 
 use crate::repo::{now_jitter, NostrRepo};
+use nostr::key::Keys;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
@@ -722,6 +723,209 @@ impl NostrRepo for SqliteRepo {
             };
             Ok(vr)
         }).await?
+    }
+
+    /// Create account
+    async fn create_account(&self, pub_key: &Keys) -> Result<bool> {
+        let pub_key = pub_key.public_key().to_string();
+
+        let mut conn = self.write_pool.get()?;
+        let ins_count =  tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let ins_count: u64;
+            {
+                // Ignore if user is already in db
+                let query = "INSERT OR IGNORE INTO account (pubkey, is_admitted, balance) VALUES (?1, ?2, ?3);";
+                let mut stmt = tx.prepare(query)?;
+                ins_count = stmt.execute(params![&pub_key, false, 0])? as u64;
+            }
+            tx.commit()?;
+            let ok: Result<u64> = Ok(ins_count);
+            ok
+        }).await??;
+
+        if ins_count != 1 {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    /// Admit account
+    async fn admit_account(&self, pub_key: &Keys, admission_cost: u64) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        let mut conn = self.write_pool.get()?;
+        let pub_key = pub_key.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            {
+                let query = "UPDATE account SET is_admitted = TRUE, tos_accepted_at =  strftime('%s','now'), balance = balance - ?1 WHERE pubkey=?2;";
+                let mut stmt = tx.prepare(query)?;
+                stmt.execute(params![admission_cost, pub_key])?;
+            }
+            tx.commit()?;
+            let ok: Result<()> = Ok(());
+            ok
+        })
+            .await?
+    }
+
+    /// Gets if the account is admitted and balance
+    async fn get_account_balance(&self, pub_key: &Keys) -> Result<(bool, u64)> {
+        let pub_key = pub_key.public_key().to_string();
+        let mut conn = self.write_pool.get()?;
+        let pub_key = pub_key.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let query = "SELECT is_admitted, balance FROM account WHERE pubkey = ?1;";
+            let mut stmt = tx.prepare_cached(query)?;
+            let fields = stmt.query_row(params![pub_key], |r| {
+                let is_admitted: bool = r.get(0)?;
+                let balance: u64 = r.get(1)?;
+                // create a tuple since we can't throw non-rusqlite errors in this closure
+                Ok((is_admitted, balance))
+            })?;
+            Ok(fields)
+        })
+        .await?
+    }
+
+    /// Update account balance
+    async fn update_account_balance(
+        &self,
+        pub_key: &Keys,
+        positive: bool,
+        new_balance: u64,
+    ) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+
+        let mut conn = self.write_pool.get()?;
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            {
+                let query = if positive {
+                    "UPDATE account SET balance=balance + ?1 WHERE pubkey=?2"
+                } else {
+                    "UPDATE account SET balance=balance - ?1 WHERE pubkey=?2"
+                };
+                let mut stmt = tx.prepare(query)?;
+                stmt.execute(params![new_balance, pub_key])?;
+            }
+            tx.commit()?;
+            let ok: Result<()> = Ok(());
+            ok
+        })
+        .await?
+    }
+
+    /// Create invoice record
+    async fn create_invoice_record(&self, pub_key: &Keys, invoice_info: InvoiceInfo) -> Result<()> {
+        let pub_key = pub_key.public_key().to_string();
+        let pub_key = pub_key.to_owned();
+        let mut conn = self.write_pool.get()?;
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            {
+                let query = "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at, invoice) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'), ?6);";
+                let mut stmt = tx.prepare(query)?;
+                stmt.execute(params![&pub_key, invoice_info.payment_hash, invoice_info.amount, invoice_info.status.to_string(), invoice_info.memo, invoice_info.bolt11])?;
+            }
+            tx.commit()?;
+            let ok: Result<()> = Ok(());
+            ok
+        }).await??;
+
+        Ok(())
+    }
+
+    /// Update invoice record
+    async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String> {
+        let mut conn = self.write_pool.get()?;
+        let payment_hash = payment_hash.to_owned();
+        let pub_key = tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let pubkey: String;
+            {
+
+                // Get required invoice info for given payment hash
+                let query = "SELECT pubkey, status, amount FROM invoice WHERE payment_hash=?1;";
+                let mut stmt = tx.prepare(query)?;
+                let (pub_key, prev_status, amount) = stmt.query_row(params![payment_hash], |r| {
+                    let pub_key: String = r.get(0)?;
+                    let status: String = r.get(1)?;
+                    let amount: u64 = r.get(2)?;
+
+
+                    Ok((pub_key, status, amount))
+
+                })?;
+
+                // If the invoice is paid update the confirmed_at timestamp
+                let query =  if status.eq(&InvoiceStatus::Paid) {
+                    "UPDATE invoice SET status=?1, confirmed_at = strftime('%s', 'now') WHERE payment_hash=?2;"
+                } else {
+                    "UPDATE invoice SET status=?1 WHERE payment_hash=?2;"
+                };
+                let mut stmt = tx.prepare(query)?;
+                stmt.execute(params![status.to_string(), payment_hash])?;
+
+                // Increase account balance by given invoice amount
+                if prev_status == "Unpaid" && status.eq(&InvoiceStatus::Paid) {
+                    let query =
+                            "UPDATE account SET balance = balance + ?1 WHERE pubkey = ?2;";
+                    let mut stmt = tx.prepare(query)?;
+                    stmt.execute(params![amount, pub_key])?;
+                }
+
+                pubkey = pub_key;
+            }
+
+            tx.commit()?;
+            let ok: Result<String> = Ok(pubkey);
+            ok
+        })
+        .await?;
+        pub_key
+    }
+
+    /// Get the most recent invoice for a given pubkey
+    /// invoice must be unpaid and not expired
+    async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>> {
+        let mut conn = self.write_pool.get()?;
+
+        let pubkey = pubkey.to_owned();
+        let pubkey_str = pubkey.clone().public_key().to_string();
+        let (payment_hash, invoice, amount, description) = tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+
+            let query = r#"
+SELECT amount, payment_hash, description, invoice
+FROM invoice
+WHERE pubkey = ?1 AND status = 'Unpaid'
+ORDER BY created_at DESC
+LIMIT 1;
+        "#;
+            let mut stmt = tx.prepare(query).unwrap();
+            stmt.query_row(params![&pubkey_str], |r| {
+                let amount: u64 = r.get(0)?;
+                let payment_hash: String = r.get(1)?;
+                let description: String = r.get(2)?;
+                let invoice: String = r.get(3)?;
+
+                Ok((payment_hash, invoice, amount, description))
+            })
+        })
+        .await??;
+
+        Ok(Some(InvoiceInfo {
+            pubkey: pubkey.public_key().to_string(),
+            payment_hash,
+            bolt11: invoice,
+            amount,
+            status: InvoiceStatus::Unpaid,
+            memo: description,
+            confirmed_at: None,
+        }))
     }
 }
 
