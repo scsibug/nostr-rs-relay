@@ -826,7 +826,7 @@ CREATE INDEX IF NOT EXISTS account_pubkey_index ON account(pubkey);
 
 
 pragma optimize;
-PRAGMA user_version = 17;
+PRAGMA user_version = 18;
 "##;
     match conn.execute_batch(upgrade_sql) {
         Ok(()) => {
