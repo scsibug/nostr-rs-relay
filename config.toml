@@ -134,7 +134,7 @@ reject_future_seconds = 1800
 
 # Event kind allowlist. Events other than these kinds will be discarded.
 #event_kind_allowlist = [
-#    70202,
+#    0, 1, 2, 3, 7, 40, 41, 42, 43, 44, 30023,
 #]
 
 [authorization]
