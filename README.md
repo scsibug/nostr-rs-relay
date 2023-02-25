@@ -35,6 +35,7 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 - [ ] NIP-26: [Event Delegation](https://github.com/nostr-protocol/nips/blob/master/26.md) (_implemented, but currently disabled_)
 - [x] NIP-28: [Public Chat](https://github.com/nostr-protocol/nips/blob/master/28.md)
 - [x] NIP-33: [Parameterized Replaceable Events](https://github.com/nostr-protocol/nips/blob/master/33.md)
+- [x] NIP-40: [Expiration Timestamp](https://github.com/nostr-protocol/nips/blob/master/40.md)
 - [x] NIP-42: [Authentication of clients to relays](https://github.com/nostr-protocol/nips/blob/master/42.md)
 
 ## Quick Start
