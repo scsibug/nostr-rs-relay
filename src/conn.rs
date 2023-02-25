@@ -161,12 +161,12 @@ impl ClientConn {
             Challenge(_) => (),
             AuthPubkey(_) => {
                 // already authenticated
-                return Ok(())
-            },
+                return Ok(());
+            }
             NoAuth => {
                 // unexpected AUTH request
                 return Err(Error::AuthFailure);
-            },
+            }
         }
         match event.validate() {
             Ok(_) => {

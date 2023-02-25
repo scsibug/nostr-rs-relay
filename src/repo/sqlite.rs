@@ -2,8 +2,8 @@
 //use crate::config::SETTINGS;
 use crate::config::Settings;
 use crate::db::QueryResult;
-use crate::error::Result;
 use crate::error::Error::SqlError;
+use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::hexrange::hex_range;
 use crate::hexrange::HexSearch;
@@ -257,13 +257,15 @@ impl NostrRepo for SqliteRepo {
             self.maint_pool.clone(),
             Duration::from_secs(60),
             self.write_in_progress.clone(),
-            self.checkpoint_in_progress.clone()
-        ).await?;
+            self.checkpoint_in_progress.clone(),
+        )
+        .await?;
         cleanup_expired(
             self.maint_pool.clone(),
             Duration::from_secs(600),
-            self.write_in_progress.clone()
-        ).await
+            self.write_in_progress.clone(),
+        )
+        .await
     }
 
     async fn migrate_up(&self) -> Result<usize> {
@@ -286,24 +288,29 @@ impl NostrRepo for SqliteRepo {
             // this could fail because the database was busy; try
             // multiple times before giving up.
             loop {
-                attempts+=1;
+                attempts += 1;
                 let wr = SqliteRepo::persist_event(&mut conn, &e);
                 match wr {
-                    Err(SqlError(rusqlite::Error::SqliteFailure(e,_))) => {
+                    Err(SqlError(rusqlite::Error::SqliteFailure(e, _))) => {
                         // this basically means that NIP-05 or another
                         // writer was using the database between us
                         // reading and promoting the connection to a
                         // write lock.
-                        info!("event write failed, DB locked (attempt: {}); sqlite err: {}",
-                        attempts, e.extended_code);
-                    },
-                    _ => {return wr;},
+                        info!(
+                            "event write failed, DB locked (attempt: {}); sqlite err: {}",
+                            attempts, e.extended_code
+                        );
+                    }
+                    _ => {
+                        return wr;
+                    }
                 }
                 if attempts >= max_write_attempts {
                     return wr;
                 }
             }
-        }).await?;
+        })
+        .await?;
         self.metrics
             .write_events
             .observe(start.elapsed().as_secs_f64());
@@ -865,7 +872,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
             let until_clause;
             if let Some(ks) = &f.kinds {
                 // kind is number, no escaping needed
-                let str_kinds: Vec<String> = ks.iter().map(std::string::ToString::to_string).collect();
+                let str_kinds: Vec<String> =
+                    ks.iter().map(std::string::ToString::to_string).collect();
                 kind_clause = format!("AND kind IN ({})", str_kinds.join(", "));
             } else {
                 kind_clause = format!("");
@@ -998,7 +1006,11 @@ pub fn build_pool(
 }
 
 /// Cleanup expired events on a regular basis
-async fn cleanup_expired(pool: SqlitePool, frequency: Duration, write_in_progress: Arc<Mutex<u64>>) -> Result<()> {
+async fn cleanup_expired(
+    pool: SqlitePool,
+    frequency: Duration,
+    write_in_progress: Arc<Mutex<u64>>,
+) -> Result<()> {
     tokio::task::spawn(async move {
         loop {
             tokio::select! {
@@ -1050,7 +1062,8 @@ pub async fn db_checkpoint_task(
     pool: SqlitePool,
     frequency: Duration,
     write_in_progress: Arc<Mutex<u64>>,
-    checkpoint_in_progress: Arc<Mutex<u64>>) -> Result<()> {
+    checkpoint_in_progress: Arc<Mutex<u64>>,
+) -> Result<()> {
     // TODO; use acquire_many on the reader semaphore to stop them from interrupting this.
     tokio::task::spawn(async move {
         // WAL size in pages.

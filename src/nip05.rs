@@ -265,10 +265,10 @@ impl Verifier {
                 Err(Error::ChannelClosed) => {
                     // channel was closed, we are shutting down
                     return;
-                },
+                }
                 Err(e) => {
-                info!("error in verifier: {:?}", e);
-                },
+                    info!("error in verifier: {:?}", e);
+                }
                 _ => {}
             }
         }

@@ -77,7 +77,7 @@ pub struct Limits {
 #[allow(unused)]
 pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
-    pub nip42_auth: bool, // if true enables NIP-42 authentication
+    pub nip42_auth: bool,                      // if true enables NIP-42 authentication
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,7 +257,7 @@ impl Default for Settings {
             },
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish
-                nip42_auth: false, // Disable NIP-42 authentication
+                nip42_auth: false,      // Disable NIP-42 authentication
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

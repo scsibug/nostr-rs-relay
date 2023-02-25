@@ -16,7 +16,7 @@ pub struct EventResult {
 pub enum Notice {
     Message(String),
     EventResult(EventResult),
-    AuthChallenge(String)
+    AuthChallenge(String),
 }
 
 impl EventResultStatus {

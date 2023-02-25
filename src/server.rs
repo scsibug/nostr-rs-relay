@@ -6,14 +6,15 @@ use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
 use crate::error::{Error, Result};
-use crate::event::EventWrapper;
-use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::event::Event;
 use crate::event::EventCmd;
+use crate::event::EventWrapper;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
 use crate::repo::NostrRepo;
+use crate::server::Error::CommandUnknownError;
+use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::subscription::Subscription;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -53,7 +54,6 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
-use crate::server::Error::CommandUnknownError;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -197,17 +197,17 @@ async fn handle_web_request(
             if let Some(favicon_bytes) = favicon {
                 info!("returning favicon");
                 Ok(Response::builder()
-                   .status(StatusCode::OK)
-                   .header("Content-Type", "image/x-icon")
-                   // 1 month cache
-                   .header("Cache-Control", "public, max-age=2419200")
-                   .body(Body::from(favicon_bytes))
-                   .unwrap())
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "image/x-icon")
+                    // 1 month cache
+                    .header("Cache-Control", "public, max-age=2419200")
+                    .body(Body::from(favicon_bytes))
+                    .unwrap())
             } else {
                 Ok(Response::builder()
-                   .status(StatusCode::NOT_FOUND)
-                   .body(Body::from(""))
-                   .unwrap())
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from(""))
+                    .unwrap())
             }
         }
         (_, _) => {
@@ -283,15 +283,20 @@ fn create_metrics() -> (Registry, NostrMetrics) {
     let query_aborts = IntCounterVec::new(
         Opts::new("nostr_query_abort_total", "Aborted queries"),
         vec!["reason"].as_slice(),
-    ).unwrap();
+    )
+    .unwrap();
     let cmd_req = IntCounter::with_opts(Opts::new("nostr_cmd_req_total", "REQ commands")).unwrap();
     let cmd_event =
         IntCounter::with_opts(Opts::new("nostr_cmd_event_total", "EVENT commands")).unwrap();
     let cmd_close =
         IntCounter::with_opts(Opts::new("nostr_cmd_close_total", "CLOSE commands")).unwrap();
-    let cmd_auth = IntCounter::with_opts(Opts::new("nostr_cmd_auth_total", "AUTH commands")).unwrap();
-    let disconnects = IntCounterVec::new(Opts::new("nostr_disconnects_total", "Client disconnects"),
-                                         vec!["reason"].as_slice()).unwrap();
+    let cmd_auth =
+        IntCounter::with_opts(Opts::new("nostr_cmd_auth_total", "AUTH commands")).unwrap();
+    let disconnects = IntCounterVec::new(
+        Opts::new("nostr_disconnects_total", "Client disconnects"),
+        vec!["reason"].as_slice(),
+    )
+    .unwrap();
     registry.register(Box::new(query_sub.clone())).unwrap();
     registry.register(Box::new(query_db.clone())).unwrap();
     registry.register(Box::new(write_events.clone())).unwrap();
@@ -313,9 +318,9 @@ fn create_metrics() -> (Registry, NostrMetrics) {
         db_connections,
         disconnects,
         query_aborts,
-	cmd_req,
-	cmd_event,
-	cmd_close,
+        cmd_req,
+        cmd_event,
+        cmd_close,
         cmd_auth,
     };
     (registry, metrics)
@@ -650,9 +655,7 @@ async fn nostr_server(
     let unspec = "<unspecified>".to_string();
     info!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
     let origin = client_info.origin.as_ref().unwrap_or_else(|| &unspec);
-    let user_agent = client_info
-        .user_agent.as_ref()
-        .unwrap_or_else(|| &unspec);
+    let user_agent = client_info.user_agent.as_ref().unwrap_or_else(|| &unspec);
     info!(
         "cid: {}, origin: {:?}, user-agent: {:?}",
         cid, origin, user_agent
@@ -664,8 +667,12 @@ async fn nostr_server(
     if settings.authorization.nip42_auth {
         conn.generate_auth_challenge();
         if let Some(challenge) = conn.auth_challenge() {
-            ws_stream.send(
-                make_notice_message(&Notice::AuthChallenge(challenge.to_string()))).await.ok();
+            ws_stream
+                .send(make_notice_message(&Notice::AuthChallenge(
+                    challenge.to_string(),
+                )))
+                .await
+                .ok();
         }
     }
 

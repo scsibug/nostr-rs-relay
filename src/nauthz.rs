@@ -76,7 +76,7 @@ impl EventAuthzService {
         origin: Option<String>,
         user_agent: Option<String>,
         nip05: Option<Nip05Name>,
-        auth_pubkey: Option<Vec<u8>>
+        auth_pubkey: Option<Vec<u8>>,
     ) -> Result<Box<dyn AuthzDecision>> {
         self.ready_connection().await;
         let id_blob = hex::decode(&event.id)?;

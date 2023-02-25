@@ -4,13 +4,13 @@ use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::utils::is_lower_hex;
 use const_format::formatcp;
+use indicatif::{ProgressBar, ProgressStyle};
 use rusqlite::limits::Limit;
 use rusqlite::params;
 use rusqlite::Connection;
 use std::cmp::Ordering;
 use std::time::Instant;
 use tracing::{debug, error, info};
-use indicatif::{ProgressBar, ProgressStyle};
 
 /// Startup DB Pragmas
 pub const STARTUP_SQL: &str = r##"
@@ -692,22 +692,22 @@ CREATE INDEX IF NOT EXISTS tag_covering_index ON tag(name,kind,value,created_at,
     let start = Instant::now();
     let tx = conn.transaction()?;
 
-    let bar = ProgressBar::new(count.try_into().unwrap())
-        .with_message("rebuilding tags table");
+    let bar = ProgressBar::new(count.try_into().unwrap()).with_message("rebuilding tags table");
     bar.set_style(
         ProgressStyle::with_template(
             "[{elapsed_precise}] {bar:40.white/blue} {pos:>7}/{len:7} [{percent}%] {msg}",
         )
-            .unwrap(),
+        .unwrap(),
     );
     {
         tx.execute_batch(upgrade_sql)?;
-        let mut stmt = tx.prepare("select id, kind, created_at, content from event order by id;")?;
+        let mut stmt =
+            tx.prepare("select id, kind, created_at, content from event order by id;")?;
         let mut tag_rows = stmt.query([])?;
         let mut count = 0;
         while let Some(row) = tag_rows.next()? {
             count += 1;
-            if count%10==0 {
+            if count % 10 == 0 {
                 bar.inc(10);
             }
             let event_id: u64 = row.get(0)?;
@@ -735,7 +735,10 @@ CREATE INDEX IF NOT EXISTS tag_covering_index ON tag(name,kind,value,created_at,
     }
     bar.finish();
     tx.commit()?;
-    info!("database schema upgraded v15 -> v16 in {:?}", start.elapsed());
+    info!(
+        "database schema upgraded v15 -> v16 in {:?}",
+        start.elapsed()
+    );
     Ok(16)
 }
 
