@@ -177,15 +177,20 @@ reject_future_seconds = 1800
 
 [pay_to_relay]
 # Enable pay to relay
-enabled = true
+enabled = false
+
 # The cost to be admitted to relay
 admission_cost = 1000
+
 # The cost in sats per post
 cost_per_event = 0
+
 # Url of lnbits api
 node_url = "<node url>"
+
 # LNBits api secret
 api_secret = "<ln bits api>"
+
 # Terms of service
 terms_message = """
 This service (and supporting services) are provided "as is", without warranty of any kind, express or implied.
@@ -204,7 +209,6 @@ By using this service, you agree:
 * You may be exposed to content that you might find triggering or distasteful
 * The relay operator is not liable for content produced by users of the relay
 """
-# Whether or not new sign ups should be allowed 
+# Whether or not new sign ups should be allowed
 sign_ups = true
-secret_key = "<nostr nsec>" 
-
+secret_key = "<nostr nsec>"
