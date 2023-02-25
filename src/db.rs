@@ -174,6 +174,25 @@ pub async fn db_writer(
             }
         }
 
+        // Check that event kind isn't allowlisted
+        let kinds_allowlist = &settings.limits.event_kind_allowlist.clone();
+        if let Some(event_kind_allowlist) = kinds_allowlist {
+            if !event_kind_allowlist.contains(&event.kind) {
+                debug!(
+                    "rejecting event: {}, allowlist kind: {}",
+                    &event.get_event_id_prefix(),
+                    &event.kind
+                );
+                notice_tx
+                    .try_send(Notice::blocked(
+                        event.id,
+                        "event kind is blocked by relay"
+                    ))
+                    .ok();
+                continue;
+            }
+        }
+
         // send any metadata events to the NIP-05 verifier
         if nip05_active && event.is_kind_metadata() {
             // we are sending this prior to even deciding if we

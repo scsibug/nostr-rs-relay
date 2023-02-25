@@ -132,6 +132,11 @@ reject_future_seconds = 1800
 #    70202,
 #]
 
+# Event kind allowlist. Events other than these kinds will be discarded.
+#event_kind_allowlist = [
+#    70202,
+#]
+
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable
