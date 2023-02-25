@@ -78,7 +78,6 @@ async fn handle_web_request(
     registry: Registry,
     metrics: NostrMetrics,
 ) -> Result<Response<Body>, Infallible> {
-    debug!("{:?}", request);
     match (
         request.uri().path(),
         request.headers().contains_key(header::UPGRADE),
