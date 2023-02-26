@@ -1017,6 +1017,30 @@ fn make_notice_message(notice: &Notice) -> Message {
     Message::text(json.to_string())
 }
 
+fn allowed_to_send(event_content: &String, conn: &conn::ClientConn, settings: &Settings) -> bool {
+    if settings.authorization.nip42_dms {
+        match serde_json::from_str::<Event>(event_content) {
+            Ok(event) => {
+                if event.kind == 4 {
+                    match (conn.auth_pubkey(), event.tag_values_by_name("p").first()) {
+                        (Some(auth_pubkey), Some(recipient_pubkey)) => {
+                            recipient_pubkey == auth_pubkey || &event.pubkey == auth_pubkey
+                        },
+                        (_, _) => {
+                            false
+                        },
+                    }
+                } else {
+                    true
+                }
+            },
+            Err(_) => false
+        }
+    } else {
+        true
+    }
+}
+
 struct ClientInfo {
     remote_ip: String,
     user_agent: Option<String>,
@@ -1139,11 +1163,13 @@ async fn nostr_server(
                     let send_str = format!("[\"EOSE\",\"{subesc}\"]");
                     ws_stream.send(Message::Text(send_str)).await.ok();
                 } else {
-                    client_received_event_count += 1;
-            metrics.sent_events.with_label_values(&["db"]).inc();
-                    // send a result
-                    let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
-                    ws_stream.send(Message::Text(send_str)).await.ok();
+		    metrics.sent_events.with_label_values(&["db"]).inc();
+                    if allowed_to_send(&query_result.event, &conn, &settings) {
+                        client_received_event_count += 1;
+                        // send a result
+                        let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
+                        ws_stream.send(Message::Text(send_str)).await.ok();
+                    }
                 }
             },
             // TODO: consider logging the LaggedRecv error
