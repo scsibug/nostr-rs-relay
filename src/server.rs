@@ -1029,6 +1029,31 @@ fn make_notice_message(notice: &Notice) -> Message {
     Message::text(json.to_string())
 }
 
+fn allowed_to_send(event_str: &String, conn: &conn::ClientConn, settings: &Settings) -> bool {
+    // TODO: pass in kind so that we can avoid deserialization for most events
+    if settings.authorization.nip42_dms {
+        match serde_json::from_str::<Event>(event_str) {
+            Ok(event) => {
+                if event.kind == 4 {
+                    match (conn.auth_pubkey(), event.tag_values_by_name("p").first()) {
+                        (Some(auth_pubkey), Some(recipient_pubkey)) => {
+                            recipient_pubkey == auth_pubkey || &event.pubkey == auth_pubkey
+                        },
+                        (_, _) => {
+                            false
+                        },
+                    }
+                } else {
+                    true
+                }
+            },
+            Err(_) => false
+        }
+    } else {
+        true
+    }
+}
+
 struct ClientInfo {
     remote_ip: String,
     user_agent: Option<String>,
@@ -1151,11 +1176,13 @@ async fn nostr_server(
                     let send_str = format!("[\"EOSE\",\"{subesc}\"]");
                     ws_stream.send(Message::Text(send_str)).await.ok();
                 } else {
-                    client_received_event_count += 1;
-            metrics.sent_events.with_label_values(&["db"]).inc();
-                    // send a result
-                    let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
-                    ws_stream.send(Message::Text(send_str)).await.ok();
+                    if allowed_to_send(&query_result.event, &conn, &settings) {
+                        metrics.sent_events.with_label_values(&["db"]).inc();
+                        client_received_event_count += 1;
+                        // send a result
+                        let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
+                        ws_stream.send(Message::Text(send_str)).await.ok();
+                    }
                 }
             },
             // TODO: consider logging the LaggedRecv error
@@ -1169,13 +1196,15 @@ async fn nostr_server(
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
-                        trace!("sub match for client: {}, sub: {:?}, event: {:?}",
+                        if allowed_to_send(&event_str, &conn, &settings) {
+                            // create an event response and send it
+                            trace!("sub match for client: {}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
-                        // create an event response and send it
-                        let subesc = s.replace('"', "");
-            metrics.sent_events.with_label_values(&["realtime"]).inc();
-                        ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
+                            let subesc = s.replace('"', "");
+                            metrics.sent_events.with_label_values(&["realtime"]).inc();
+                            ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
+                        }
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
                     }
