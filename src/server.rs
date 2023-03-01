@@ -304,11 +304,12 @@ async fn handle_web_request(
   <div style="width:75%;">
     <h1>Enter your pubkey</h1>
     <form action="/invoice" onsubmit="return checkForm(this);">
-      <input type="text" name="pubkey"><br><br>
+      <input type="text" name="pubkey" id="pubkey-input"><br><br>
       <input type="checkbox" id="terms" required>
       <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
       <button type="submit">Submit</button>
     </form>
+    <button id="get-public-key-btn">Get Public Key</button>
   </div>
   <script>
     function checkForm(form) {
@@ -318,6 +319,17 @@ async fn handle_web_request(
       }
       return true;
     }
+
+    const pubkeyInput = document.getElementById('pubkey-input');
+      const getPublicKeyBtn = document.getElementById('get-public-key-btn');
+      getPublicKeyBtn.addEventListener('click', async function() {
+        try {
+          const publicKey = await window.nostr.getPublicKey();
+          pubkeyInput.value = publicKey;
+        } catch (error) {
+          console.error(error);
+        }
+      });
   </script>
 </body>
 </html>
