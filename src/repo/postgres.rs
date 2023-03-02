@@ -950,7 +950,10 @@ impl FromRow<'_, PgRow> for VerificationRecord {
             address: hex::encode(row.get::<'_, Vec<u8>, &str>("pub_key")),
             event: hex::encode(row.get::<'_, Vec<u8>, &str>("event_id")),
             event_created: row.get::<'_, DateTime<Utc>, &str>("created_at").timestamp() as u64,
-            last_success: None,
+            last_success: match row.try_get::<'_, DateTime<Utc>, &str>("verified_at") {
+                Ok(x) => Some(x.timestamp() as u64),
+                _ => None,
+            },
             last_failure: match row.try_get::<'_, DateTime<Utc>, &str>("failed_at") {
                 Ok(x) => Some(x.timestamp() as u64),
                 _ => None,
