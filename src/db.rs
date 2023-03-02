@@ -11,6 +11,8 @@ use crate::repo::NostrRepo;
 use crate::server::NostrMetrics;
 use governor::clock::Clock;
 use governor::{Quota, RateLimiter};
+use nostr::key::FromPkStr;
+use nostr::key::Keys;
 use r2d2;
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
@@ -20,8 +22,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::log::LevelFilter;
 use tracing::{debug, info, trace, warn};
-use nostr::key::FromPkStr;
-use nostr::key::Keys;
 
 pub type SqlitePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub type PooledConnection = r2d2::PooledConnection<r2d2_sqlite::SqliteConnectionManager>;
@@ -303,7 +303,10 @@ pub async fn db_writer(
                         continue;
                     }
                 }
-                Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+                Err(
+                    Error::SqlError(rusqlite::Error::QueryReturnedNoRows)
+                    | Error::SqlxError(sqlx::Error::RowNotFound),
+                ) => {
                     debug!(
                         "no verification records found for pubkey: {:?}",
                         event.get_author_prefix()

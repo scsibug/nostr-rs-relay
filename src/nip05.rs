@@ -384,7 +384,10 @@ impl Verifier {
                     }
                 }
             }
-            Err(Error::SqlError(rusqlite::Error::QueryReturnedNoRows)) => {
+            Err(
+                Error::SqlError(rusqlite::Error::QueryReturnedNoRows)
+                | Error::SqlxError(sqlx::Error::RowNotFound),
+            ) => {
                 // No users need verification.  Reset the interval to
                 // the next verification attempt.
                 let start = tokio::time::Instant::now() + self.wait_after_finish;
