@@ -80,7 +80,7 @@ pub struct Limits {
 pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
     pub nip42_auth: bool,                      // if true enables NIP-42 authentication
-    pub nip42_dms: bool,                       // if true send DMs only to their authenticated recipients
+    pub nip42_dms: bool, // if true send DMs only to their authenticated recipients
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +95,10 @@ pub struct PayToRelay {
     pub sign_ups: bool, // allow new users to sign up to relay
     pub secret_key: String,
     pub processor: Processor,
+    #[serde(default)]
+    pub lightning_address: Option<String>,
+    #[serde(default)]
+    pub check_invoice_endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -298,6 +302,8 @@ impl Default for Settings {
                 sign_ups: false,
                 secret_key: "".to_string(),
                 processor: Processor::LNBits,
+                lightning_address: None,
+                check_invoice_endpoint: None,
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

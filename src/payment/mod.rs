@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+use crate::payment::lightning_address::LightningAddressPaymentProcessor;
 use async_trait::async_trait;
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
 
+pub mod lightning_address;
 pub mod lnbits;
 
 /// Payment handler
@@ -41,6 +43,7 @@ pub trait PaymentProcessor: Send + Sync {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Processor {
     LNBits,
+    LightningAddress,
 }
 
 /// Possible states of an invoice
@@ -103,10 +106,14 @@ impl Payment {
 
         // Create nostr key from sk string
         let nostr_keys = Keys::from_sk_str(&settings.pay_to_relay.secret_key)?;
+        info!("Nostr public key: {}", nostr_keys.public_key());
 
         // Create processor kind defined in settings
-        let processor = match &settings.pay_to_relay.processor {
+        let processor: Arc<dyn PaymentProcessor> = match &settings.pay_to_relay.processor {
             Processor::LNBits => Arc::new(LNBitsPaymentProcessor::new(&settings)),
+            Processor::LightningAddress => {
+                Arc::new(LightningAddressPaymentProcessor::new(&settings))
+            }
         };
 
         Ok(Payment {
@@ -144,7 +151,7 @@ impl Payment {
                         self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                     },
                     // Gets the most recent unpaid invoice from database
-                    // Checks LNbits to verify if paid/unpaid
+                    // Checks if paid/unpaid
                     Ok(PaymentMessage::CheckAccount(pubkey)) => {
                         let keys = Keys::from_pk_str(&pubkey)?;
 
