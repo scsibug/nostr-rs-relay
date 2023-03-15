@@ -144,7 +144,24 @@ impl<'de> Deserialize<'de> for ReqFilter {
                     if let Some(m) = ts.as_mut() {
                         let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                         if let Some(v) = tag_vals {
-                            let hs = v.into_iter().collect::<HashSet<_>>();
+                            let hs = if !v.is_empty() && tag_search != 'd' {
+                                v.into_iter().collect::<HashSet<_>>()
+                            } else if !v.is_empty() && tag_search == 'd' {
+                                // Multiple d tag values should not be sent
+                                // if there are only the first should be used
+                                let mut hs = HashSet::new();
+                                hs.insert(v[0].clone());
+                                hs
+                            } else if v.is_empty() && tag_search == 'd' {
+                                // NIP33 has a special case where a d tag without a value
+                                // should be handled as a d tag with empty string
+                                let mut hs = HashSet::new();
+                                hs.insert("".to_string());
+                                hs
+                            } else {
+                                rf.force_no_match = true;
+                                continue;
+                            };
                             m.insert(tag_search.to_owned(), hs);
                         }
                     };
@@ -156,6 +173,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             }
         }
         rf.tags = ts;
+
         Ok(rf)
     }
 }
@@ -642,6 +660,50 @@ mod tests {
             assert_eq!(pf.since, Some(10));
             assert_eq!(pf.until, Some(20));
             assert_eq!(pf.limit, Some(100));
+        } else {
+            assert!(false, "filter could not be parsed");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn empty_d_tag() -> Result<()> {
+        let s: Subscription = serde_json::from_str(
+            r##"["REQ","xyz",{"authors":["abc", "bcd"], "since": 10, "until": 20, "limit":100, "#d": []}]"##,
+        )?;
+        let f = s.filters.get(0);
+        let serialized = serde_json::to_string(&f)?;
+        let serialized_wrapped = format!(r##"["REQ", "xyz",{}]"##, serialized);
+        let parsed: Subscription = serde_json::from_str(&serialized_wrapped)?;
+        let parsed_filter = parsed.filters.get(0);
+        println!("{parsed_filter:?}");
+        if let Some(pf) = parsed_filter {
+            let mut map: HashMap<char, HashSet<String>> = HashMap::new();
+            let set = map.entry('d').or_insert(HashSet::new());
+            set.insert("".to_string());
+            assert_eq!(pf.tags, Some(map));
+        } else {
+            assert!(false, "filter could not be parsed");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn multiple_d_values() -> Result<()> {
+        let s: Subscription = serde_json::from_str(
+            r##"["REQ","xyz",{"authors":["abc", "bcd"], "since": 10, "until": 20, "limit":100, "#d": ["a", "b"]}]"##,
+        )?;
+        let f = s.filters.get(0);
+        let serialized = serde_json::to_string(&f)?;
+        let serialized_wrapped = format!(r##"["REQ", "xyz",{}]"##, serialized);
+        let parsed: Subscription = serde_json::from_str(&serialized_wrapped)?;
+        let parsed_filter = parsed.filters.get(0);
+        println!("{parsed_filter:?}");
+        if let Some(pf) = parsed_filter {
+            let mut map: HashMap<char, HashSet<String>> = HashMap::new();
+            let set = map.entry('d').or_insert(HashSet::new());
+            set.insert("a".to_string());
+            assert_eq!(pf.tags, Some(map));
         } else {
             assert!(false, "filter could not be parsed");
         }
