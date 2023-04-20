@@ -45,8 +45,8 @@ pub const DB_FILE: &str = "nostr.db";
 /// Will panic if the pool could not be created.
 pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
-        "sqlite" => Arc::new(build_sqlite_pool(settings, metrics).await),
-        "postgres" => Arc::new(build_postgres_pool(settings, metrics).await),
+        "sqlite" => Arc::new(build_sqlite_pool(&settings, metrics).await),
+        "postgres" => Arc::new(build_postgres_pool(&settings, metrics).await),
         _ => panic!("Unknown database engine"),
     }
 }
@@ -70,7 +70,26 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
         .connect_with(options)
         .await
         .unwrap();
-    let repo = PostgresRepo::new(pool, metrics);
+
+    let write_pool: PostgresPool = match &settings.database.connection_write {
+        Some(cfg_write) => {
+            let mut options_write: PgConnectOptions = cfg_write.as_str().parse().unwrap();
+            options_write.log_statements(LevelFilter::Debug);
+            options_write.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
+
+            PoolOptions::new()
+                .max_connections(settings.database.max_conn)
+                .min_connections(settings.database.min_conn)
+                .idle_timeout(Duration::from_secs(60))
+                .connect_with(options_write)
+                .await
+                .unwrap()
+        }
+        None => pool.clone(),
+    };
+
+    let repo = PostgresRepo::new(pool, write_pool, metrics);
+
     // Panic on migration failure
     let version = repo.migrate_up().await.unwrap();
     info!("Postgres migration completed, at v{}", version);
