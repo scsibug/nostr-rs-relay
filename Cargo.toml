@@ -13,8 +13,9 @@ categories = ["network-programming", "web-programming"]
 
 [dependencies]
 clap = { version = "4.0.32", features = ["env", "default", "derive"]}
-tracing = "0.1.36"
-tracing-subscriber = "0.2.0"
+tracing = "0.1.37"
+tracing-appender = "0.2.2"
+tracing-subscriber = "0.3.16"
 tokio = { version = "1", features = ["full", "tracing", "signal"] }
 prost = "0.11"
 tonic = "0.8.3"
