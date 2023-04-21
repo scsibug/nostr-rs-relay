@@ -57,6 +57,9 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # different nodes.  Ignore for single-database instances.
 #connection_write = "postgresql://postgres:nostr@localhost:7500/nostr"
 
+[logging]
+folder_path = "./log"
+
 [grpc]
 # gRPC interfaces for externalized decisions and other extensions to
 # functionality.

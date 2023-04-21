@@ -168,6 +168,13 @@ impl VerifiedUsers {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Logging {
+    pub folder_path: Option<String>,
+    pub file_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Settings {
     pub info: Info,
     pub diagnostics: Diagnostics,
@@ -180,6 +187,7 @@ pub struct Settings {
     pub verified_users: VerifiedUsers,
     pub retention: Retention,
     pub options: Options,
+    pub logging: Logging,
 }
 
 impl Settings {
@@ -319,6 +327,10 @@ impl Default for Settings {
             },
             options: Options {
                 reject_future_seconds: None, // Reject events in the future if defined
+            },
+            logging: Logging {
+                folder_path: None,
+                file_prefix: None,
             },
         }
     }
