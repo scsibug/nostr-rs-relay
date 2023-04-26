@@ -1,6 +1,7 @@
 name: Test and build
 
 on:
+  workflow_call:
   push:
     branches:
       - master

@@ -7,7 +7,12 @@ on:
       - master
 
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
   build_and_push:
+    needs: [ci]
     name: Build and Push
     runs-on: ubuntu-latest
     steps:
