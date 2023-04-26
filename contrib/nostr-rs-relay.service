@@ -1,0 +1,12 @@
+[Unit]
+Description=nostr-rs-relay
+[Service]
+User=REPLACE_WITH_YOUR_USERNAME
+WorkingDirectory=/usr/bin/
+Environment=RUST_LOG=warn,nostr_rs_relay=info
+ExecStart=nostr-rs-relay --config /etc/nostr-rs-relay/config.toml
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
