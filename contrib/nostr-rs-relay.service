@@ -5,7 +5,7 @@ Description=nostr-rs-relay
 User=REPLACE_WITH_YOUR_USERNAME
 WorkingDirectory=/var/lib/nostr-rs-relay
 Environment=RUST_LOG=warn,nostr_rs_relay=info
-ExecStart=nostr-rs-relay --config /etc/nostr-rs-relay/config.toml
+ExecStart=/usr/bin/nostr-rs-relay --config /etc/nostr-rs-relay/config.toml
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=5
