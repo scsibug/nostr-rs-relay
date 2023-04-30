@@ -52,6 +52,10 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # sqlite.
 #connection = "postgresql://postgres:nostr@localhost:7500/nostr"
 
+# Optional database connection string for writing.  Use this for
+# postgres clusters where you want to separate reads and writes to
+# different nodes.  Ignore for single-database instances.
+#connection_write = "postgresql://postgres:nostr@localhost:7500/nostr"
 
 [grpc]
 # gRPC interfaces for externalized decisions and other extensions to
