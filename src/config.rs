@@ -26,6 +26,7 @@ pub struct Database {
     pub min_conn: u32,
     pub max_conn: u32,
     pub connection: String,
+    pub connection_write: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +81,7 @@ pub struct Limits {
 pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
     pub nip42_auth: bool,                      // if true enables NIP-42 authentication
-    pub nip42_dms: bool,                       // if true send DMs only to their authenticated recipients
+    pub nip42_dms: bool, // if true send DMs only to their authenticated recipients
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +261,7 @@ impl Default for Settings {
                 min_conn: 4,
                 max_conn: 8,
                 connection: "".to_owned(),
+                connection_write: None,
             },
             grpc: Grpc {
                 event_admission_server: None,
