@@ -16,3 +16,4 @@ jobs:
           owner: scsibug
           base: master
           head: master
+          ignore_fail: true
