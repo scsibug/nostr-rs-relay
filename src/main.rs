@@ -42,7 +42,7 @@ fn main() {
                 Some(p) => p.as_str(),
                 None => "relay",
             };
-            let file_appender = tracing_appender::rolling::hourly(path, prefix);
+            let file_appender = tracing_appender::rolling::daily(path, prefix);
             let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
             let filter = EnvFilter::from_default_env();
             // assign to a variable that is not dropped till the program ends
