@@ -19,7 +19,7 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_size_limit = 32768;
 PRAGMA temp_store = 2; -- use memory, not temp files
 PRAGMA main.cache_size = 20000; -- 80MB max cache size per conn
-pragma mmap_size = 17179869184; -- cap mmap at 16GB
+pragma mmap_size = 4294967296; -- cap mmap at 4GB
 "##;
 
 /// Latest database version
