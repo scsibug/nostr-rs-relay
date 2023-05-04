@@ -2,3 +2,20 @@
 nostr.db
 nostr.db-*
 justfile
+config.toml
+favicon.ico
+tr-relay.*
+config.toml.*
+
+data
+**/*.rs.bk
+
+# Environment configuration files
+.env
+.env.local
+
+# User-specific files and directories
+*.swp
+*.swo
+.idea/
+.vscode/
