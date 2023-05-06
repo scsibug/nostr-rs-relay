@@ -29,7 +29,7 @@ frontend fe_prod
     bind    :80
     http-request set-header X-Forwarded-Proto https if { ssl_fc }
     redirect scheme https code 301 if !{ ssl_fc }
-    acl host_relay hdr(host) -i relay.example.com
+    acl host_relay hdr(host) -i -m beg relay.example.com
     use_backend relay if host_relay
     # HSTS (1 year)
     http-response set-header Strict-Transport-Security max-age=31536000
