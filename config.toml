@@ -42,7 +42,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Database connection pool settings for subscribers:
 
 # Minimum number of SQLite reader connections
-#min_conn = 4
+#min_conn = 0
 
 # Maximum number of SQLite reader connections.  Recommend setting this
 # to approx the number of cores.
