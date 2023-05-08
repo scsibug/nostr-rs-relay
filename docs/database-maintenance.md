@@ -78,18 +78,24 @@ PRAGMA foreign_keys = ON;
 delete from event where event_hash=x'00000000000c1271675dc86e3e1dd1336827bccabb90dc4c9d3b4465efefe00e';
 ```
 
-### Deleting All Events for Pubkey
+### Querying and Deleting All Events for Pubkey
 
 ```console
 PRAGMA foreign_keys = ON;
+
+select lower(hex(author)) as author, count(*) as c from event group by author order by c asc;
+
 delete from event where author=x'000000000002c7831d9c5a99f183afc2813a6f69a16edda7f6fc0ed8110566e6';
 ```
 
-### Deleting All Events of a Kind
+### Querying and Deleting All Events of a Kind
 
 
 ```console
 PRAGMA foreign_keys = ON;
+
+select printf('%7d', kind), count(*) as c from event group by kind order by c;
+
 delete from event where kind=70202;
 ```
 
