@@ -62,7 +62,7 @@ impl SqliteRepo {
             "writer",
             settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            1,
+            0,
             2,
             false,
         );
@@ -70,7 +70,7 @@ impl SqliteRepo {
             "maintenance",
             settings,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            1,
+            0,
             2,
             true,
         );
@@ -1199,6 +1199,7 @@ pub fn build_pool(
         .test_on_check_out(true) // no noticeable performance hit
         .min_idle(Some(min_size))
         .max_size(max_size)
+        .idle_timeout(Some(Duration::from_secs(10)))
         .max_lifetime(Some(Duration::from_secs(30)))
         .build(manager)
         .unwrap();

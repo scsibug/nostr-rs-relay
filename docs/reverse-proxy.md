@@ -29,7 +29,7 @@ frontend fe_prod
     bind    :80
     http-request set-header X-Forwarded-Proto https if { ssl_fc }
     redirect scheme https code 301 if !{ ssl_fc }
-    acl host_relay hdr(host) -i relay.example.com
+    acl host_relay hdr(host) -i -m beg relay.example.com
     use_backend relay if host_relay
     # HSTS (1 year)
     http-response set-header Strict-Transport-Security max-age=31536000
@@ -120,7 +120,7 @@ Assumptions:
 * `Traefik` is running in `Docker`, using `docker compose` and labels for the static configuration. An equivalent setup useing a Traefik config file is possible too (but not covered here).
 * Strict Transport Security is enabled.
 * Hostname for the relay is `relay.example.com`, email adres for ACME certificates provider is `name@example.com`.
-* ipv6 is enabled, a viable private ipv6 subnet is specified in the example below. 
+* ipv6 is enabled, a viable private ipv6 subnet is specified in the example below.
 * Relay is running on port `8080`.
 
 ```
