@@ -5,6 +5,7 @@ pub enum EventResultStatus {
     Blocked,
     RateLimited,
     Error,
+    Restricted,
 }
 
 pub struct EventResult {
@@ -24,7 +25,7 @@ impl EventResultStatus {
     pub fn to_bool(&self) -> bool {
         match self {
             Self::Duplicate | Self::Saved => true,
-            Self::Invalid | Self::Blocked | Self::RateLimited | Self::Error => false,
+            Self::Invalid | Self::Blocked | Self::RateLimited | Self::Error | Self::Restricted => false,
         }
     }
 
@@ -37,6 +38,7 @@ impl EventResultStatus {
             Self::Blocked => "blocked",
             Self::RateLimited => "rate-limited",
             Self::Error => "error",
+            Self::Restricted => "restricted",
         }
     }
 }
@@ -79,6 +81,11 @@ impl Notice {
     #[must_use]
     pub fn error(id: String, msg: &str) -> Notice {
         Notice::prefixed(id, msg, EventResultStatus::Error)
+    }
+
+    #[must_use]
+    pub fn restricted(id: String, msg: &str) -> Notice {
+        Notice::prefixed(id, msg, EventResultStatus::Restricted)
     }
 
     #[must_use]
