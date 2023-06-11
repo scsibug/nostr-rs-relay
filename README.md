@@ -95,7 +95,7 @@ Building `nostr-rs-relay` requires an installation of Cargo & Rust: https://www.
 
 The following OS packages will be helpful; on Debian/Ubuntu:
 ```console
-$ sudo apt-get install build-essentials cmake protobuf-compiler pkg-config libssl-dev
+$ sudo apt-get install build-essential cmake protobuf-compiler pkg-config libssl-dev
 ```
 
 Clone this repository, and then build a release version of the relay:
