@@ -58,7 +58,9 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 #connection_write = "postgresql://postgres:nostr@localhost:7500/nostr"
 
 [logging]
-folder_path = "./log"
+# Directory to store log files.  Log files roll over daily.
+#folder_path = "./log"
+#file_prefix = "nostr-relay"
 
 [grpc]
 # gRPC interfaces for externalized decisions and other extensions to
