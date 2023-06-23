@@ -4,14 +4,14 @@ use console_subscriber::ConsoleLayer;
 use nostr_rs_relay::cli::CLIArgs;
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
-use tracing::info;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+use tracing::info;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::EnvFilter;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -47,7 +47,7 @@ fn main() {
             let filter = EnvFilter::from_default_env();
             // assign to a variable that is not dropped till the program ends
             _log_guard = Some(guard);
-            
+
             tracing_subscriber::fmt()
                 .with_env_filter(filter)
                 .with_writer(non_blocking)
