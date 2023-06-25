@@ -1203,6 +1203,11 @@ pub fn build_pool(
         .max_lifetime(Some(Duration::from_secs(30)))
         .build(manager)
         .unwrap();
+    // retrieve a connection to ensure the startup statements run immediately
+    {
+        let _ = pool.get();
+    }
+
     info!(
         "Built a connection pool {:?} (min={}, max={})",
         name, min_size, max_size

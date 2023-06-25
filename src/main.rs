@@ -7,9 +7,11 @@ use nostr_rs_relay::server::start_server;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
-use tracing::info;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+use tracing::info;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::EnvFilter;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -22,6 +24,8 @@ fn main() {
     // get config file name from args
     let config_file_arg = args.config;
 
+    let mut _log_guard: Option<WorkerGuard> = None;
+
     // configure settings from the config file (defaults to config.toml)
     // replace default settings with those read from the config file
     let mut settings = config::Settings::new(&config_file_arg);
@@ -32,7 +36,27 @@ fn main() {
         ConsoleLayer::builder().with_default_env().init();
     } else {
         // standard logging
-        tracing_subscriber::fmt::try_init().unwrap();
+        if let Some(path) = &settings.logging.folder_path {
+            // write logs to a folder
+            let prefix = match &settings.logging.file_prefix {
+                Some(p) => p.as_str(),
+                None => "relay",
+            };
+            let file_appender = tracing_appender::rolling::daily(path, prefix);
+            let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+            let filter = EnvFilter::from_default_env();
+            // assign to a variable that is not dropped till the program ends
+            _log_guard = Some(guard);
+
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_writer(non_blocking)
+                .try_init()
+                .unwrap();
+        } else {
+            // write to stdout
+            tracing_subscriber::fmt::try_init().unwrap();
+        }
     }
     info!("Starting up from main");
 

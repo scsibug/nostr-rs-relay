@@ -1317,7 +1317,7 @@ async fn nostr_server(
                                                 },
                                                 Err(e) => {
                                                     info!("authentication error: {} (cid: {})", e, cid);
-                                                    ws_stream.send(make_notice_message(&Notice::message(format!("Authentication error: {e}")))).await.ok();
+                                                    ws_stream.send(make_notice_message(&Notice::restricted(event.id, format!("authentication error: {e}").as_str()))).await.ok();
                                                 },
                                             }
                                         }
