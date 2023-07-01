@@ -978,7 +978,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         return (empty_query, empty_params, None);
     }
 
-    // check if the index needs to be overriden
+    // check if the index needs to be overridden
     let idx_name = override_index(f);
     let idx_stmt = idx_name
         .as_ref()

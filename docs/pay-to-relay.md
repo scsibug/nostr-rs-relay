@@ -33,7 +33,7 @@ The LNBits instance must have a signed HTTPS a self signed certificate will not 
 
 ### Concepts
 
-All authors are initially not admitted to write to the relay.  There are two ways to gain access write to the relay. The first is by attempting to post the the relay, upon receiving an event from an author that is not admitted, the relay will send a direct message including the terms of service of the relay and a lighting invoice for the admission cost.  Once this invoice is payed the author can write to the relay. For this method to work the author must be reading from the relay. An author can also pay and accept the terms of service via a webpage `https://<relay-url>/join`.
+All authors are initially not admitted to write to the relay.  There are two ways to gain access write to the relay. The first is by attempting to post the the relay, upon receiving an event from an author that is not admitted, the relay will send a direct message including the terms of service of the relay and a lighting invoice for the admission cost.  Once this invoice is paid the author can write to the relay. For this method to work the author must be reading from the relay. An author can also pay and accept the terms of service via a webpage `https://<relay-url>/join`.
 
 ## Design Details
 

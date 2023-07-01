@@ -179,7 +179,7 @@ attempts to persist them to disk.  Once validated and persisted, these
 events are broadcast to all subscribers.
 
 When verification is enabled, the writer must check to ensure a valid,
-unexpired verification record exists for the auther.  All metadata
+unexpired verification record exists for the author.  All metadata
 events (regardless of verification status) are forwarded to a verifier
 module.  If the verifier determines a new verification record is
 needed, it is also responsible for persisting and broadcasting the

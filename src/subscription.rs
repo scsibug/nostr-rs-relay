@@ -188,7 +188,7 @@ impl<'de> Deserialize<'de> for Subscription {
         D: Deserializer<'de>,
     {
         let mut v: Value = Deserialize::deserialize(deserializer)?;
-        // this shoud be a 3-or-more element array.
+        // this should be a 3-or-more element array.
         // verify the first element is a String, REQ
         // get the subscription from the second element.
         // convert each of the remaining objects into filters

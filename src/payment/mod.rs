@@ -130,7 +130,7 @@ impl Payment {
         }
     }
 
-    /// Internal select loop for preforming payment operatons
+    /// Internal select loop for preforming payment operations
     async fn run_internal(&mut self) -> Result<()> {
         tokio::select! {
             m = self.payment_rx.recv() => {
