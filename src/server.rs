@@ -827,7 +827,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         info!("listening on: {}", socket_addr);
         // all client-submitted valid events are broadcast to every
         // other client on this channel.  This should be large enough
-        // to accomodate slower readers (messages are dropped if
+        // to accommodate slower readers (messages are dropped if
         // clients can not keep up).
         let (bcast_tx, _) = broadcast::channel::<Event>(broadcast_buffer_limit);
         // validated events that need to be persisted are sent to the

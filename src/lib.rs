@@ -14,6 +14,6 @@ pub mod notice;
 pub mod repo;
 pub mod subscription;
 pub mod utils;
-// Public API for creating relays programatically
+// Public API for creating relays programmatically
 pub mod payment;
 pub mod server;
