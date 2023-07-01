@@ -148,7 +148,7 @@ impl Payment {
                     Ok(PaymentMessage::CheckAccount(pubkey)) => {
                         let keys = Keys::from_pk_str(&pubkey)?;
 
-                        if let Some(invoice_info) = self.repo.get_unpaid_invoice(&keys).await? {
+                        if let Ok(Some(invoice_info)) = self.repo.get_unpaid_invoice(&keys).await {
                             match self.check_invoice_status(&invoice_info.payment_hash).await? {
                                 InvoiceStatus::Paid => {
                                     self.repo.admit_account(&keys, self.settings.pay_to_relay.admission_cost).await?;
@@ -158,6 +158,10 @@ impl Payment {
                                     self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                                 }
                             }
+                        } else {
+                        let amount = self.settings.pay_to_relay.admission_cost;
+                            let invoice_info = self.get_invoice_info(&pubkey, amount).await?;
+                            self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                         }
                     }
                     Ok(PaymentMessage::InvoicePaid(payment_hash)) => {

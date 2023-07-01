@@ -5,10 +5,10 @@ use hyper::Client;
 use hyper_tls::HttpsConnector;
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use async_trait::async_trait;
 use rand::Rng;
-use tracing::debug;
 
 use std::str::FromStr;
 use url::Url;
@@ -111,7 +111,6 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
         };
         let url = Url::parse(&self.settings.pay_to_relay.node_url)?.join(APIPATH)?;
         let uri = Uri::from_str(url.as_str().strip_suffix("/").unwrap_or(url.as_str())).unwrap();
-        debug!("{uri}");
 
         let req = hyper::Request::builder()
             .method(hyper::Method::POST)
@@ -122,13 +121,9 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
 
         let res = self.client.request(req).await?;
 
-        debug!("{res:?}");
-
         // Json to Struct of LNbits callback
         let body = hyper::body::to_bytes(res.into_body()).await?;
         let invoice_response: LNBitsCreateInvoiceResponse = serde_json::from_slice(&body)?;
-
-        debug!("{:?}", invoice_response);
 
         Ok(InvoiceInfo {
             pubkey: key.public_key().to_string(),
@@ -147,7 +142,6 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
             .join(APIPATH)?
             .join(payment_hash)?;
         let uri = Uri::from_str(url.as_str()).unwrap();
-        debug!("{uri}");
 
         let req = hyper::Request::builder()
             .method(hyper::Method::GET)
@@ -159,13 +153,18 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
         let res = self.client.request(req).await?;
         // Json to Struct of LNbits callback
         let body = hyper::body::to_bytes(res.into_body()).await?;
-        debug!("check invoice: {body:?}");
-        let invoice_response: LNBitsCheckInvoiceResponse = serde_json::from_slice(&body)?;
+        let invoice_response: Value = serde_json::from_slice(&body)?;
 
-        let status = if invoice_response.paid {
-            InvoiceStatus::Paid
+        let status = if let Ok(invoice_response) =
+            serde_json::from_value::<LNBitsCheckInvoiceResponse>(invoice_response)
+        {
+            if invoice_response.paid {
+                InvoiceStatus::Paid
+            } else {
+                InvoiceStatus::Unpaid
+            }
         } else {
-            InvoiceStatus::Unpaid
+            InvoiceStatus::Expired
         };
 
         Ok(status)
