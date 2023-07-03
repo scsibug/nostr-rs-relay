@@ -93,8 +93,9 @@ pub struct PayToRelay {
     pub node_url: String,
     pub api_secret: String,
     pub terms_message: String,
-    pub sign_ups: bool, // allow new users to sign up to relay
-    pub secret_key: String,
+    pub sign_ups: bool,       // allow new users to sign up to relay
+    pub direct_message: bool, // Send direct message to user with invoice and terms
+    pub secret_key: Option<String>,
     pub processor: Processor,
 }
 
@@ -243,7 +244,14 @@ impl Settings {
             // Should check that url is valid
             assert_ne!(settings.pay_to_relay.node_url, "");
             assert_ne!(settings.pay_to_relay.terms_message, "");
-            assert_ne!(settings.pay_to_relay.secret_key, "");
+
+            if settings.pay_to_relay.direct_message {
+                assert_ne!(
+                    settings.pay_to_relay.secret_key,
+                    Some("<nostr nsec>".to_string())
+                );
+                assert!(settings.pay_to_relay.secret_key.is_some());
+            }
         }
 
         Ok(settings)
@@ -306,7 +314,8 @@ impl Default for Settings {
                 node_url: "".to_string(),
                 api_secret: "".to_string(),
                 sign_ups: false,
-                secret_key: "".to_string(),
+                direct_message: true,
+                secret_key: None,
                 processor: Processor::LNBits,
             },
             verified_users: VerifiedUsers {

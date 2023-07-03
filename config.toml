@@ -202,6 +202,9 @@ reject_future_seconds = 1800
 # LNBits api secret
 #api_secret = "<ln bits api>"
 
+# Nostr direct message on signup
+#direct_message=true 
+
 # Terms of service
 #terms_message = """
 #This service (and supporting services) are provided "as is", without warranty of any kind, express or implied.
@@ -223,4 +226,6 @@ reject_future_seconds = 1800
 
 # Whether or not new sign ups should be allowed
 #sign_ups = false
+
+# optional if `direct_message=false`
 #secret_key = "<nostr nsec>"
