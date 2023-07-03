@@ -22,12 +22,12 @@ api_secret = "<LNbits api key>"
 # Terms of service
 terms_message = """This service ....
 """
-# Whether or not new sign ups should be allowed 
-sign_ups = true 
+# Whether or not new sign ups should be allowed
+sign_ups = true
 secret_key = "<nostr secret key to send dms>"
 ```
 
-The LNBits instance must have a signed HTTPS a self signed certificate will not work.  
+The LNBits instance must have a signed HTTPS a self signed certificate will not work.
 
 ## Design Overview
 
@@ -54,7 +54,7 @@ Invoice information is stored in a dedicated table. This tracks:
 * `created_at` timestamp of creation
 * `confirmed_at` timestamp of payment
 
-### Event Handling 
+### Event Handling
 
 If "pay to relay" is enabled, all incoming events are evaluated to determine whether the author is on the relay's whitelist or if they have paid the admission fee and accepted the terms. If "pay per note" is enabled, there is an additional check to ensure that the author has enough balance, which is then reduced by the cost per note. If the author is on the whitelist, this balance check is not necessary.
 
@@ -77,9 +77,8 @@ simply to demonstrate a mitigation is possible.
 
 *Mitigation*: Rate limit number of new sign ups
 
-### Admitted Author Spamming 
+### Admitted Author Spamming
 
 *Threat*: An attacker gains write access by paying the admission fee, and then floods the relay with a large number of spam events.
 
 *Mitigation*: The attacker's admission can be revoked and their admission fee will not be refunded. Enabling "cost per event" and increasing the admission cost can also discourage this type of behavior.
-

@@ -203,7 +203,7 @@ reject_future_seconds = 1800
 #api_secret = "<ln bits api>"
 
 # Nostr direct message on signup
-#direct_message=true 
+#direct_message=true
 
 # Terms of service
 #terms_message = """

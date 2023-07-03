@@ -18,7 +18,7 @@ We want to place the nostr-rs-relay binary and the config.toml file where they b
 2. `sudo cp config.toml /etc/nostr-rs-relay`
 
 ### Create the Systemd service file
-We need to create a new Systemd service file. These files are placed in the `/etc/systemd/system/` folder where you will find many other services running. 
+We need to create a new Systemd service file. These files are placed in the `/etc/systemd/system/` folder where you will find many other services running.
 
 1. `sudo vim /etc/systemd/system/nostr-rs-relay.service`
 2. Paste in the contents of [this service file](../contrib/nostr-rs-relay.service). Remember to replace the `User` value with your own username.
