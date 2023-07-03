@@ -50,15 +50,15 @@ mod tests {
     #[test]
     fn lower_hex() {
         let hexstr = "abcd0123";
-        assert_eq!(is_lower_hex(hexstr), true);
+        assert!(is_lower_hex(hexstr));
     }
 
     #[test]
     fn nip19() {
         let hexkey = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d";
         let nip19key = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6";
-        assert_eq!(is_nip19(hexkey), false);
-        assert_eq!(is_nip19(nip19key), true);
+        assert!(!is_nip19(hexkey));
+        assert!(is_nip19(nip19key));
     }
 
     #[test]

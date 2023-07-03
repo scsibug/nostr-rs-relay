@@ -204,7 +204,7 @@ impl ClientConn {
                     }
                 }
 
-                match (relay.and_then(|url| host_str(url)), host_str(relay_url)) {
+                match (relay.and_then(host_str), host_str(relay_url)) {
                     (Some(received_relay), Some(our_relay)) => {
                         if received_relay != our_relay {
                             return Err(Error::AuthFailure);

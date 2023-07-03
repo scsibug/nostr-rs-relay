@@ -842,7 +842,8 @@ impl NostrRepo for SqliteRepo {
     async fn update_invoice(&self, payment_hash: &str, status: InvoiceStatus) -> Result<String> {
         let mut conn = self.write_pool.get()?;
         let payment_hash = payment_hash.to_owned();
-        let pub_key = tokio::task::spawn_blocking(move || {
+
+        tokio::task::spawn_blocking(move || {
             let tx = conn.transaction()?;
             let pubkey: String;
             {
@@ -884,8 +885,7 @@ impl NostrRepo for SqliteRepo {
             let ok: Result<String> = Ok(pubkey);
             ok
         })
-        .await?;
-        pub_key
+        .await?
     }
 
     /// Get the most recent invoice for a given pubkey
@@ -1080,18 +1080,18 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                     ks.iter().map(std::string::ToString::to_string).collect();
                 kind_clause = format!("AND kind IN ({})", str_kinds.join(", "));
             } else {
-                kind_clause = format!("");
+                kind_clause = String::new();
             };
             if f.since.is_some() {
                 since_clause = format!("AND created_at > {}", f.since.unwrap());
             } else {
-                since_clause = format!("");
+                since_clause = String::new();
             };
             // Query for timestamp
             if f.until.is_some() {
                 until_clause = format!("AND created_at < {}", f.until.unwrap());
             } else {
-                until_clause = format!("");
+                until_clause = String::new();
             };
 
             let tag_clause = format!(

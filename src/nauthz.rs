@@ -35,7 +35,7 @@ impl std::convert::From<Nip05Name> for nauthz_grpc::event_request::Nip05Name {
     fn from(value: Nip05Name) -> Self {
         nauthz_grpc::event_request::Nip05Name {
             local: value.local.clone(),
-            domain: value.domain.clone(),
+            domain: value.domain,
         }
     }
 }
@@ -57,7 +57,7 @@ impl EventAuthzService {
         eas
     }
 
-    pub async fn ready_connection(self: &mut Self) {
+    pub async fn ready_connection(&mut self) {
         if self.conn.is_none() {
             let client = AuthorizationClient::connect(self.server_addr.to_string()).await;
             if let Err(ref msg) = client {
@@ -70,7 +70,7 @@ impl EventAuthzService {
     }
 
     pub async fn admit_event(
-        self: &mut Self,
+        &mut self,
         event: &Event,
         ip: &str,
         origin: Option<String>,
@@ -99,13 +99,13 @@ impl EventAuthzService {
                     origin,
                     user_agent,
                     auth_pubkey,
-                    nip05: nip05.map(|x| nauthz_grpc::event_request::Nip05Name::from(x)),
+                    nip05: nip05.map(nauthz_grpc::event_request::Nip05Name::from),
                 })
                 .await?;
             let reply = svr_res.into_inner();
-            return Ok(Box::new(reply));
+            Ok(Box::new(reply))
         } else {
-            return Err(Error::AuthzError);
+            Err(Error::AuthzError)
         }
     }
 }

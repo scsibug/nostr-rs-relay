@@ -110,7 +110,7 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
             expiry: 3600,
         };
         let url = Url::parse(&self.settings.pay_to_relay.node_url)?.join(APIPATH)?;
-        let uri = Uri::from_str(url.as_str().strip_suffix("/").unwrap_or(url.as_str())).unwrap();
+        let uri = Uri::from_str(url.as_str().strip_suffix('/').unwrap_or(url.as_str())).unwrap();
 
         let req = hyper::Request::builder()
             .method(hyper::Method::POST)
