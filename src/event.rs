@@ -472,12 +472,11 @@ mod tests {
         let mut event = Event::simple_event();
         event.tags = vec![vec!["e".to_owned(), "foo".to_owned()]];
         event.build_index();
-        assert_eq!(
+        assert!(
             event.generic_tag_val_intersect(
                 'e',
                 &HashSet::from(["foo".to_owned(), "bar".to_owned()])
-            ),
-            true
+            )
         );
     }
 

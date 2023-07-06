@@ -12,13 +12,13 @@ Start by building the application from source. Here is how to do that:
 3. `cargo build --release`
 
 ### Place the files where they belong
-We want to palce the nostr-rs-relay binary and the config.toml file where they belong. While still in the root level of the nostr-rs-relay folder you cloned in last step, run the following commands:
+We want to place the nostr-rs-relay binary and the config.toml file where they belong. While still in the root level of the nostr-rs-relay folder you cloned in last step, run the following commands:
 1. `sudo cp target/release/nostr-rs-relay /usr/local/bin/`
 2. `sudo mkdir /etc/nostr-rs-relay`
 2. `sudo cp config.toml /etc/nostr-rs-relay`
 
 ### Create the Systemd service file
-We need to create a new Systemd service file. These files are placed in the `/etc/systemd/system/` folder where you will find many other services running. 
+We need to create a new Systemd service file. These files are placed in the `/etc/systemd/system/` folder where you will find many other services running.
 
 1. `sudo vim /etc/systemd/system/nostr-rs-relay.service`
 2. Paste in the contents of [this service file](../contrib/nostr-rs-relay.service). Remember to replace the `User` value with your own username.

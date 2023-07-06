@@ -45,8 +45,8 @@ pub const DB_FILE: &str = "nostr.db";
 /// Will panic if the pool could not be created.
 pub async fn build_repo(settings: &Settings, metrics: NostrMetrics) -> Arc<dyn NostrRepo> {
     match settings.database.engine.as_str() {
-        "sqlite" => Arc::new(build_sqlite_pool(&settings, metrics).await),
-        "postgres" => Arc::new(build_postgres_pool(&settings, metrics).await),
+        "sqlite" => Arc::new(build_sqlite_pool(settings, metrics).await),
+        "postgres" => Arc::new(build_postgres_pool(settings, metrics).await),
         _ => panic!("Unknown database engine"),
     }
 }
@@ -378,7 +378,7 @@ pub async fn db_writer(
                         notice_tx
                             .try_send(Notice::blocked(
                                 event.id,
-                                &decision.message().unwrap_or_else(|| "".to_string()),
+                                &decision.message().unwrap_or_default(),
                             ))
                             .ok();
                         continue;

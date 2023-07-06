@@ -25,7 +25,7 @@ pub struct Payment {
     /// Settings
     settings: crate::config::Settings,
     // Nostr Keys
-    nostr_keys: Keys,
+    nostr_keys: Option<Keys>,
     /// Payment Processor
     processor: Arc<dyn PaymentProcessor>,
 }
@@ -102,7 +102,11 @@ impl Payment {
         info!("Create payment handler");
 
         // Create nostr key from sk string
-        let nostr_keys = Keys::from_sk_str(&settings.pay_to_relay.secret_key)?;
+        let nostr_keys = if let Some(secret_key) = &settings.pay_to_relay.secret_key {
+            Some(Keys::from_sk_str(secret_key)?)
+        } else {
+            None
+        };
 
         // Create processor kind defined in settings
         let processor = match &settings.pay_to_relay.processor {
@@ -130,7 +134,7 @@ impl Payment {
         }
     }
 
-    /// Internal select loop for preforming payment operatons
+    /// Internal select loop for preforming payment operations
     async fn run_internal(&mut self) -> Result<()> {
         tokio::select! {
             m = self.payment_rx.recv() => {
@@ -148,7 +152,7 @@ impl Payment {
                     Ok(PaymentMessage::CheckAccount(pubkey)) => {
                         let keys = Keys::from_pk_str(&pubkey)?;
 
-                        if let Some(invoice_info) = self.repo.get_unpaid_invoice(&keys).await? {
+                        if let Ok(Some(invoice_info)) = self.repo.get_unpaid_invoice(&keys).await {
                             match self.check_invoice_status(&invoice_info.payment_hash).await? {
                                 InvoiceStatus::Paid => {
                                     self.repo.admit_account(&keys, self.settings.pay_to_relay.admission_cost).await?;
@@ -158,6 +162,10 @@ impl Payment {
                                     self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                                 }
                             }
+                        } else {
+                        let amount = self.settings.pay_to_relay.admission_cost;
+                            let invoice_info = self.get_invoice_info(&pubkey, amount).await?;
+                            self.payment_tx.send(PaymentMessage::Invoice(pubkey, invoice_info)).ok();
                         }
                     }
                     Ok(PaymentMessage::InvoicePaid(payment_hash)) => {
@@ -189,6 +197,11 @@ impl Payment {
         pubkey: &str,
         invoice_info: &InvoiceInfo,
     ) -> Result<()> {
+        let nostr_keys = match &self.nostr_keys {
+            Some(key) => key,
+            None => return Err(Error::CustomError("Nostr key not defined".to_string())),
+        };
+
         // Create Nostr key from pk
         let key = Keys::from_pk_str(pubkey)?;
 
@@ -196,16 +209,16 @@ impl Payment {
 
         // Event DM with terms of service
         let message_event: NostrEvent = EventBuilder::new_encrypted_direct_msg(
-            &self.nostr_keys,
+            nostr_keys,
             pubkey,
             &self.settings.pay_to_relay.terms_message,
         )?
-        .to_event(&self.nostr_keys)?;
+        .to_event(nostr_keys)?;
 
         // Event DM with invoice
         let invoice_event: NostrEvent =
-            EventBuilder::new_encrypted_direct_msg(&self.nostr_keys, pubkey, &invoice_info.bolt11)?
-                .to_event(&self.nostr_keys)?;
+            EventBuilder::new_encrypted_direct_msg(nostr_keys, pubkey, &invoice_info.bolt11)?
+                .to_event(nostr_keys)?;
 
         // Persist DM events to DB
         self.repo.write_event(&message_event.clone().into()).await?;
@@ -242,8 +255,10 @@ impl Payment {
             .create_invoice_record(&key, invoice_info.clone())
             .await?;
 
-        // Admission event invoice and terms to pubkey that is joining
-        self.send_admission_message(pubkey, &invoice_info).await?;
+        if self.settings.pay_to_relay.direct_message {
+            // Admission event invoice and terms to pubkey that is joining
+            self.send_admission_message(pubkey, &invoice_info).await?;
+        }
 
         Ok(invoice_info)
     }
