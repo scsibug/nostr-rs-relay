@@ -20,6 +20,9 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # ICO format.
 #favicon = "favicon.ico"
 
+# URL of Relay's icon.
+#relay_icon = "https://example.test/img.png"
+
 [diagnostics]
 # Enable tokio tracing (for use with tokio-console)
 #tracing = false
