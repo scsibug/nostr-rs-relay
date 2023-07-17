@@ -112,7 +112,8 @@ seen" policy.
 
 ```console
 PRAGMA foreign_keys = ON;
-TODO!
+
+DELETE FROM event WHERE first_seen < CAST(strftime('%s', date('now', '-30 day')) AS INT);
 ```
 
 ### Delete Profile Events with No Recent Events
