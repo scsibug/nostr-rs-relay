@@ -26,8 +26,9 @@ fn main() {
     // get config file name from args
     let config_file_arg = args.config;
     // Quits if config file path does not exist
-    if !Path::new(&config_file_arg).exists() {
-        eprintln!("Config file not found: {}", &config_file_arg);
+    let config_file_path: &OsStr = OsStr::new(config_file_arg);
+    if !Path::new(&config_file_path).exists() {
+        eprintln!("Config file not found: {}", &config_file_path);
         process::exit(1);
     }
 
