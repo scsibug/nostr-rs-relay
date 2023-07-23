@@ -8,7 +8,7 @@ use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 use std::path::Path;
-use std::fs
+use std::fs;
 use std::process;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
