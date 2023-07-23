@@ -8,6 +8,7 @@ use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
 use std::path::Path;
+use std::fs
 use std::process;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -26,12 +27,30 @@ fn main() {
     // get config file name from args
     let config_file_arg = args.config;
 
-    // Quits if config file path does not exist
+    // Quits if config file path is unreadable or does not exist
     let config_file_path = config_file_arg.as_ref().map(|x| &**x).unwrap();
-    if !Path::new(&config_file_path).exists() {
+    let path = Path::new(&config_file_path);
+
+    if !path.exists() {
         eprintln!("Config file not found: {}", &config_file_path);
         process::exit(1);
     }
+
+    if !path.is_file() {
+        eprintln!("Invalid config file path: {}", &config_file_path);
+        process::exit(1);
+    }
+
+    if let Err(err) = fs::metadata(&path) {
+        eprintln!("Error while accessing file metadata: {}", err);
+        process::exit(1);
+    }
+
+    if !path.is_readable() {
+        eprintln!("Config file is not readable: {}", &config_file_path);
+        process::exit(1);
+    }
+ 
 
     let mut _log_guard: Option<WorkerGuard> = None;
 
