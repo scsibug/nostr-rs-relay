@@ -7,6 +7,8 @@ use nostr_rs_relay::server::start_server;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
+use std::path::Path;
+use std::process;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tracing::info;
@@ -23,6 +25,11 @@ fn main() {
 
     // get config file name from args
     let config_file_arg = args.config;
+    // Quits if config file path does not exist
+    if !Path::new(&config_file_arg).exists() {
+        eprintln!("Config file not found: {}", &config_file_arg);
+        process::exit(1);
+    }
 
     let mut _log_guard: Option<WorkerGuard> = None;
 
