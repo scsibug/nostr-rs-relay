@@ -46,11 +46,11 @@ fn main() {
         process::exit(1);
     }
 
-    if !path.is_readable() {
-        eprintln!("Config file is not readable: {}", &config_file_path);
+    if let Err(err) = fs::File::open(&path) {
+        eprintln!("Config file is not readable: {}", err);
         process::exit(1);
     }
- 
+
 
     let mut _log_guard: Option<WorkerGuard> = None;
 
