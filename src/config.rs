@@ -1,10 +1,8 @@
 //! Configuration file and settings management
+use crate::payment::Processor;
 use config::{Config, ConfigError, File};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::warn;
-
-use crate::payment::Processor;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
@@ -193,17 +191,23 @@ pub struct Settings {
 }
 
 impl Settings {
-    #[must_use]
-    pub fn new(config_file_name: &Option<String>) -> Self {
+    pub fn new(config_file_name: &Option<String>) -> Result<Self, ConfigError> {
         let default_settings = Self::default();
         // attempt to construct settings with file
         let from_file = Self::new_from_default(&default_settings, config_file_name);
         match from_file {
-            Ok(f) => f,
             Err(e) => {
-                warn!("Error reading config file ({:?})", e);
-                default_settings
+                // pass up the parse error if the config file was specified,
+                // otherwise use the default config (with a warning).
+                if config_file_name.is_some() {
+                    Err(e)
+                } else {
+                    eprintln!("Error reading config file ({:?})", e);
+                    eprintln!("WARNING: Default configuration settings will be used");
+                    Ok(default_settings)
+                }
             }
+            ok => ok,
         }
     }
 

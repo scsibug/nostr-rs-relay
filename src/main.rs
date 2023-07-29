@@ -4,12 +4,12 @@ use console_subscriber::ConsoleLayer;
 use nostr_rs_relay::cli::CLIArgs;
 use nostr_rs_relay::config;
 use nostr_rs_relay::server::start_server;
+use std::fs;
+use std::path::Path;
+use std::process;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
-use std::path::Path;
-use std::fs;
-use std::process;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tracing::info;
@@ -27,36 +27,35 @@ fn main() {
     // get config file name from args
     let config_file_arg = args.config;
 
-    // Quits if config file path is unreadable or does not exist
-    let config_file_path = config_file_arg.as_ref().map(|x| &**x).unwrap();
-    let path = Path::new(&config_file_path);
-
-    if !path.exists() {
-        eprintln!("Config file not found: {}", &config_file_path);
-        process::exit(1);
+    // Ensure the config file is readable if it was explicitly set
+    if let Some(config_path) = config_file_arg.as_ref() {
+        let path = Path::new(&config_path);
+        if !path.exists() {
+            eprintln!("Config file not found: {}", &config_path);
+            process::exit(1);
+        }
+        if !path.is_file() {
+            eprintln!("Invalid config file path: {}", &config_path);
+            process::exit(1);
+        }
+        if let Err(err) = fs::metadata(path) {
+            eprintln!("Error while accessing file metadata: {}", err);
+            process::exit(1);
+        }
+        if let Err(err) = fs::File::open(path) {
+            eprintln!("Config file is not readable: {}", err);
+            process::exit(1);
+        }
     }
-
-    if !path.is_file() {
-        eprintln!("Invalid config file path: {}", &config_file_path);
-        process::exit(1);
-    }
-
-    if let Err(err) = fs::metadata(&path) {
-        eprintln!("Error while accessing file metadata: {}", err);
-        process::exit(1);
-    }
-
-    if let Err(err) = fs::File::open(&path) {
-        eprintln!("Config file is not readable: {}", err);
-        process::exit(1);
-    }
-
 
     let mut _log_guard: Option<WorkerGuard> = None;
 
     // configure settings from the config file (defaults to config.toml)
     // replace default settings with those read from the config file
-    let mut settings = config::Settings::new(&config_file_arg);
+    let mut settings = config::Settings::new(&config_file_arg).unwrap_or_else(|e| {
+        eprintln!("Error reading config file ({:?})", e);
+        process::exit(1);
+    });
 
     // setup tracing
     if settings.diagnostics.tracing {
