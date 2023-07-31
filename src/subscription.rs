@@ -319,8 +319,8 @@ impl ReqFilter {
     pub fn interested_in_event(&self, event: &Event) -> bool {
         //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
         self.ids_match(event)
-            && self.since.map_or(true, |t| event.created_at > t)
-            && self.until.map_or(true, |t| event.created_at < t)
+            && self.since.map_or(true, |t| event.created_at >= t)
+            && self.until.map_or(true, |t| event.created_at <= t)
             && self.kind_match(event.kind)
             && (self.authors_match(event) || self.delegated_authors_match(event))
             && self.tag_match(event)

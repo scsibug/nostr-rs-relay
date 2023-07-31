@@ -904,7 +904,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         }
         push_and = true;
         query
-            .push("e.created_at > ")
+            .push("e.created_at >= ")
             .push_bind(Utc.timestamp_opt(f.since.unwrap() as i64, 0).unwrap());
     }
 
@@ -915,7 +915,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         }
         push_and = true;
         query
-            .push("e.created_at < ")
+            .push("e.created_at <= ")
             .push_bind(Utc.timestamp_opt(f.until.unwrap() as i64, 0).unwrap());
     }
 

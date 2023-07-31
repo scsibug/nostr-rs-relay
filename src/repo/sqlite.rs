@@ -1083,13 +1083,13 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 kind_clause = String::new();
             };
             if f.since.is_some() {
-                since_clause = format!("AND created_at > {}", f.since.unwrap());
+                since_clause = format!("AND created_at >= {}", f.since.unwrap());
             } else {
                 since_clause = String::new();
             };
             // Query for timestamp
             if f.until.is_some() {
-                until_clause = format!("AND created_at < {}", f.until.unwrap());
+                until_clause = format!("AND created_at <= {}", f.until.unwrap());
             } else {
                 until_clause = String::new();
             };
@@ -1107,12 +1107,12 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     }
     // Query for timestamp
     if f.since.is_some() {
-        let created_clause = format!("created_at > {}", f.since.unwrap());
+        let created_clause = format!("created_at >= {}", f.since.unwrap());
         filter_components.push(created_clause);
     }
     // Query for timestamp
     if f.until.is_some() {
-        let until_clause = format!("created_at < {}", f.until.unwrap());
+        let until_clause = format!("created_at <= {}", f.until.unwrap());
         filter_components.push(until_clause);
     }
     // never display hidden events

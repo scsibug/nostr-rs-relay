@@ -45,6 +45,8 @@ pub struct RelayInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,        
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub supported_nips: Option<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub software: Option<String>,
@@ -124,6 +126,7 @@ impl From<Settings> for RelayInfo {
             limitation: Some(limitations),
             payment_url,
             fees,
+            icon: i.relay_icon,
         }
     }
 }
