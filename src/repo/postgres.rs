@@ -21,8 +21,7 @@ use crate::utils::{self, is_hex, is_lower_hex};
 use nostr::key::Keys;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
-use tracing::log::trace;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub type PostgresPool = sqlx::pool::Pool<Postgres>;
 
