@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "nostr-rs-relay"
-version = "0.8.11"
+version = "0.8.12"
 dependencies = [
  "anyhow",
  "async-std",
