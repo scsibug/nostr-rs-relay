@@ -40,7 +40,7 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Use an in-memory database instead of 'nostr.db'.
 # Requires sqlite engine.
 # Caution; this will not survive a process restart!
-in_memory = true
+#in_memory = true
 
 # Database connection pool settings for subscribers:
 
