@@ -1009,7 +1009,7 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                     params.push(Box::new(lower));
                 }
                 None => {
-                    info!("Could not parse hex range from author {:?}", auth);
+                    trace!("Could not parse hex range from author {:?}", auth);
                 }
             }
         }
