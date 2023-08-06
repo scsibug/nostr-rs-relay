@@ -1034,7 +1034,7 @@ fn allowed_to_send(event_str: &String, conn: &conn::ClientConn, settings: &Setti
     if settings.authorization.nip42_dms {
         match serde_json::from_str::<Event>(event_str) {
             Ok(event) => {
-                if event.kind == 4 {
+                if event.kind == 4 || event.kind == 44 || event.kind == 1059 {
                     match (conn.auth_pubkey(), event.tag_values_by_name("p").first()) {
                         (Some(auth_pubkey), Some(recipient_pubkey)) => {
                             recipient_pubkey == auth_pubkey || &event.pubkey == auth_pubkey
