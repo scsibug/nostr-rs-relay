@@ -160,7 +160,7 @@ reject_future_seconds = 1800
 #]
 # Enable NIP-42 authentication
 #nip42_auth = false
-# Send DMs events (kind 4) only to their authenticated recipients
+# Send DMs (kind 4 and 44) and gift wraps (kind 1059) only to their authenticated recipients
 #nip42_dms = false
 
 [verified_users]
