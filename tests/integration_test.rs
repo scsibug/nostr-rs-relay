@@ -73,7 +73,7 @@ async fn publish_test() -> Result<()> {
     let event_sub = r#"["REQ", "simple", {}]"#;
     sub_ws.send(event_sub.into()).await?;
     // read from subscription
-    let ws_next = sub_ws.next().await;
+    let _ws_next = sub_ws.next().await;
     let _res = relay.shutdown_tx.send(());
     Ok(())
 }

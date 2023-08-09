@@ -1072,8 +1072,6 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
             // find evidence of the target tag name/value existing for this event.
             // Query for Kind/Since/Until additionally, to reduce the number of tags that come back.
             let kind_clause;
-            let since_clause;
-            let until_clause;
             if let Some(ks) = &f.kinds {
                 // kind is number, no escaping needed
                 let str_kinds: Vec<String> =
@@ -1082,16 +1080,16 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
             } else {
                 kind_clause = String::new();
             };
-            if f.since.is_some() {
-                since_clause = format!("AND created_at >= {}", f.since.unwrap());
+            let since_clause = if f.since.is_some() {
+                format!("AND created_at >= {}", f.since.unwrap())
             } else {
-                since_clause = String::new();
+                String::new()
             };
             // Query for timestamp
-            if f.until.is_some() {
-                until_clause = format!("AND created_at <= {}", f.until.unwrap());
+            let until_clause = if f.until.is_some() {
+                format!("AND created_at <= {}", f.until.unwrap())
             } else {
-                until_clause = String::new();
+                String::new()
             };
 
             let tag_clause = format!(

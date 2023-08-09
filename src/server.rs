@@ -30,6 +30,8 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use nostr::key::FromPkStr;
+use nostr::key::Keys;
 use prometheus::IntCounterVec;
 use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
@@ -60,8 +62,6 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
-use nostr::key::FromPkStr;
-use nostr::key::Keys;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -1029,7 +1029,7 @@ fn make_notice_message(notice: &Notice) -> Message {
     Message::text(json.to_string())
 }
 
-fn allowed_to_send(event_str: &String, conn: &conn::ClientConn, settings: &Settings) -> bool {
+fn allowed_to_send(event_str: &str, conn: &conn::ClientConn, settings: &Settings) -> bool {
     // TODO: pass in kind so that we can avoid deserialization for most events
     if settings.authorization.nip42_dms {
         match serde_json::from_str::<Event>(event_str) {
@@ -1038,16 +1038,14 @@ fn allowed_to_send(event_str: &String, conn: &conn::ClientConn, settings: &Setti
                     match (conn.auth_pubkey(), event.tag_values_by_name("p").first()) {
                         (Some(auth_pubkey), Some(recipient_pubkey)) => {
                             recipient_pubkey == auth_pubkey || &event.pubkey == auth_pubkey
-                        },
-                        (_, _) => {
-                            false
-                        },
+                        }
+                        (_, _) => false,
                     }
                 } else {
                     true
                 }
-            },
-            Err(_) => false
+            }
+            Err(_) => false,
         }
     } else {
         true
