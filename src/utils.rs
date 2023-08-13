@@ -37,7 +37,7 @@ pub fn is_lower_hex(s: &str) -> bool {
     })
 }
 
-pub fn host_str(url: &String) -> Option<String> {
+pub fn host_str(url: &str) -> Option<String> {
     Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))

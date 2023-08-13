@@ -41,7 +41,7 @@ impl std::convert::From<Nip05Name> for nauthz_grpc::event_request::Nip05Name {
 }
 
 // conversion of event tags into gprc struct
-fn tags_to_protobuf(tags: &Vec<Vec<String>>) -> Vec<TagEntry> {
+fn tags_to_protobuf(tags: &[Vec<String>]) -> Vec<TagEntry> {
     tags.iter()
         .map(|x| TagEntry { values: x.clone() })
         .collect()
