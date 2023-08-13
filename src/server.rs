@@ -274,20 +274,20 @@ async fn handle_web_request(
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
                 <style>
-                    body {{
-                        background-color: #6320a7;
+                    body {
+                        background-color: #6320a7 !important; /* Make sure this override takes precedence */
                         color: white;
-                    }}
-            
-                    a {{
-                        color: pink;
-                    }}
-            
-                    .btn {{
-                        background-color: #ff4081;
-                    }}
+                    }
+                
+                    a {
+                        color: pink !important;
+                    }
+                
+                    .btn-primary {
+                        background-color: #ff4081 !important;
+                    }
                 </style>
-                <title>Enter Your Pubkey</title>
+                <title>Join Nostr - Enter your pubkey</title>
             </head>
             
             <body>
