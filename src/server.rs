@@ -266,73 +266,82 @@ async fn handle_web_request(
             }
 
             let html = r#"
-<!doctype HTML>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      font-family: Arial, sans-serif;
-      background-color: #6320a7;
-      color: white;
-    }
-
-    .container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 400px;
-    }
-
-    a {
-      color: pink;
-    }
-
-    input[type="text"] {
-        width: 100%;
-        max-width: 500px;
-        box-sizing: border-box;
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-  </style>
-</head>
-<body>
-  <div style="width:75%;">
-    <h1>Enter your pubkey</h1>
-    <form action="/invoice" onsubmit="return checkForm(this);">
-      <input type="text" name="pubkey" id="pubkey-input"><br><br>
-      <input type="checkbox" id="terms" required>
-      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
-      <button type="submit">Submit</button>
-    </form>
-    <button id="get-public-key-btn">Get Public Key</button>
-  </div>
-  <script>
-    function checkForm(form) {
-      if (!form.terms.checked) {
-        alert("Please agree to the terms and conditions");
-        return false;
-      }
-      return true;
-    }
-
-    const pubkeyInput = document.getElementById('pubkey-input');
-      const getPublicKeyBtn = document.getElementById('get-public-key-btn');
-      getPublicKeyBtn.addEventListener('click', async function() {
-        try {
-          const publicKey = await window.nostr.getPublicKey();
-          pubkeyInput.value = publicKey;
-        } catch (error) {
-          console.error(error);
-        }
-      });
-  </script>
-</body>
-</html>
+            <!DOCTYPE html>
+            <html lang="en">
+            
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                <style>
+                    body {
+                        background-color: #6320a7 !important; /* Make sure this override takes precedence */
+                        color: white;
+                    }
+                
+                    a {
+                        color: pink !important;
+                    }
+                
+                    .btn-primary {
+                        background-color: #ff4081 !important;
+                    }
+                </style>
+                <title>Join Nostr - Enter your pubkey</title>
+            </head>
+            
+            <body>
+                <div class="container py-5">
+                    <div class="row">
+                        <div class="col-lg-6 mx-auto">
+                            <h1 class="text-center mb-4">Enter your pubkey</h1>
+                            <form action="/invoice" onsubmit="return checkForm(this);">
+                                <div class="form-group">
+                                    <input type="text" name="pubkey" class="form-control" id="pubkey-input" placeholder="Public Key" required>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="terms" required>
+                                    <label class="form-check-label" for="terms">I agree to the <a href="/terms">terms and conditions</a></label>
+                                </div>
+                                <div class="form-group mt-4">
+                                    <button type="submit" class="btn btn-primary btn-block">Submit</button>
+                                </div>
+                            </form>
+                            <div class="form-group">
+                                <button id="get-public-key-btn" class="btn btn-primary btn-block">Get Public Key</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            
+                <script>
+                    function checkForm(form) {
+                        if (!form.terms.checked) {
+                            alert("Please agree to the terms and conditions");
+                            return false;
+                        }
+                        return true;
+                    }
+            
+                    const pubkeyInput = document.getElementById('pubkey-input');
+                    const getPublicKeyBtn = document.getElementById('get-public-key-btn');
+                    getPublicKeyBtn.addEventListener('click', async function() {
+                        try {
+                            const publicKey = await window.nostr.getPublicKey();
+                            pubkeyInput.value = publicKey;
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    });
+                </script>
+            
+                <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+                <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+            
+            </body>
+            
+            </html>
             "#;
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -445,89 +454,94 @@ async fn handle_web_request(
 
             let html_result = format!(
                 r#"
-<!DOCTYPE html>
-<html>
-  <head>
-  <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color:  #6320a7 ;
-        color: white;
-      }}
-      #copy-button {{
-        background-color: #bb5f0d ;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        border: none;
-        cursor: pointer;
-      }}
-      #copy-button:hover {{
-        background-color: #8f29f4;
-      }}
-    .container {{
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 400px;
-    }}
-    a {{
-        color: pink;
-    }}
-    </style>
-  </head>
-  <body>
-    <div style="width:75%;">
-      <h3>
-        To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
-      </h3>
-    </div>
-    <div>
-        <div style="max-height: 300px;">
-            {}
-        </div>
-    </div>
-    <div>
-    <div style="width: 75%;">
-        <p style="overflow-wrap: break-word; width: 500px;">{}</p>
-        <button id="copy-button">Copy</button>
-    </div>
-    <div>
-        <p> This page will not refresh </p>
-        <p> Verify admission <a href=/account?pubkey={}>here</a> once you have paid</p>
-    </div>
-    </div>
-  </body>
-</html>
-
-
-<script>
-  const copyButton = document.getElementById("copy-button");
-  if (navigator.clipboard) {{
-    copyButton.addEventListener("click", function() {{
-      const textToCopy = "{}";
-      navigator.clipboard.writeText(textToCopy).then(function() {{
-        console.log("Text copied to clipboard");
-      }}, function(err) {{
-        console.error("Could not copy text: ", err);
-      }});
-    }});
-  }} else {{
-    copyButton.style.display = "none";
-    console.warn("Clipboard API is not supported in this browser");
-  }}
-</script>
+                <!DOCTYPE html>
+                <html lang="en">
+                
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                    <style>
+                        body {{
+                            background-color: #6320a7;
+                            color: white;
+                        }}
+                
+                        a {{
+                            color: pink;
+                        }}
+                
+                        .btn {{
+                            background-color: #bb5f0d;
+                            color: white;
+                        }}
+                
+                        .btn:hover {{
+                            background-color: #8f29f4;
+                        }}
+                
+                        #copy-button {{
+                            margin-top: 10px;
+                        }}
+                    </style>
+                    <title>Join Nostr - Invoice</title>
+                </head>
+                
+                <body>
+                    <div class="container py-5">
+                        <div class="row">
+                            <div class="col-lg-6 mx-auto">
+                                <h3 class="text-center mb-4">
+                                    To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
+                                </h3>
+                                
+                                <div class="text-center" style="max-height: 300px;">
+                                    {}
+                                </div>
+                
+                                <div class="text-center mt-4">
+                                    <p id="text-area" style="overflow-wrap: break-word;">{}</p>
+                                    <button id="copy-button" class="btn">Copy</button>
+                                </div>
+                
+                                <div class="text-center mt-4">
+                                    <p>This page will not refresh</p>
+                                    <p>Verify admission <a href="/account?pubkey={}">here</a> once you have paid</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                
+                    <script>
+                        const copyButton = document.getElementById("copy-button");
+                        const textArea = document.getElementById("text-area");
+                        if (navigator.clipboard) {{
+                            copyButton.addEventListener("click", function() {{
+                                const textToCopy = textArea.textContent;
+                                navigator.clipboard.writeText(textToCopy).then(function() {{
+                                    console.log("Text copied to clipboard");
+                                }}, function(err) {{
+                                    console.error("Could not copy text: ", err);
+                                }});
+                            }});
+                        }} else {{
+                            copyButton.style.display = "none";
+                            console.warn("Clipboard API is not supported in this browser");
+                        }}
+                    </script>
+                
+                    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+                    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+                
+                </body>
+                
+                </html>
 "#,
                 settings.pay_to_relay.admission_cost,
                 qr_code,
                 invoice_info.bolt11,
-                pubkey,
-                invoice_info.bolt11
+                pubkey
             );
 
             Ok(Response::builder()
@@ -582,30 +596,41 @@ async fn handle_web_request(
 
             let html_result = format!(
                 r#"
-            <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color: #6320a7;
-        color: white;
-        height: 100vh;
-      }}
-    </style>
-  </head>
-  <body>
-    <div>
-      <h5>{} {} admitted</h5>
-    </div>
-  </body>
-</html>
-
+                <!DOCTYPE html>
+                <html lang="en">
+                
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                    <style>
+                        body {{
+                            background-color: #6320a7;
+                            color: white;
+                        }}
+                
+                        .vh-100 {{
+                            height: 100vh;
+                        }}
+                
+                        h5 {{
+                            color: white;
+                        }}
+                     </style>
+                    <title>Bootstrap Admissions</title>
+                </head>
+                
+                <body>
+                    <div class="d-flex justify-content-center align-items-center vh-100">
+                        <h5 class="text-break">{ } { } admitted</h5>
+                    </div>
+                
+                    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+                    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+                </body>
+                
+                </html>
 
             "#,
                 pubkey, text
