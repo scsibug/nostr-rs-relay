@@ -2,7 +2,7 @@
 use http::Uri;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -72,7 +72,11 @@ pub struct LNBitsPaymentProcessor {
 impl LNBitsPaymentProcessor {
     pub fn new(settings: &Settings) -> Self {
         // setup hyper client
-        let https = HttpsConnector::new();
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_only()
+            .enable_http1()
+            .build();
         let client = Client::builder().build::<_, hyper::Body>(https);
 
         Self {

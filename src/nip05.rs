@@ -11,7 +11,7 @@ use crate::repo::NostrRepo;
 use hyper::body::HttpBody;
 use hyper::client::connect::HttpConnector;
 use hyper::Client;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -133,7 +133,12 @@ impl Verifier {
     ) -> Result<Self> {
         info!("creating NIP-05 verifier");
         // setup hyper client
-        let https = HttpsConnector::new();
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_or_http()
+            .enable_http1()
+            .build();
+
         let client = Client::builder().build::<_, hyper::Body>(https);
 
         // After all accounts have been re-verified, don't check again

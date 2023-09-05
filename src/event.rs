@@ -355,7 +355,7 @@ impl Event {
             return Err(EventInvalidId);
         }
         // * validate the message digest (sig) using the pubkey & computed sha256 message hash.
-        let sig = schnorr::Signature::from_str(&self.sig).unwrap();
+        let sig = schnorr::Signature::from_str(&self.sig).map_err(|_| EventInvalidSignature)?;
         if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
             if let Ok(pubkey) = XOnlyPublicKey::from_str(&self.pubkey) {
                 SECP.verify_schnorr(&sig, &msg, &pubkey)
