@@ -8,6 +8,7 @@ pub mod error;
 pub mod event;
 pub mod hexrange;
 pub mod info;
+#[cfg(feature = "grpc")]
 pub mod nauthz;
 pub mod nip05;
 pub mod notice;

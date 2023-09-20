@@ -11,14 +11,18 @@ license = "MIT"
 keywords = ["nostr", "server"]
 categories = ["network-programming", "web-programming"]
 
+[features]
+default = ["grpc"]
+grpc = ["tonic", "prost", "tonic-build"]
+
 [dependencies]
 clap = { version = "4.0.32", features = ["env", "default", "derive"]}
 tracing = "0.1.37"
 tracing-appender = "0.2.2"
 tracing-subscriber = "0.3.16"
 tokio = { version = "1", features = ["full", "tracing", "signal"] }
-prost = "0.11"
-tonic = "0.8.3"
+prost = { version = "0.11", optional = true }
+tonic = { version = "0.8.3", optional = true }
 console-subscriber = "0.1.8"
 futures = "0.3"
 futures-util = "0.3"
@@ -63,4 +67,4 @@ log = "0.4"
 anyhow = "1"
 
 [build-dependencies]
-tonic-build = { version="0.8.3", features = ["prost"] }
+tonic-build = { version="0.8.3", features = ["prost"], optional = true }
