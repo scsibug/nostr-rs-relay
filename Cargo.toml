@@ -1,15 +1,15 @@
 [package]
 name = "gnostr-relay"
-version = "0.8.13"
+version = "0.0.0"
 edition = "2021"
-authors = ["Greg Heartsfield <scsibug@imap.cc>"]
-description = "A relay implementation for the Nostr protocol"
+authors = ["Greg Heartsfield <scsibug@imap.cc>", "gnostr <admin@gnostr.org>"]
+description = "gnostr:git+nostr protocol relay"
 readme = "README.md"
-homepage = "https://sr.ht/~gheartsfield/nostr-rs-relay/"
-repository = "https://git.sr.ht/~gheartsfield/nostr-rs-relay"
+homepage = "https://gnostr.org"
+repository = "git@github.com:gnostr-org/gnostr-relay.git"
 license = "MIT"
-keywords = ["nostr", "server"]
-categories = ["network-programming", "web-programming"]
+keywords = ["nostr", "server", "gnostr", "git"]
+categories = ["network-programming", "web-programming", "git", "gnostr"]
 
 [dependencies]
 clap = { version = "4.0.32", features = ["env", "default", "derive"]}

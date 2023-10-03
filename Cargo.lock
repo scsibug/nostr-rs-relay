@@ -1129,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "gnostr-relay"
-version = "0.8.13"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "async-std",
