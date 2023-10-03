@@ -1,9 +1,9 @@
-use nostr_rs_relay::config;
-use nostr_rs_relay::error::{Error, Result};
-use nostr_rs_relay::event::{single_char_tagname, Event};
-use nostr_rs_relay::repo::sqlite::{build_pool, PooledConnection};
-use nostr_rs_relay::repo::sqlite_migration::{curr_db_version, DB_VERSION};
-use nostr_rs_relay::utils::is_lower_hex;
+use gnostr_relay::config;
+use gnostr_relay::error::{Error, Result};
+use gnostr_relay::event::{single_char_tagname, Event};
+use gnostr_relay::repo::sqlite::{build_pool, PooledConnection};
+use gnostr_relay::repo::sqlite_migration::{curr_db_version, DB_VERSION};
+use gnostr_relay::utils::is_lower_hex;
 use rusqlite::params;
 use rusqlite::{OpenFlags, Transaction};
 use std::io;
