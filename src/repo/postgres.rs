@@ -60,7 +60,8 @@ async fn cleanup_expired(conn: PostgresPool, frequency: Duration) -> Result<()> 
                         }
                     }
                 }
-            };
+            }
+            ;
         }
     });
     Ok(())
@@ -150,19 +151,19 @@ impl NostrRepo for PostgresRepo {
 VALUES($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (id) DO NOTHING"#,
         )
-        .bind(&id_blob)
-        .bind(&pubkey_blob)
-        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-        .bind(
-            e.expiration()
-                .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
-        )
-        .bind(e.kind as i64)
-        .bind(event_str.into_bytes())
-        .bind(delegator_blob)
-        .execute(&mut tx)
-        .await?
-        .rows_affected();
+            .bind(&id_blob)
+            .bind(&pubkey_blob)
+            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+            .bind(
+                e.expiration()
+                    .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
+            )
+            .bind(e.kind as i64)
+            .bind(event_str.into_bytes())
+            .bind(delegator_blob)
+            .execute(&mut tx)
+            .await?
+            .rows_affected();
 
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
@@ -282,10 +283,10 @@ ON CONFLICT (id) DO NOTHING"#,
             LEFT JOIN tag t ON e.id = t.event_id \
             WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
             )
-            .bind(&pubkey_blob)
-            .bind(&id_blob)
-            .fetch_optional(&mut tx)
-            .await?;
+                .bind(&pubkey_blob)
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?;
 
             // check if a the query returned a result, meaning we should
             // hid the current event
@@ -576,10 +577,10 @@ ON CONFLICT (id) DO NOTHING"#,
         sqlx::query(
             "UPDATE account SET is_admitted = TRUE, balance = balance - $1 WHERE pubkey = $2",
         )
-        .bind(admission_cost as i64)
-        .bind(pub_key)
-        .execute(&self.conn_write)
-        .await?;
+            .bind(admission_cost as i64)
+            .bind(pub_key)
+            .execute(&self.conn_write)
+            .await?;
         Ok(())
     }
 
@@ -637,14 +638,14 @@ ON CONFLICT (id) DO NOTHING"#,
         sqlx::query(
             "INSERT INTO invoice (pubkey, payment_hash, amount, status, description, created_at, invoice) VALUES ($1, $2, $3, $4, $5, now(), $6)",
         )
-        .bind(pub_key)
-        .bind(invoice_info.payment_hash)
-        .bind(invoice_info.amount as i64)
-        .bind(invoice_info.status)
-        .bind(invoice_info.memo)
-        .bind(invoice_info.bolt11)
-        .execute(&mut tx)
-        .await.unwrap();
+            .bind(pub_key)
+            .bind(invoice_info.payment_hash)
+            .bind(invoice_info.amount as i64)
+            .bind(invoice_info.status)
+            .bind(invoice_info.memo)
+            .bind(invoice_info.bolt11)
+            .execute(&mut tx)
+            .await.unwrap();
 
         debug!("Invoice added");
 
@@ -880,17 +881,32 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             for (key, val) in map.iter() {
                 query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = ")
                     .push_bind(key.to_string())
-                    .push(" AND (value in (");
+                    .push(" AND (");
 
-                // plain value match first
-                let mut tag_query = query.separated(", ");
-                for v in val.iter() {
-                    if (v.len() % 2 != 0) && !is_lower_hex(v) {
+                let has_plain_values = val.iter().any(|v| !is_lower_hex(v));
+                let has_hex_values = val.iter().any(|v| v.len() % 2 == 0 && is_lower_hex(v));
+                if has_plain_values {
+                    query.push("value in (");
+                    // plain value match first
+                    let mut tag_query = query.separated(", ");
+                    for v in val.iter()
+                        .filter(|v| !is_lower_hex(v)) {
                         tag_query.push_bind(v.as_bytes());
-                    } else {
+                    }
+                }
+                if has_plain_values && has_hex_values {
+                    query.push(") OR ");
+                }
+                if has_hex_values {
+                    query.push("value_hex in (");
+                    // plain value match first
+                    let mut tag_query = query.separated(", ");
+                    for v in val.iter()
+                        .filter(|v| v.len() % 2 == 0 && is_lower_hex(v)) {
                         tag_query.push_bind(hex::decode(v).ok());
                     }
                 }
+
                 query.push("))))");
             }
         }
@@ -925,10 +941,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         query.push("e.hidden != 1::bit(1)");
     }
     // never display expired events
-    query
-        .push(" AND (e.expires_at IS NULL OR e.expires_at > ")
-        .push_bind(Utc.timestamp_opt(utils::unix_time() as i64, 0).unwrap())
-        .push(")");
+    query.push(" AND (e.expires_at IS NULL OR e.expires_at > now())");
 
     // Apply per-filter limit to this query.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
@@ -961,5 +974,69 @@ impl FromRow<'_, PgRow> for VerificationRecord {
             },
             failure_count: row.get::<'_, i32, &str>("fail_count") as u64,
         })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+    use super::*;
+
+    #[test]
+    fn test_query_gen_tag_value_hex() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            limit: None,
+            tags: Some(HashMap::from([
+                ('p', HashSet::from(["63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned()]))
+            ])),
+            force_no_match: false,
+        };
+
+        let q = query_from_filter(&filter).unwrap();
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value_hex in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_gen_tag_value() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            limit: None,
+            tags: Some(HashMap::from([
+                ('d', HashSet::from(["test".to_owned()]))
+            ])),
+            force_no_match: false,
+        };
+
+        let q = query_from_filter(&filter).unwrap();
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_gen_tag_value_and_value_hex() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            limit: None,
+            tags: Some(HashMap::from([
+                ('d', HashSet::from(["test".to_owned(), "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned()]))
+            ])),
+            force_no_match: false,
+        };
+
+        let q = query_from_filter(&filter).unwrap();
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
     }
 }
