@@ -401,6 +401,9 @@ pub async fn db_writer(
                 start.elapsed()
             );
             event_write = true;
+
+            // send OK message
+            notice_tx.try_send(Notice::saved(event.id)).ok();
         } else {
             match repo.write_event(&event).await {
                 Ok(updated) => {
