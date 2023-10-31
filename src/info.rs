@@ -4,7 +4,7 @@ use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 
 pub const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-pub const UNIT: &str = "sats";
+pub const UNIT: &str = "msats";
 
 /// Limitations of the relay as specified in NIP-111
 /// (This nip isn't finalized so may change)
@@ -45,7 +45,7 @@ pub struct RelayInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,        
+    pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supported_nips: Option<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,7 +80,7 @@ impl From<Settings> for RelayInfo {
         let (payment_url, fees) = if p.enabled {
             let admission_fee = if p.admission_cost > 0 {
                 Some(vec![Fee {
-                    amount: p.admission_cost,
+                    amount: p.admission_cost * 1000,
                     unit: UNIT.to_string(),
                 }])
             } else {
@@ -89,7 +89,7 @@ impl From<Settings> for RelayInfo {
 
             let post_fee = if p.cost_per_event > 0 {
                 Some(vec![Fee {
-                    amount: p.cost_per_event,
+                    amount: p.cost_per_event * 1000,
                     unit: UNIT.to_string(),
                 }])
             } else {
