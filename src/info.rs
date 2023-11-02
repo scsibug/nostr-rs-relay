@@ -4,7 +4,7 @@ use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 
 pub const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-pub const UNIT: &str = "sats";
+pub const UNIT: &str = "msats";
 
 /// Limitations of the relay as specified in NIP-111
 /// (This nip isn't finalized so may change)
@@ -80,7 +80,7 @@ impl From<Settings> for RelayInfo {
         let (payment_url, fees) = if p.enabled {
             let admission_fee = if p.admission_cost > 0 {
                 Some(vec![Fee {
-                    amount: p.admission_cost,
+                    amount: p.admission_cost * 1000,
                     unit: UNIT.to_string(),
                 }])
             } else {
@@ -89,7 +89,7 @@ impl From<Settings> for RelayInfo {
 
             let post_fee = if p.cost_per_event > 0 {
                 Some(vec![Fee {
-                    amount: p.cost_per_event,
+                    amount: p.cost_per_event * 1000,
                     unit: UNIT.to_string(),
                 }])
             } else {
@@ -121,7 +121,7 @@ impl From<Settings> for RelayInfo {
             pubkey: i.pubkey,
             contact: i.contact,
             supported_nips: Some(supported_nips),
-            software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
+            software: Some("https://github.com/mroxso/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(std::borrow::ToOwned::to_owned),
             limitation: Some(limitations),
             payment_url,
