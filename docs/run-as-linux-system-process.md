@@ -30,7 +30,8 @@ To get the service running, we need to reload the systemd daemon and enable the 
 
 1. `sudo systemctl daemon-reload`
 2. `sudo systemctl start nostr-rs-relay.service`
-3. `sudo systemctl status nostr-rs-relay.service`
+3. `sudo systemctl enable nostr-rs-relay.service`
+4. `sudo systemctl status nostr-rs-relay.service`
 
 
 ### Tips
