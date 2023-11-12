@@ -55,7 +55,7 @@ pub struct RelayInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limitation: Option<Limitation>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub payment_url: Option<String>,
+    pub payments_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fees: Option<Fees>,
 }
@@ -77,7 +77,7 @@ impl From<Settings> for RelayInfo {
             payment_required: Some(p.enabled),
         };
 
-        let (payment_url, fees) = if p.enabled {
+        let (payments_url, fees) = if p.enabled {
             let admission_fee = if p.admission_cost > 0 {
                 Some(vec![Fee {
                     amount: p.admission_cost * 1000,
@@ -101,7 +101,7 @@ impl From<Settings> for RelayInfo {
                 publication: post_fee,
             };
 
-            let payment_url = if p.enabled && i.relay_url.is_some() {
+            let payments_url = if p.enabled && i.relay_url.is_some() {
                 Some(format!(
                     "{}join",
                     i.relay_url.clone().unwrap().replace("ws", "http")
@@ -109,7 +109,7 @@ impl From<Settings> for RelayInfo {
             } else {
                 None
             };
-            (payment_url, Some(fees))
+            (payments_url, Some(fees))
         } else {
             (None, None)
         };
@@ -124,7 +124,7 @@ impl From<Settings> for RelayInfo {
             software: Some("https://github.com/mroxso/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(std::borrow::ToOwned::to_owned),
             limitation: Some(limitations),
-            payment_url,
+            payments_url,
             fees,
             icon: i.relay_icon,
         }
