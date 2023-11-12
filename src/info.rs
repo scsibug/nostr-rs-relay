@@ -121,7 +121,7 @@ impl From<Settings> for RelayInfo {
             pubkey: i.pubkey,
             contact: i.contact,
             supported_nips: Some(supported_nips),
-            software: Some("https://github.com/mroxso/nostr-rs-relay".to_owned()),
+            software: Some("https://git.sr.ht/~gheartsfield/nostr-rs-relay".to_owned()),
             version: CARGO_PKG_VERSION.map(std::borrow::ToOwned::to_owned),
             limitation: Some(limitations),
             payments_url,
