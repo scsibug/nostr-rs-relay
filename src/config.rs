@@ -320,7 +320,7 @@ impl Default for Settings {
                 node_url: "".to_string(),
                 api_secret: "".to_string(),
                 sign_ups: false,
-                direct_message: true,
+                direct_message: false,
                 secret_key: None,
                 processor: Processor::LNBits,
             },
