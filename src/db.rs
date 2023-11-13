@@ -261,7 +261,7 @@ pub async fn db_writer(
                     ) => {
                         // User does not exist
                         info!("Unregistered user");
-                        if settings.pay_to_relay.sign_ups {
+                        if settings.pay_to_relay.sign_ups && settings.pay_to_relay.direct_message {
                             payment_tx
                                 .send(PaymentMessage::NewAccount(event.pubkey))
                                 .ok();
