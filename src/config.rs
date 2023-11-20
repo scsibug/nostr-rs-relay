@@ -32,6 +32,7 @@ pub struct Database {
 #[allow(unused)]
 pub struct Grpc {
     pub event_admission_server: Option<String>,
+    pub restricts_write: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,6 +288,7 @@ impl Default for Settings {
             },
             grpc: Grpc {
                 event_admission_server: None,
+                restricts_write: false,
             },
             network: Network {
                 port: 8080,

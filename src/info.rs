@@ -13,6 +13,9 @@ pub const UNIT: &str = "msats";
 pub struct Limitation {
     #[serde(skip_serializing_if = "Option::is_none")]
     payment_required: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restricted_writes: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -75,6 +78,12 @@ impl From<Settings> for RelayInfo {
 
         let limitations = Limitation {
             payment_required: Some(p.enabled),
+            restricted_writes: Some(
+                p.enabled
+                    || c.verified_users.is_enabled()
+                    || c.authorization.pubkey_whitelist.is_some()
+                    || c.grpc.restricts_write,
+            ),
         };
 
         let (payment_url, fees) = if p.enabled {

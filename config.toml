@@ -75,6 +75,11 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # `proto/nauthz.proto`.
 # event_admission_server = "http://[::1]:50051"
 
+# If the event admission server denies writes
+# in any case (excluding spam filtering).
+# This is reflected in the relay information document.
+# restricts_write = true
+
 [network]
 # Bind to this network address
 address = "0.0.0.0"
