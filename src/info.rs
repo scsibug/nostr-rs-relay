@@ -78,7 +78,12 @@ impl From<Settings> for RelayInfo {
 
         let limitations = Limitation {
             payment_required: Some(p.enabled),
-            restricted_writes: Some(p.enabled || c.verified_users.is_enabled() || c.authorization.pubkey_whitelist.is_some()),
+            restricted_writes: Some(
+                p.enabled
+                    || c.verified_users.is_enabled()
+                    || c.authorization.pubkey_whitelist.is_some()
+                    || c.grpc.restricts_write,
+            ),
         };
 
         let (payment_url, fees) = if p.enabled {
