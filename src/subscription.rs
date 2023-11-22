@@ -45,8 +45,8 @@ pub struct ReqFilter {
 
 impl Serialize for ReqFilter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
         if let Some(ids) = &self.ids {
@@ -80,8 +80,8 @@ impl Serialize for ReqFilter {
 
 impl<'de> Deserialize<'de> for ReqFilter {
     fn deserialize<D>(deserializer: D) -> Result<ReqFilter, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         let received: Value = Deserialize::deserialize(deserializer)?;
         let filter = received.as_object().ok_or_else(|| {
@@ -184,8 +184,8 @@ impl<'de> Deserialize<'de> for Subscription {
     /// Custom deserializer for subscriptions, which have a more
     /// complex structure than the other message types.
     fn deserialize<D>(deserializer: D) -> Result<Subscription, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         let mut v: Value = Deserialize::deserialize(deserializer)?;
         // this should be a 3-or-more element array.
@@ -253,6 +253,29 @@ impl Subscription {
     pub fn interested_in_event(&self, event: &Event) -> bool {
         for f in &self.filters {
             if f.interested_in_event(event) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Is this subscription defined as a scraper query
+    pub fn is_scraper(&self) -> bool {
+        for f in &self.filters {
+            let mut precision = 0;
+            if f.ids.is_some() {
+                precision += 2;
+            }
+            if f.authors.is_some() {
+                precision += 1;
+            }
+            if f.kinds.is_some() {
+                precision += 1;
+            }
+            if f.tags.is_some() {
+                precision += 1;
+            }
+            if precision < 2 {
                 return true;
             }
         }
@@ -645,6 +668,16 @@ mod tests {
         } else {
             assert!(false, "filter could not be parsed");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn is_scraper() -> Result<()> {
+        assert_eq!(true, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"since": 123,"limit":1}]"#)?.is_scraper());
+        assert_eq!(true, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984]},{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
+        assert_eq!(false, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
+        assert_eq!(false, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"ids": ["aaaa"]}]"#)?.is_scraper());
+        assert_eq!(false, serde_json::from_str::<Subscription>(r##"["REQ","some-id",{"#p": ["aaaa"],"kinds":[1,4]}]"##)?.is_scraper());
         Ok(())
     }
 }

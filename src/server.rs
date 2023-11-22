@@ -1342,9 +1342,14 @@ async fn nostr_server(
                         if conn.has_subscription(&s) {
                             info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
                         } else {
-                metrics.cmd_req.inc();
+                            metrics.cmd_req.inc();
                             if let Some(ref lim) = sub_lim_opt {
                                 lim.until_ready_with_jitter(jitter).await;
+                            }
+                            if settings.limits.limit_scrapers && s.is_scraper() {
+                                info!("subscription was scraper, ignoring (cid: {}, sub: {:?})", cid, s.id);
+                                ws_stream.send(Message::Text(format!("[\"EOSE\",\"{}\"]", s.id))).await.ok();
+                                continue
                             }
                             let (abandon_query_tx, abandon_query_rx) = oneshot::channel::<()>();
                             match conn.subscribe(s.clone()) {
@@ -1369,7 +1374,7 @@ async fn nostr_server(
                         // closing a request simply removes the subscription.
                         let parsed : Result<Close> = Result::<Close>::from(cc);
                         if let Ok(c) = parsed {
-                metrics.cmd_close.inc();
+                            metrics.cmd_close.inc();
                             // check if a query is currently
                             // running, and remove it if so.
                             let stop_tx = running_queries.remove(&c.id);
