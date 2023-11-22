@@ -1261,7 +1261,6 @@ async fn nostr_server(
                         // handle each type of message
                         let evid = ec.event_id().to_owned();
                         let parsed : Result<EventWrapper> = Result::<EventWrapper>::from(ec);
-                        metrics.cmd_event.inc();
                         match parsed {
                             Ok(WrappedEvent(e)) => {
                                 metrics.cmd_event.inc();
