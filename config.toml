@@ -155,6 +155,11 @@ reject_future_seconds = 1800
 #    0, 1, 2, 3, 7, 40, 41, 42, 43, 44, 30023,
 #]
 
+# Rejects imprecise requests (kind only and author only etc)
+# This is a temperary measure to improve the adoption of outbox model
+# Its recommended to have this enabled
+limit_scrapers = true
+
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable
