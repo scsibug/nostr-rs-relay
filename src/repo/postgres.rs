@@ -878,8 +878,13 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             }
             push_and = true;
 
+            let mut push_or = false;
+            query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and ");
             for (key, val) in map.iter() {
-                query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = ")
+                if push_or {
+                    query.push(" OR ");
+                }
+                query.push("(t.\"name\" = ")
                     .push_bind(key.to_string())
                     .push(" AND (");
 
@@ -907,8 +912,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     }
                 }
 
-                query.push("))))");
+                query.push(")))");
+                push_or = true;
             }
+            query.push(")");
         }
     }
 
@@ -1038,5 +1045,24 @@ mod tests {
 
         let q = query_from_filter(&filter).unwrap();
         assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_multiple_tags() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![30_001]),
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([
+                ('d', HashSet::from(["follow".to_owned()])),
+                ('t', HashSet::from(["siamstr".to_owned()]))
+            ])),
+            force_no_match: false,
+        };
+        let q = query_from_filter(&filter).unwrap();
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $2 AND (value in ($3))) OR (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
     }
 }
