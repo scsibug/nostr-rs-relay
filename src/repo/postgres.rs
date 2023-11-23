@@ -726,7 +726,6 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     }
 
     let mut query = QueryBuilder::new("SELECT e.\"content\", e.created_at FROM \"event\" e WHERE ");
-
     // This tracks whether we need to push a prefix AND before adding another clause
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
@@ -734,140 +733,142 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         // filter out non-hex values
         let auth_vec: Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
 
-        if !auth_vec.is_empty() {
-            query.push("(");
+        if auth_vec.is_empty() {
+            return None;
+        }
+        query.push("(");
 
-            // shortcut authors into "IN" query
-            let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
-            if !any_is_range {
-                query.push("e.pub_key in (");
-                let mut pk_sep = query.separated(", ");
-                for pk in auth_vec.iter() {
-                    pk_sep.push_bind(hex::decode(pk).ok());
-                }
-                query.push(") OR e.delegated_by in (");
-                let mut pk_delegated_sep = query.separated(", ");
-                for pk in auth_vec.iter() {
-                    pk_delegated_sep.push_bind(hex::decode(pk).ok());
-                }
-                query.push(")");
-                push_and = true;
-            } else {
-                let mut range_authors = query.separated(" OR ");
-                for auth in auth_vec {
-                    match hex_range(auth) {
-                        Some(HexSearch::Exact(ex)) => {
-                            range_authors
-                                .push("(e.pub_key = ")
-                                .push_bind_unseparated(ex.clone())
-                                .push_unseparated(" OR e.delegated_by = ")
-                                .push_bind_unseparated(ex)
-                                .push_unseparated(")");
-                        }
-                        Some(HexSearch::Range(lower, upper)) => {
-                            range_authors
-                                .push("((e.pub_key > ")
-                                .push_bind_unseparated(lower.clone())
-                                .push_unseparated(" AND e.pub_key < ")
-                                .push_bind_unseparated(upper.clone())
-                                .push_unseparated(") OR (e.delegated_by > ")
-                                .push_bind_unseparated(lower)
-                                .push_unseparated(" AND e.delegated_by < ")
-                                .push_bind_unseparated(upper)
-                                .push_unseparated("))");
-                        }
-                        Some(HexSearch::LowerOnly(lower)) => {
-                            range_authors
-                                .push("(e.pub_key > ")
-                                .push_bind_unseparated(lower.clone())
-                                .push_unseparated(" OR e.delegated_by > ")
-                                .push_bind_unseparated(lower)
-                                .push_unseparated(")");
-                        }
-                        None => {
-                            info!("Could not parse hex range from author {:?}", auth);
-                        }
-                    }
-                    push_and = true;
-                }
+        // shortcut authors into "IN" query
+        let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
+        if !any_is_range {
+            query.push("e.pub_key in (");
+            let mut pk_sep = query.separated(", ");
+            for pk in auth_vec.iter() {
+                pk_sep.push_bind(hex::decode(pk).ok());
+            }
+            query.push(") OR e.delegated_by in (");
+            let mut pk_delegated_sep = query.separated(", ");
+            for pk in auth_vec.iter() {
+                pk_delegated_sep.push_bind(hex::decode(pk).ok());
             }
             query.push(")");
+            push_and = true;
+        } else {
+            let mut range_authors = query.separated(" OR ");
+            for auth in auth_vec {
+                match hex_range(auth) {
+                    Some(HexSearch::Exact(ex)) => {
+                        range_authors
+                            .push("(e.pub_key = ")
+                            .push_bind_unseparated(ex.clone())
+                            .push_unseparated(" OR e.delegated_by = ")
+                            .push_bind_unseparated(ex)
+                            .push_unseparated(")");
+                    }
+                    Some(HexSearch::Range(lower, upper)) => {
+                        range_authors
+                            .push("((e.pub_key > ")
+                            .push_bind_unseparated(lower.clone())
+                            .push_unseparated(" AND e.pub_key < ")
+                            .push_bind_unseparated(upper.clone())
+                            .push_unseparated(") OR (e.delegated_by > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(" AND e.delegated_by < ")
+                            .push_bind_unseparated(upper)
+                            .push_unseparated("))");
+                    }
+                    Some(HexSearch::LowerOnly(lower)) => {
+                        range_authors
+                            .push("(e.pub_key > ")
+                            .push_bind_unseparated(lower.clone())
+                            .push_unseparated(" OR e.delegated_by > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(")");
+                    }
+                    None => {
+                        info!("Could not parse hex range from author {:?}", auth);
+                    }
+                }
+                push_and = true;
+            }
         }
+        query.push(")");
     }
 
     // Query for Kind
     if let Some(ks) = &f.kinds {
-        if !ks.is_empty() {
-            if push_and {
-                query.push(" AND ");
-            }
-            push_and = true;
-
-            query.push("e.kind in (");
-            let mut list_query = query.separated(", ");
-            for k in ks.iter() {
-                list_query.push_bind(*k as i64);
-            }
-            query.push(")");
+        if ks.is_empty() {
+            return None;
         }
+        if push_and {
+            query.push(" AND ");
+        }
+        push_and = true;
+
+        query.push("e.kind in (");
+        let mut list_query = query.separated(", ");
+        for k in ks.iter() {
+            list_query.push_bind(*k as i64);
+        }
+        query.push(")");
     }
 
     // Query for event, allowing prefix matches
     if let Some(id_vec) = &f.ids {
         // filter out non-hex values
         let id_vec: Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+        if id_vec.is_empty() {
+            return None;
+        }
+        if push_and {
+            query.push(" AND (");
+        } else {
+            query.push("(");
+        }
+        push_and = true;
 
-        if !id_vec.is_empty() {
-            if push_and {
-                query.push(" AND (");
-            } else {
-                query.push("(");
+        // shortcut ids into "IN" query
+        let any_is_range = id_vec.iter().any(|pk| pk.len() != 64);
+        if !any_is_range {
+            query.push("id in (");
+            let mut sep = query.separated(", ");
+            for id in id_vec.iter() {
+                sep.push_bind(hex::decode(id).ok());
             }
-            push_and = true;
-
-            // shortcut ids into "IN" query
-            let any_is_range = id_vec.iter().any(|pk| pk.len() != 64);
-            if !any_is_range {
-                query.push("id in (");
-                let mut sep = query.separated(", ");
-                for id in id_vec.iter() {
-                    sep.push_bind(hex::decode(id).ok());
-                }
-                query.push(")");
-            } else {
-                // take each author and convert to a hex search
-                let mut id_query = query.separated(" OR ");
-                for id in id_vec {
-                    match hex_range(id) {
-                        Some(HexSearch::Exact(ex)) => {
-                            id_query
-                                .push("(id = ")
-                                .push_bind_unseparated(ex)
-                                .push_unseparated(")");
-                        }
-                        Some(HexSearch::Range(lower, upper)) => {
-                            id_query
-                                .push("(id > ")
-                                .push_bind_unseparated(lower)
-                                .push_unseparated(" AND id < ")
-                                .push_bind_unseparated(upper)
-                                .push_unseparated(")");
-                        }
-                        Some(HexSearch::LowerOnly(lower)) => {
-                            id_query
-                                .push("(id > ")
-                                .push_bind_unseparated(lower)
-                                .push_unseparated(")");
-                        }
-                        None => {
-                            info!("Could not parse hex range from id {:?}", id);
-                        }
+            query.push(")");
+        } else {
+            // take each author and convert to a hex search
+            let mut id_query = query.separated(" OR ");
+            for id in id_vec {
+                match hex_range(id) {
+                    Some(HexSearch::Exact(ex)) => {
+                        id_query
+                            .push("(id = ")
+                            .push_bind_unseparated(ex)
+                            .push_unseparated(")");
+                    }
+                    Some(HexSearch::Range(lower, upper)) => {
+                        id_query
+                            .push("(id > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(" AND id < ")
+                            .push_bind_unseparated(upper)
+                            .push_unseparated(")");
+                    }
+                    Some(HexSearch::LowerOnly(lower)) => {
+                        id_query
+                            .push("(id > ")
+                            .push_bind_unseparated(lower)
+                            .push_unseparated(")");
+                    }
+                    None => {
+                        info!("Could not parse hex range from id {:?}", id);
                     }
                 }
             }
-
-            query.push(")");
         }
+
+        query.push(")");
     }
 
     // Query for tags
@@ -881,6 +882,9 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             let mut push_or = false;
             query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and ");
             for (key, val) in map.iter() {
+                if val.is_empty() {
+                    return None;
+                }
                 if push_or {
                     query.push(" OR ");
                 }
@@ -1064,5 +1068,22 @@ mod tests {
         };
         let q = query_from_filter(&filter).unwrap();
         assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $2 AND (value in ($3))) OR (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_empty_tags() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1, 6, 16, 30023, 1063, 6969]),
+            since: Some(1700697846),
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([
+                ('a', HashSet::new())
+            ])),
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
     }
 }
