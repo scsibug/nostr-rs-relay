@@ -14,7 +14,6 @@ use sqlx::{Error, Execute, FromRow, Postgres, QueryBuilder, Row};
 use std::time::{Duration, Instant};
 
 use crate::error;
-use crate::hexrange::{hex_range, HexSearch};
 use crate::repo::postgres_migration::run_migrations;
 use crate::server::NostrMetrics;
 use crate::utils::{self, is_hex, is_lower_hex};
@@ -60,8 +59,7 @@ async fn cleanup_expired(conn: PostgresPool, frequency: Duration) -> Result<()> 
                         }
                     }
                 }
-            }
-            ;
+            };
         }
     });
     Ok(())
@@ -151,19 +149,19 @@ impl NostrRepo for PostgresRepo {
 VALUES($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (id) DO NOTHING"#,
         )
-            .bind(&id_blob)
-            .bind(&pubkey_blob)
-            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-            .bind(
-                e.expiration()
-                    .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
-            )
-            .bind(e.kind as i64)
-            .bind(event_str.into_bytes())
-            .bind(delegator_blob)
-            .execute(&mut tx)
-            .await?
-            .rows_affected();
+        .bind(&id_blob)
+        .bind(&pubkey_blob)
+        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+        .bind(
+            e.expiration()
+                .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
+        )
+        .bind(e.kind as i64)
+        .bind(event_str.into_bytes())
+        .bind(delegator_blob)
+        .execute(&mut tx)
+        .await?
+        .rows_affected();
 
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
@@ -283,10 +281,10 @@ ON CONFLICT (id) DO NOTHING"#,
             LEFT JOIN tag t ON e.id = t.event_id \
             WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
             )
-                .bind(&pubkey_blob)
-                .bind(&id_blob)
-                .fetch_optional(&mut tx)
-                .await?;
+            .bind(&pubkey_blob)
+            .bind(&id_blob)
+            .fetch_optional(&mut tx)
+            .await?;
 
             // check if a the query returned a result, meaning we should
             // hid the current event
@@ -577,10 +575,10 @@ ON CONFLICT (id) DO NOTHING"#,
         sqlx::query(
             "UPDATE account SET is_admitted = TRUE, balance = balance - $1 WHERE pubkey = $2",
         )
-            .bind(admission_cost as i64)
-            .bind(pub_key)
-            .execute(&self.conn_write)
-            .await?;
+        .bind(admission_cost as i64)
+        .bind(pub_key)
+        .execute(&self.conn_write)
+        .await?;
         Ok(())
     }
 
@@ -726,6 +724,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     }
 
     let mut query = QueryBuilder::new("SELECT e.\"content\", e.created_at FROM \"event\" e WHERE ");
+
     // This tracks whether we need to push a prefix AND before adding another clause
     let mut push_and = false;
     // Query for "authors", allowing prefix matches
@@ -736,63 +735,19 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         if auth_vec.is_empty() {
             return None;
         }
-        query.push("(");
+        query.push("(e.pub_key in (");
 
-        // shortcut authors into "IN" query
-        let any_is_range = auth_vec.iter().any(|pk| pk.len() != 64);
-        if !any_is_range {
-            query.push("e.pub_key in (");
-            let mut pk_sep = query.separated(", ");
-            for pk in auth_vec.iter() {
-                pk_sep.push_bind(hex::decode(pk).ok());
-            }
-            query.push(") OR e.delegated_by in (");
-            let mut pk_delegated_sep = query.separated(", ");
-            for pk in auth_vec.iter() {
-                pk_delegated_sep.push_bind(hex::decode(pk).ok());
-            }
-            query.push(")");
-            push_and = true;
-        } else {
-            let mut range_authors = query.separated(" OR ");
-            for auth in auth_vec {
-                match hex_range(auth) {
-                    Some(HexSearch::Exact(ex)) => {
-                        range_authors
-                            .push("(e.pub_key = ")
-                            .push_bind_unseparated(ex.clone())
-                            .push_unseparated(" OR e.delegated_by = ")
-                            .push_bind_unseparated(ex)
-                            .push_unseparated(")");
-                    }
-                    Some(HexSearch::Range(lower, upper)) => {
-                        range_authors
-                            .push("((e.pub_key > ")
-                            .push_bind_unseparated(lower.clone())
-                            .push_unseparated(" AND e.pub_key < ")
-                            .push_bind_unseparated(upper.clone())
-                            .push_unseparated(") OR (e.delegated_by > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(" AND e.delegated_by < ")
-                            .push_bind_unseparated(upper)
-                            .push_unseparated("))");
-                    }
-                    Some(HexSearch::LowerOnly(lower)) => {
-                        range_authors
-                            .push("(e.pub_key > ")
-                            .push_bind_unseparated(lower.clone())
-                            .push_unseparated(" OR e.delegated_by > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(")");
-                    }
-                    None => {
-                        info!("Could not parse hex range from author {:?}", auth);
-                    }
-                }
-                push_and = true;
-            }
+        let mut pk_sep = query.separated(", ");
+        for pk in auth_vec.iter() {
+            pk_sep.push_bind(hex::decode(pk).ok());
         }
-        query.push(")");
+        query.push(") OR e.delegated_by in (");
+        let mut pk_delegated_sep = query.separated(", ");
+        for pk in auth_vec.iter() {
+            pk_delegated_sep.push_bind(hex::decode(pk).ok());
+        }
+        push_and = true;
+        query.push("))");
     }
 
     // Query for Kind
@@ -813,7 +768,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         query.push(")");
     }
 
-    // Query for event, allowing prefix matches
+    // Query for event,
     if let Some(id_vec) = &f.ids {
         // filter out non-hex values
         let id_vec: Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
@@ -827,48 +782,12 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         }
         push_and = true;
 
-        // shortcut ids into "IN" query
-        let any_is_range = id_vec.iter().any(|pk| pk.len() != 64);
-        if !any_is_range {
-            query.push("id in (");
-            let mut sep = query.separated(", ");
-            for id in id_vec.iter() {
-                sep.push_bind(hex::decode(id).ok());
-            }
-            query.push(")");
-        } else {
-            // take each author and convert to a hex search
-            let mut id_query = query.separated(" OR ");
-            for id in id_vec {
-                match hex_range(id) {
-                    Some(HexSearch::Exact(ex)) => {
-                        id_query
-                            .push("(id = ")
-                            .push_bind_unseparated(ex)
-                            .push_unseparated(")");
-                    }
-                    Some(HexSearch::Range(lower, upper)) => {
-                        id_query
-                            .push("(id > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(" AND id < ")
-                            .push_bind_unseparated(upper)
-                            .push_unseparated(")");
-                    }
-                    Some(HexSearch::LowerOnly(lower)) => {
-                        id_query
-                            .push("(id > ")
-                            .push_bind_unseparated(lower)
-                            .push_unseparated(")");
-                    }
-                    None => {
-                        info!("Could not parse hex range from id {:?}", id);
-                    }
-                }
-            }
+        query.push("id in (");
+        let mut sep = query.separated(", ");
+        for id in id_vec.iter() {
+            sep.push_bind(hex::decode(id).ok());
         }
-
-        query.push(")");
+        query.push("))");
     }
 
     // Query for tags
@@ -888,7 +807,8 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 if push_or {
                     query.push(" OR ");
                 }
-                query.push("(t.\"name\" = ")
+                query
+                    .push("(t.\"name\" = ")
                     .push_bind(key.to_string())
                     .push(" AND (");
 
@@ -898,8 +818,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     query.push("value in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter()
-                        .filter(|v| !is_lower_hex(v)) {
+                    for v in val.iter().filter(|v| !is_lower_hex(v)) {
                         tag_query.push_bind(v.as_bytes());
                     }
                 }
@@ -910,8 +829,7 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     query.push("value_hex in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter()
-                        .filter(|v| v.len() % 2 == 0 && is_lower_hex(v)) {
+                    for v in val.iter().filter(|v| v.len() % 2 == 0 && is_lower_hex(v)) {
                         tag_query.push_bind(hex::decode(v).ok());
                     }
                 }
@@ -988,11 +906,10 @@ impl FromRow<'_, PgRow> for VerificationRecord {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
     use super::*;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn test_query_gen_tag_value_hex() {
@@ -1001,11 +918,16 @@ mod tests {
             kinds: Some(vec![1000]),
             since: None,
             until: None,
-            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
             limit: None,
-            tags: Some(HashMap::from([
-                ('p', HashSet::from(["63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned()]))
-            ])),
+            tags: Some(HashMap::from([(
+                'p',
+                HashSet::from([
+                    "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned(),
+                ]),
+            )])),
             force_no_match: false,
         };
 
@@ -1020,11 +942,11 @@ mod tests {
             kinds: Some(vec![1000]),
             since: None,
             until: None,
-            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
             limit: None,
-            tags: Some(HashMap::from([
-                ('d', HashSet::from(["test".to_owned()]))
-            ])),
+            tags: Some(HashMap::from([('d', HashSet::from(["test".to_owned()]))])),
             force_no_match: false,
         };
 
@@ -1039,11 +961,17 @@ mod tests {
             kinds: Some(vec![1000]),
             since: None,
             until: None,
-            authors: Some(vec!["84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned()]),
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
             limit: None,
-            tags: Some(HashMap::from([
-                ('d', HashSet::from(["test".to_owned(), "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned()]))
-            ])),
+            tags: Some(HashMap::from([(
+                'd',
+                HashSet::from([
+                    "test".to_owned(),
+                    "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned(),
+                ]),
+            )])),
             force_no_match: false,
         };
 
@@ -1062,7 +990,7 @@ mod tests {
             limit: None,
             tags: Some(HashMap::from([
                 ('d', HashSet::from(["follow".to_owned()])),
-                ('t', HashSet::from(["siamstr".to_owned()]))
+                ('t', HashSet::from(["siamstr".to_owned()])),
             ])),
             force_no_match: false,
         };
@@ -1079,9 +1007,7 @@ mod tests {
             until: None,
             authors: None,
             limit: None,
-            tags: Some(HashMap::from([
-                ('a', HashSet::new())
-            ])),
+            tags: Some(HashMap::from([('a', HashSet::new())])),
             force_no_match: false,
         };
         assert!(query_from_filter(&filter).is_none());
