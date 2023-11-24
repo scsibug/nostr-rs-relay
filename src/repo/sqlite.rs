@@ -4,8 +4,6 @@ use crate::config::Settings;
 use crate::db::QueryResult;
 use crate::error::{Error::SqlError, Result};
 use crate::event::{single_char_tagname, Event};
-use crate::hexrange::hex_range;
-use crate::hexrange::HexSearch;
 use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::repo::sqlite_migration::{upgrade_db, STARTUP_SQL};
@@ -994,24 +992,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         // take each author and convert to a hexsearch
         let mut auth_searches: Vec<String> = vec![];
         for auth in authvec {
-            match hex_range(auth) {
-                Some(HexSearch::Exact(ex)) => {
-                    auth_searches.push("author=?".to_owned());
-                    params.push(Box::new(ex));
-                }
-                Some(HexSearch::Range(lower, upper)) => {
-                    auth_searches.push("(author>? AND author<?)".to_owned());
-                    params.push(Box::new(lower));
-                    params.push(Box::new(upper));
-                }
-                Some(HexSearch::LowerOnly(lower)) => {
-                    auth_searches.push("author>?".to_owned());
-                    params.push(Box::new(lower));
-                }
-                None => {
-                    trace!("Could not parse hex range from author {:?}", auth);
-                }
-            }
+            auth_searches.push("author=?".to_owned());
+            params.push(Box::new(auth.clone()));
         }
         if !authvec.is_empty() {
             let auth_clause = format!("({})", auth_searches.join(" OR "));
@@ -1032,24 +1014,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         // take each author and convert to a hexsearch
         let mut id_searches: Vec<String> = vec![];
         for id in idvec {
-            match hex_range(id) {
-                Some(HexSearch::Exact(ex)) => {
-                    id_searches.push("event_hash=?".to_owned());
-                    params.push(Box::new(ex));
-                }
-                Some(HexSearch::Range(lower, upper)) => {
-                    id_searches.push("(event_hash>? AND event_hash<?)".to_owned());
-                    params.push(Box::new(lower));
-                    params.push(Box::new(upper));
-                }
-                Some(HexSearch::LowerOnly(lower)) => {
-                    id_searches.push("event_hash>?".to_owned());
-                    params.push(Box::new(lower));
-                }
-                None => {
-                    info!("Could not parse hex range from id {:?}", id);
-                }
-            }
+            id_searches.push("event_hash=?".to_owned());
+            params.push(Box::new(id.clone()));
         }
         if idvec.is_empty() {
             // if the ids list was empty, we should never return
