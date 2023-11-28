@@ -1,4 +1,5 @@
 //! Subscription and filter parsing
+use std::collections::hash_set::Iter;
 use crate::error::Result;
 use crate::event::Event;
 use serde::de::Unexpected;
@@ -13,6 +14,25 @@ use std::collections::HashSet;
 pub struct Subscription {
     pub id: String,
     pub filters: Vec<ReqFilter>,
+}
+
+/// Tag query is AND or OR operation
+#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
+pub enum TagOperand {
+    And(HashSet<String>),
+    Or(HashSet<String>),
+}
+
+impl<'a> IntoIterator for &'a TagOperand {
+    type Item = &'a String;
+    type IntoIter = Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            TagOperand::Or(vv) => vv.iter(),
+            TagOperand::And(vv) => vv.iter()
+        }
+    }
 }
 
 /// Filter for requests
@@ -35,7 +55,7 @@ pub struct ReqFilter {
     /// Limit number of results
     pub limit: Option<u64>,
     /// Set of tags
-    pub tags: Option<HashMap<char, HashSet<String>>>,
+    pub tags: Option<HashMap<char, TagOperand>>,
     /// Force no matches due to malformed data
     // we can't represent it in the req filter, so we don't want to
     // erroneously match.  This basically indicates the req tried to
@@ -45,8 +65,8 @@ pub struct ReqFilter {
 
 impl Serialize for ReqFilter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
         if let Some(ids) = &self.ids {
@@ -70,7 +90,7 @@ impl Serialize for ReqFilter {
         // serialize tags
         if let Some(tags) = &self.tags {
             for (k, v) in tags {
-                let vals: Vec<&String> = v.iter().collect();
+                let vals: Vec<&String> = v.into_iter().collect();
                 map.serialize_entry(&format!("#{k}"), &vals)?;
             }
         }
@@ -80,8 +100,8 @@ impl Serialize for ReqFilter {
 
 impl<'de> Deserialize<'de> for ReqFilter {
     fn deserialize<D>(deserializer: D) -> Result<ReqFilter, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         let received: Value = Deserialize::deserialize(deserializer)?;
         let filter = received.as_object().ok_or_else(|| {
@@ -101,7 +121,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             force_no_match: false,
         };
         let empty_string = "".into();
-        let mut ts = None;
+        let mut ts: Option<HashMap<char, TagOperand>> = None;
         // iterate through each key, and assign values that exist
         for (key, val) in filter {
             // ids
@@ -135,24 +155,31 @@ impl<'de> Deserialize<'de> for ReqFilter {
                     }
                 }
                 rf.authors = raw_authors;
-            } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
-                if let Some(tag_search) = tag_search_char_from_filter(key) {
-                    if ts.is_none() {
-                        // Initialize the tag if necessary
-                        ts = Some(HashMap::new());
-                    }
-                    if let Some(m) = ts.as_mut() {
-                        let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
-                        if let Some(v) = tag_vals {
-                            let hs = v.into_iter().collect::<HashSet<_>>();
-                            m.insert(tag_search.to_owned(), hs);
-                        }
-                    };
-                } else {
-                    // tag search that is multi-character, don't add to subscription
-                    rf.force_no_match = true;
-                    continue;
+            } else if key.starts_with('#') && key.len() > 1 && key.len() < 4 && val.is_array() {
+                if ts.is_none() {
+                    // Initialize the tag if necessary
+                    ts = Some(HashMap::new());
                 }
+                if let Some(m) = ts.as_mut() {
+                    let tag_vals: Option<Vec<String>> = Deserialize::deserialize(val).ok();
+                    if let Some(v) = tag_vals {
+                        let hs = v.into_iter().collect::<HashSet<_>>();
+                        let hs_op = match key.len() {
+                            2 => Some(TagOperand::Or(hs)),
+                            3 => {
+                                if key.chars().nth(2).unwrap() == '&' {
+                                    Some(TagOperand::And(hs))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None
+                        };
+                        if let Some(hs_some) = hs_op {
+                            m.insert(key.chars().nth(1).unwrap(), hs_some);
+                        }
+                    }
+                };
             }
         }
         rf.tags = ts;
@@ -160,32 +187,12 @@ impl<'de> Deserialize<'de> for ReqFilter {
     }
 }
 
-/// Attempt to form a single-char identifier from a tag search filter
-fn tag_search_char_from_filter(tagname: &str) -> Option<char> {
-    let tagname_nohash = &tagname[1..];
-    // We return the tag character if and only if the tagname consists
-    // of a single char.
-    let mut tagnamechars = tagname_nohash.chars();
-    let firstchar = tagnamechars.next();
-    match firstchar {
-        Some(_) => {
-            // check second char
-            if tagnamechars.next().is_none() {
-                firstchar
-            } else {
-                None
-            }
-        }
-        None => None,
-    }
-}
-
 impl<'de> Deserialize<'de> for Subscription {
     /// Custom deserializer for subscriptions, which have a more
     /// complex structure than the other message types.
     fn deserialize<D>(deserializer: D) -> Result<Subscription, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         let mut v: Value = Deserialize::deserialize(deserializer)?;
         // this should be a 3-or-more element array.
