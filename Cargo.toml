@@ -10,6 +10,7 @@ repository = "https://git.sr.ht/~gheartsfield/nostr-rs-relay"
 license = "MIT"
 keywords = ["nostr", "server"]
 categories = ["network-programming", "web-programming"]
+default-run = "nostr-rs-relay"
 
 [dependencies]
 clap = { version = "4.0.32", features = ["env", "default", "derive"]}
