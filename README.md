@@ -49,7 +49,7 @@ The examples below start a rootless podman container, mapping a local
 data directory and config file.
 
 ```console
-$ podman build -t nostr-rs-relay .
+$ podman build --pull -t nostr-rs-relay .
 
 $ mkdir data
 
