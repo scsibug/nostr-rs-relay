@@ -159,7 +159,7 @@ fn mig_init(conn: &mut PooledConnection) -> usize {
             );
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (init) failed: {}", err);
             panic!("database could not be initialized");
         }
     }
@@ -339,7 +339,7 @@ PRAGMA user_version = 2;
             info!("database schema upgraded v1 -> v2");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v1->v2) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -366,7 +366,7 @@ PRAGMA user_version = 3;
             info!("database schema upgraded v2 -> v3");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v2->v3) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -416,7 +416,7 @@ PRAGMA user_version = 4;
             info!("database schema upgraded v3 -> v4");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v3->v4) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -435,7 +435,7 @@ PRAGMA user_version=5;
             info!("database schema upgraded v4 -> v5");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v4->v5) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -507,7 +507,7 @@ PRAGMA user_version = 7;
             info!("database schema upgraded v6 -> v7");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v6->v7) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -528,7 +528,7 @@ PRAGMA user_version = 8;
             info!("database schema upgraded v7 -> v8");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v7->v8) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -548,7 +548,7 @@ PRAGMA user_version = 9;
             info!("database schema upgraded v8 -> v9");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v8->v9) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -567,7 +567,7 @@ PRAGMA user_version = 10;
             info!("database schema upgraded v9 -> v10");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v9->v10) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -588,7 +588,7 @@ PRAGMA user_version = 11;
             info!("database schema upgraded v10 -> v11");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v10->v11) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -643,7 +643,7 @@ PRAGMA user_version = 13;
             info!("database schema upgraded v12 -> v13");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v12->v13) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -663,7 +663,7 @@ PRAGMA user_version = 14;
             info!("database schema upgraded v13 -> v14");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v13->v14) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -682,7 +682,7 @@ PRAGMA user_version = 15;
             info!("database schema upgraded v14 -> v15");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v14->v15) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -786,7 +786,7 @@ PRAGMA user_version = 17;
             info!("database schema upgraded v16 -> v17");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v16->v17) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
@@ -833,7 +833,7 @@ PRAGMA user_version = 18;
             info!("database schema upgraded v17 -> v18");
         }
         Err(err) => {
-            error!("update failed: {}", err);
+            error!("update (v17->v18) failed: {}", err);
             panic!("database could not be upgraded");
         }
     }
