@@ -37,10 +37,12 @@ pub struct ReqFilter {
     /// Set of tags
     pub tags: Option<HashMap<char, HashSet<String>>>,
     /// Force no matches due to malformed data
-    // we can't represent it in the req filter, so we don't want to
-    // erroneously match.  This basically indicates the req tried to
-    // do something invalid.
+    /// we can't represent it in the req filter, so we don't want to
+    /// erroneously match.  This basically indicates the req tried to
+    /// do something invalid.
     pub force_no_match: bool,
+    /// NIP-50 search query
+    pub search: Option<String>,
 }
 
 impl Serialize for ReqFilter {
@@ -66,6 +68,9 @@ impl Serialize for ReqFilter {
         }
         if let Some(authors) = &self.authors {
             map.serialize_entry("authors", &authors)?;
+        }
+        if let Some(search) = &self.search {
+            map.serialize_entry("search", &search)?;
         }
         // serialize tags
         if let Some(tags) = &self.tags {
@@ -98,6 +103,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             authors: None,
             limit: None,
             tags: None,
+            search: None,
             force_no_match: false,
         };
         let empty_string = "".into();
@@ -124,6 +130,8 @@ impl<'de> Deserialize<'de> for ReqFilter {
                 rf.until = Deserialize::deserialize(val).ok();
             } else if key == "limit" {
                 rf.limit = Deserialize::deserialize(val).ok();
+            } else if key == "search" {
+                rf.search = Deserialize::deserialize(val).ok();
             } else if key == "authors" {
                 let raw_authors: Option<Vec<String>> = Deserialize::deserialize(val).ok();
                 if let Some(a) = raw_authors.as_ref() {
