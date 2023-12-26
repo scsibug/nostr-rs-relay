@@ -59,7 +59,7 @@ async fn cleanup_expired(conn: PostgresPool, frequency: Duration) -> Result<()> 
                         }
                     }
                 }
-            };
+            }
         }
     });
     Ok(())
@@ -149,19 +149,19 @@ impl NostrRepo for PostgresRepo {
 VALUES($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (id) DO NOTHING"#,
         )
-        .bind(&id_blob)
-        .bind(&pubkey_blob)
-        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-        .bind(
-            e.expiration()
-                .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
-        )
-        .bind(e.kind as i64)
-        .bind(event_str.into_bytes())
-        .bind(delegator_blob)
-        .execute(&mut tx)
-        .await?
-        .rows_affected();
+            .bind(&id_blob)
+            .bind(&pubkey_blob)
+            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+            .bind(
+                e.expiration()
+                    .and_then(|x| Utc.timestamp_opt(x as i64, 0).latest()),
+            )
+            .bind(e.kind as i64)
+            .bind(event_str)
+            .bind(delegator_blob)
+            .execute(&mut tx)
+            .await?
+            .rows_affected();
 
         if ins_count == 0 {
             // if the event was a duplicate, no need to insert event or
@@ -281,10 +281,10 @@ ON CONFLICT (id) DO NOTHING"#,
             LEFT JOIN tag t ON e.id = t.event_id \
             WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
             )
-            .bind(&pubkey_blob)
-            .bind(&id_blob)
-            .fetch_optional(&mut tx)
-            .await?;
+                .bind(&pubkey_blob)
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?;
 
             // check if a the query returned a result, meaning we should
             // hid the current event
@@ -393,7 +393,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 }
 
                 row_count += 1;
-                let event_json: Vec<u8> = row.unwrap().get(0);
+                let event_json: String = row.unwrap().get(0);
                 loop {
                     if query_tx.capacity() != 0 {
                         // we have capacity to add another item
@@ -421,7 +421,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 query_tx
                     .send(QueryResult {
                         sub_id: sub.get_id(),
-                        event: String::from_utf8(event_json).unwrap(),
+                        event: event_json,
                     })
                     .await
                     .ok();
@@ -575,10 +575,10 @@ ON CONFLICT (id) DO NOTHING"#,
         sqlx::query(
             "UPDATE account SET is_admitted = TRUE, balance = balance - $1 WHERE pubkey = $2",
         )
-        .bind(admission_cost as i64)
-        .bind(pub_key)
-        .execute(&self.conn_write)
-        .await?;
+            .bind(admission_cost as i64)
+            .bind(pub_key)
+            .execute(&self.conn_write)
+            .await?;
         Ok(())
     }
 
@@ -861,6 +861,16 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         query
             .push("e.created_at <= ")
             .push_bind(Utc.timestamp_opt(f.until.unwrap() as i64, 0).unwrap());
+    }
+
+    if let Some(search) = &f.search {
+        if push_and {
+            query.push(" AND ");
+        }
+        push_and = true;
+        query.push("e.ts_content @@ websearch_to_tsquery(")
+            .push_bind(search.clone())
+            .push(")");
     }
 
     // never display hidden events
