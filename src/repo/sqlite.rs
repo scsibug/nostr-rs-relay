@@ -454,7 +454,11 @@ impl NostrRepo for SqliteRepo {
                             return Ok(());
                         }
                         row_count += 1;
-                        let event_json = row.get(0)?;
+                        let mut event_json = row.get(0)?;
+                        if filter.ids_only { // hex event id
+                            event_json = format!("\"{}\"", event_json);
+                        }
+                        info!("event_json: {:?}", event_json);
                         loop {
                             if query_tx.capacity() != 0 {
                                 // we have capacity to add another item
@@ -976,12 +980,17 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         return (empty_query, empty_params, None);
     }
 
+    let select_field = if f.ids_only {
+        "hex(e.id)"
+    } else {
+        "e.content"
+    };
     // check if the index needs to be overridden
     let idx_name = override_index(f);
     let idx_stmt = idx_name
         .as_ref()
         .map_or_else(|| "".to_owned(), |i| format!("INDEXED BY {i}"));
-    let mut query = format!("SELECT e.content FROM event e {idx_stmt}");
+    let mut query = format!("SELECT {select_field} FROM event e {idx_stmt}");
     // query parameters for SQLite
     let mut params: Vec<Box<dyn ToSql>> = vec![];
 
