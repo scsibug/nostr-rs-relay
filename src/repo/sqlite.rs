@@ -993,7 +993,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         let mut auth_searches: Vec<String> = vec![];
         for auth in authvec {
             auth_searches.push("author=?".to_owned());
-            params.push(Box::new(auth.clone()));
+            let auth_bin = hex::decode(&auth).ok();
+            params.push(Box::new(auth_bin));
         }
         if !authvec.is_empty() {
             let auth_clause = format!("({})", auth_searches.join(" OR "));
