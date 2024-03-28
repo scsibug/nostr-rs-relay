@@ -764,7 +764,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
     trace!("Config: {:?}", settings);
     // do some config validation.
     if !Path::new(&settings.database.data_directory).is_dir() {
-        error!("Database directory does not exist");
+        error!("Database directory {:?} does not exist", settings.database.data_directory);
         return Err(Error::DatabaseDirError);
     }
     let addr = format!(
@@ -1178,7 +1178,12 @@ async fn nostr_server(
                     metrics.sent_events.with_label_values(&["db"]).inc();
                     client_received_event_count += 1;
                     // send a result
-                    let send_str = format!("[\"EVENT\",\"{}\",{}]", subesc, &query_result.event);
+                    let method = if query_result.event.len() == (64 + 2) { // 64 hex chars + 2 quotes
+                        "HAVE"
+                    } else {
+                        "EVENT"
+                    };
+                    let send_str = format!("[\"{}\",\"{}\",{}]", method, subesc, &query_result.event);
                     ws_stream.send(Message::Text(send_str)).await.ok();
                 }
             },
@@ -1190,17 +1195,25 @@ async fn nostr_server(
                     if !sub.interested_in_event(&global_event) {
                         continue;
                     }
+
                     // TODO: serialize at broadcast time, instead of
                     // once for each consumer.
                     if let Ok(event_str) = serde_json::to_string(&global_event) {
+                        // TODO allowed_to_send unnecessarily deserializes this again
                         if allowed_to_send(&event_str, &conn, &settings) {
+                            let subesc = s.replace('"', "");
+                            let send_str = if sub.ids_only() {
+                                format!("[\"HAVE\",\"{}\",\"{}\"]", subesc, &global_event.id)
+                            } else {
+                                format!("[\"EVENT\",\"{subesc}\",{event_str}]")
+                            };
+
                             // create an event response and send it
                             trace!("sub match for client: {}, sub: {:?}, event: {:?}",
                                cid, s,
                                global_event.get_event_id_prefix());
-                            let subesc = s.replace('"', "");
                             metrics.sent_events.with_label_values(&["realtime"]).inc();
-                            ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.ok();
+                            ws_stream.send(Message::Text(send_str)).await.ok();
                         }
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
