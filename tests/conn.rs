@@ -52,7 +52,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event(challenge);
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Ok(())));
         assert_eq!(client_conn.auth_challenge(), None);
@@ -67,7 +67,7 @@ mod tests {
         assert_eq!(client_conn.auth_pubkey(), None);
 
         let event = auth_event(&"challenge".into());
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -87,14 +87,14 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap().clone();
 
         let event = auth_event(&challenge);
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Ok(())));
         assert_eq!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), Some(&event.pubkey));
 
         let event1 = auth_event(&challenge);
-        let result1 = client_conn.authenticate(&event1, RELAY.into());
+        let result1 = client_conn.authenticate(&event1, RELAY);
 
         assert!(matches!(result1, Ok(())));
         assert_eq!(client_conn.auth_challenge(), None);
@@ -118,7 +118,7 @@ mod tests {
         let mut event = auth_event(challenge);
         event.sig = event.sig.chars().rev().collect::<String>();
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -138,7 +138,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event_with_kind(challenge, 9999999999999999);
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -158,7 +158,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event_with_created_at(challenge, unix_time() - 1200); // 20 minutes
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -178,7 +178,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event_with_created_at(challenge, unix_time() + 1200); // 20 minutes
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -197,7 +197,7 @@ mod tests {
 
         let event = auth_event_without_tags();
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -216,7 +216,7 @@ mod tests {
 
         let event = auth_event_without_challenge();
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -236,7 +236,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event_without_relay(challenge);
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -255,7 +255,7 @@ mod tests {
 
         let event = auth_event(&"invalid challenge".into());
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
@@ -275,7 +275,7 @@ mod tests {
         let challenge = client_conn.auth_challenge().unwrap();
         let event = auth_event_with_relay(challenge, &"xyz".into());
 
-        let result = client_conn.authenticate(&event, RELAY.into());
+        let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
     }

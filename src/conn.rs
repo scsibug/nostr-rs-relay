@@ -185,10 +185,10 @@ impl ClientConn {
                 let mut relay: Option<&str> = None;
 
                 for tag in &event.tags {
-                    if tag.len() == 2 && tag.get(0) == Some(&"challenge".into()) {
+                    if tag.len() == 2 && tag.first() == Some(&"challenge".into()) {
                         challenge = tag.get(1).map(|x| x.as_str());
                     }
-                    if tag.len() == 2 && tag.get(0) == Some(&"relay".into()) {
+                    if tag.len() == 2 && tag.first() == Some(&"relay".into()) {
                         relay = tag.get(1).map(|x| x.as_str());
                     }
                 }

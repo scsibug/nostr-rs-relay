@@ -361,7 +361,7 @@ mod tests {
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
-        assert_eq!(s.filters.get(0).unwrap().authors, None);
+        assert_eq!(s.filters.first().unwrap().authors, None);
         Ok(())
     }
 
@@ -425,7 +425,7 @@ mod tests {
         let s: Subscription = serde_json::from_str(raw_json)?;
         assert_eq!(s.id, "some-id");
         assert_eq!(s.filters.len(), 1);
-        let first_filter = s.filters.get(0).unwrap();
+        let first_filter = s.filters.first().unwrap();
         assert_eq!(
             first_filter.authors,
             Some(vec!("test-author-id".to_owned()))
@@ -656,11 +656,11 @@ mod tests {
         let s: Subscription = serde_json::from_str(
             r##"["REQ","xyz",{"authors":["abc", "bcd"], "since": 10, "until": 20, "limit":100, "#e": ["foo", "bar"], "#d": ["test"]}]"##,
         )?;
-        let f = s.filters.get(0);
+        let f = s.filters.first();
         let serialized = serde_json::to_string(&f)?;
         let serialized_wrapped = format!(r##"["REQ", "xyz",{}]"##, serialized);
         let parsed: Subscription = serde_json::from_str(&serialized_wrapped)?;
-        let parsed_filter = parsed.filters.get(0);
+        let parsed_filter = parsed.filters.first();
         if let Some(pf) = parsed_filter {
             assert_eq!(pf.since, Some(10));
             assert_eq!(pf.until, Some(20));
@@ -673,11 +673,11 @@ mod tests {
 
     #[test]
     fn is_scraper() -> Result<()> {
-        assert_eq!(true, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"since": 123,"limit":1}]"#)?.is_scraper());
-        assert_eq!(true, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984]},{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
-        assert_eq!(false, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
-        assert_eq!(false, serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"ids": ["aaaa"]}]"#)?.is_scraper());
-        assert_eq!(false, serde_json::from_str::<Subscription>(r##"["REQ","some-id",{"#p": ["aaaa"],"kinds":[1,4]}]"##)?.is_scraper());
+        assert!(serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"since": 123,"limit":1}]"#)?.is_scraper());
+        assert!(serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984]},{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
+        assert!(!serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"kinds": [1984],"authors":["aaaa"]}]"#)?.is_scraper());
+        assert!(!serde_json::from_str::<Subscription>(r#"["REQ","some-id",{"ids": ["aaaa"]}]"#)?.is_scraper());
+        assert!(!serde_json::from_str::<Subscription>(r##"["REQ","some-id",{"#p": ["aaaa"],"kinds":[1,4]}]"##)?.is_scraper());
         Ok(())
     }
 }

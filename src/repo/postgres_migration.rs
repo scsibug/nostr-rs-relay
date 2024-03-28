@@ -205,7 +205,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                 let event: Event = serde_json::from_str(&String::from_utf8(event_bytes).unwrap())?;
 
                 for t in event.tags.iter().filter(|x| x.len() > 1) {
-                    let tagname = t.get(0).unwrap();
+                    let tagname = t.first().unwrap();
                     let tagnamechar_opt = single_char_tagname(tagname);
                     if tagnamechar_opt.is_none() {
                         continue;

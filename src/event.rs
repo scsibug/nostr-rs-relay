@@ -160,11 +160,11 @@ impl Event {
             .tags
             .iter()
             .filter(|x| !x.is_empty())
-            .filter(|x| x.get(0).unwrap() == "expiration")
+            .filter(|x| x.first().unwrap() == "expiration")
             .map(|x| x.get(1).unwrap_or(&default))
             .take(1)
             .collect();
-        let val_first = dvals.get(0);
+        let val_first = dvals.first();
         val_first.and_then(|t| t.parse::<u64>().ok())
     }
 
@@ -192,11 +192,11 @@ impl Event {
                 .tags
                 .iter()
                 .filter(|x| !x.is_empty())
-                .filter(|x| x.get(0).unwrap() == "d")
+                .filter(|x| x.first().unwrap() == "d")
                 .map(|x| x.get(1).unwrap_or(&default))
                 .take(1)
                 .collect();
-            let dval_first = dvals.get(0);
+            let dval_first = dvals.first();
             match dval_first {
                 Some(_) => dval_first.map(|x| x.to_string()),
                 None => Some(default),
@@ -232,7 +232,7 @@ impl Event {
             .tags
             .iter()
             .filter(|x| x.len() == 4)
-            .filter(|x| x.get(0).unwrap() == "delegation")
+            .filter(|x| x.first().unwrap() == "delegation")
             .take(1)
             .next()?
             .clone(); // get first tag
@@ -277,7 +277,7 @@ impl Event {
         let mut idx: HashMap<char, HashSet<String>> = HashMap::new();
         // iterate over tags that have at least 2 elements
         for t in self.tags.iter().filter(|x| x.len() > 1) {
-            let tagname = t.get(0).unwrap();
+            let tagname = t.first().unwrap();
             let tagnamechar_opt = single_char_tagname(tagname);
             if tagnamechar_opt.is_none() {
                 continue;
@@ -285,7 +285,7 @@ impl Event {
             let tagnamechar = tagnamechar_opt.unwrap();
             let tagval = t.get(1).unwrap();
             // ensure a vector exists for this tag
-            idx.entry(tagnamechar).or_insert_with(HashSet::new);
+            idx.entry(tagnamechar).or_default();
             // get the tag vec and insert entry
             let idx_tag_vec = idx.get_mut(&tagnamechar).expect("could not get tag vector");
             idx_tag_vec.insert(tagval.clone());
@@ -310,7 +310,7 @@ impl Event {
         self.tags
             .iter()
             .filter(|x| x.len() > 1)
-            .filter(|x| x.get(0).unwrap() == tag_name)
+            .filter(|x| x.first().unwrap() == tag_name)
             .map(|x| x.get(1).unwrap().clone())
             .collect()
     }

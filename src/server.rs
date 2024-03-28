@@ -653,6 +653,7 @@ fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
 async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
     let mut term_signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("could not define signal");
+    #[allow(clippy::never_loop)]
     loop {
         tokio::select! {
             _ = shutdown_signal.recv() => {

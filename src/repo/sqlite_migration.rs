@@ -295,7 +295,7 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
             let event: Event = serde_json::from_str(&event_json)?;
             // look at each event, and each tag, creating new tag entries if appropriate.
             for t in event.tags.iter().filter(|x| x.len() > 1) {
-                let tagname = t.get(0).unwrap();
+                let tagname = t.first().unwrap();
                 let tagnamechar_opt = single_char_tagname(tagname);
                 if tagnamechar_opt.is_none() {
                     continue;
@@ -325,7 +325,7 @@ pub fn rebuild_tags(conn: &mut PooledConnection) -> Result<()> {
     Ok(())
 }
 
-//// Migration Scripts
+// Migration Scripts
 
 fn mig_1_to_2(conn: &mut PooledConnection) -> Result<usize> {
     // only change is adding a hidden column to events.
@@ -461,7 +461,7 @@ fn mig_5_to_6(conn: &mut PooledConnection) -> Result<usize> {
             let event: Event = serde_json::from_str(&event_json)?;
             // look at each event, and each tag, creating new tag entries if appropriate.
             for t in event.tags.iter().filter(|x| x.len() > 1) {
-                let tagname = t.get(0).unwrap();
+                let tagname = t.first().unwrap();
                 let tagnamechar_opt = single_char_tagname(tagname);
                 if tagnamechar_opt.is_none() {
                     continue;
@@ -749,7 +749,7 @@ CREATE INDEX IF NOT EXISTS tag_covering_index ON tag(name,kind,value,created_at,
             let event: Event = serde_json::from_str(&event_json)?;
             // look at each event, and each tag, creating new tag entries if appropriate.
             for t in event.tags.iter().filter(|x| x.len() > 1) {
-                let tagname = t.get(0).unwrap();
+                let tagname = t.first().unwrap();
                 let tagnamechar_opt = single_char_tagname(tagname);
                 if tagnamechar_opt.is_none() {
                     continue;
