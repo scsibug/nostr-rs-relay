@@ -812,13 +812,13 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     .push_bind(key.to_string())
                     .push(" AND (");
 
-                let has_plain_values = val.iter().any(|v| !is_lower_hex(v));
+                let has_plain_values = val.iter().any(|v| (v.len() % 2 != 0 || !is_lower_hex(v)));
                 let has_hex_values = val.iter().any(|v| v.len() % 2 == 0 && is_lower_hex(v));
                 if has_plain_values {
                     query.push("value in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter().filter(|v| !is_lower_hex(v)) {
+                    for v in val.iter().filter(|v| v.len() % 2 != 0 || !is_lower_hex(v)) {
                         tag_query.push_bind(v.as_bytes());
                     }
                 }
