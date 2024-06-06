@@ -187,8 +187,7 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(hex::decode(tag_val).ok())
                                 .execute(&mut tx)
-                                .await
-                                .unwrap();
+                                .await?;
                         } else {
                             sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
                     ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
@@ -196,8 +195,7 @@ ON CONFLICT (id) DO NOTHING"#,
                                 .bind(tag_name)
                                 .bind(tag_val.as_bytes())
                                 .execute(&mut tx)
-                                .await
-                                .unwrap();
+                                .await?;
                         }
                     }
                     None => {}
