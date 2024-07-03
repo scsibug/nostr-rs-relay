@@ -203,17 +203,23 @@ limit_scrapers = false
 # Enable pay to relay
 #enabled = false
 
+# Node interface to use
+#processor = "ClnRest/LNBits"
+
 # The cost to be admitted to relay
 #admission_cost = 4200
 
 # The cost in sats per post
 #cost_per_event = 0
 
-# Url of lnbits api
+# Url of node api
 #node_url = "<node url>"
 
 # LNBits api secret
 #api_secret = "<ln bits api>"
+
+# Path to CLN rune
+#rune_path = "<rune path>"
 
 # Nostr direct message on signup
 #direct_message=false

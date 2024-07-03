@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::event::Event;
+use crate::payment::cln_rest::ClnRestPaymentProcessor;
 use crate::payment::lnbits::LNBitsPaymentProcessor;
 use crate::repo::NostrRepo;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
 
+pub mod cln_rest;
 pub mod lnbits;
 
 /// Payment handler
@@ -41,6 +43,7 @@ pub trait PaymentProcessor: Send + Sync {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Processor {
     LNBits,
+    ClnRest,
 }
 
 /// Possible states of an invoice
@@ -109,8 +112,9 @@ impl Payment {
         };
 
         // Create processor kind defined in settings
-        let processor = match &settings.pay_to_relay.processor {
+        let processor: Arc<dyn PaymentProcessor> = match &settings.pay_to_relay.processor {
             Processor::LNBits => Arc::new(LNBitsPaymentProcessor::new(&settings)),
+            Processor::ClnRest => Arc::new(ClnRestPaymentProcessor::new(&settings)?),
         };
 
         Ok(Payment {
