@@ -98,6 +98,7 @@ pub struct PayToRelay {
     pub direct_message: bool, // Send direct message to user with invoice and terms
     pub secret_key: Option<String>,
     pub processor: Processor,
+    pub rune_path: Option<String>, // To access clightning API
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,17 +248,25 @@ impl Settings {
 
         // Validate pay to relay settings
         if settings.pay_to_relay.enabled {
-            assert_ne!(settings.pay_to_relay.api_secret, "");
+            if settings.pay_to_relay.processor == Processor::ClnRest {
+                assert!(settings
+                    .pay_to_relay
+                    .rune_path
+                    .as_ref()
+                    .is_some_and(|path| path != "<rune path>"));
+            } else if settings.pay_to_relay.processor == Processor::LNBits {
+                assert_ne!(settings.pay_to_relay.api_secret, "");
+            }
             // Should check that url is valid
             assert_ne!(settings.pay_to_relay.node_url, "");
             assert_ne!(settings.pay_to_relay.terms_message, "");
 
             if settings.pay_to_relay.direct_message {
-                assert_ne!(
-                    settings.pay_to_relay.secret_key,
-                    Some("<nostr nsec>".to_string())
-                );
-                assert!(settings.pay_to_relay.secret_key.is_some());
+                assert!(settings
+                    .pay_to_relay
+                    .secret_key
+                    .as_ref()
+                    .is_some_and(|key| key != "<nostr nsec>"));
             }
         }
 
@@ -309,7 +318,7 @@ impl Default for Settings {
                 event_persist_buffer: 4096,
                 event_kind_blacklist: None,
                 event_kind_allowlist: None,
-                limit_scrapers: false
+                limit_scrapers: false,
             },
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish
@@ -323,6 +332,7 @@ impl Default for Settings {
                 terms_message: "".to_string(),
                 node_url: "".to_string(),
                 api_secret: "".to_string(),
+                rune_path: None,
                 sign_ups: false,
                 direct_message: false,
                 secret_key: None,

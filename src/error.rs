@@ -42,7 +42,7 @@ pub enum Error {
     CommandUnknownError,
     #[error("SQL error")]
     SqlError(rusqlite::Error),
-    #[error("Config error")]
+    #[error("Config error : {0}")]
     ConfigError(config::ConfigError),
     #[error("Data directory does not exist")]
     DatabaseDirError,
