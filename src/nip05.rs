@@ -208,7 +208,7 @@ impl Verifier {
             .ok_or_else(|| Error::CustomError("invalid NIP-05 URL".to_owned()))?;
         let req = hyper::Request::builder()
             .method(hyper::Method::GET)
-            .uri(url)
+            .uri(url.clone())
             .header("Accept", "application/json")
             .header(
                 "User-Agent",
@@ -226,38 +226,80 @@ impl Verifier {
             // limit size of verification document to 1MB.
             const MAX_ALLOWED_RESPONSE_SIZE: u64 = 1024 * 1024;
             let response = response_res?;
+            let status = response.status();
+
+            // Log non-2XX status codes
+            if !status.is_success() {
+                info!(
+                    "unexpected status code {} received for account {:?} at URL: {}",
+                    status,
+                    nip.to_string(),
+                    url
+                );
+                return Ok(UserWebVerificationStatus::Unknown);
+            }
+
             // determine content length from response
             let response_content_length = match response.body().size_hint().upper() {
                 Some(v) => v,
-                None => MAX_ALLOWED_RESPONSE_SIZE + 1, // reject missing content length
+                None => {
+                    info!("missing content length header for account {:?} at URL: {}", nip.to_string(), url);
+                    return Ok(UserWebVerificationStatus::Unknown);
+                }
             };
-            // TODO: test how hyper handles the client providing an inaccurate content-length.
-            if response_content_length <= MAX_ALLOWED_RESPONSE_SIZE {
-                let (parts, body) = response.into_parts();
-                // TODO: consider redirects
-                if parts.status == http::StatusCode::OK {
-                    // parse body, determine if the username / key / address is present
-                    let body_bytes = hyper::body::to_bytes(body).await?;
-                    let body_matches = body_contains_user(&nip.local, pubkey, &body_bytes)?;
-                    if body_matches {
-                        return Ok(UserWebVerificationStatus::Verified);
+
+            if response_content_length > MAX_ALLOWED_RESPONSE_SIZE {
+                info!(
+                    "content length {} exceeded limit of {} bytes for account {:?} at URL: {}",
+                    response_content_length,
+                    MAX_ALLOWED_RESPONSE_SIZE,
+                    nip.to_string(),
+                    url
+                );
+                return Ok(UserWebVerificationStatus::Unknown);
+            }
+
+            let (parts, body) = response.into_parts();
+            // TODO: consider redirects
+            if parts.status == http::StatusCode::OK {
+                // parse body, determine if the username / key / address is present
+                let body_bytes = match hyper::body::to_bytes(body).await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        info!(
+                            "failed to read response body for account {:?} at URL: {}: {:?}",
+                            nip.to_string(),
+                            url,
+                            e
+                        );
+                        return Ok(UserWebVerificationStatus::Unknown);
                     }
-                    // successful response, parsed as a nip-05
-                    // document, but this name/pubkey was not
-                    // present.
-                    return Ok(UserWebVerificationStatus::Unverified);
+                };
+
+                match body_contains_user(&nip.local, pubkey, &body_bytes) {
+                    Ok(true) => Ok(UserWebVerificationStatus::Verified),
+                    Ok(false) => Ok(UserWebVerificationStatus::Unverified),
+                    Err(e) => {
+                        info!(
+                            "error parsing response body for account {:?}: {:?}",
+                            nip.to_string(),
+                            e
+                        );
+                        Ok(UserWebVerificationStatus::Unknown)
+                    }
                 }
             } else {
                 info!(
-                    "content length missing or exceeded limits for account: {:?}",
+                    "unexpected status code {} for account {:?}",
+                    parts.status,
                     nip.to_string()
                 );
+                Ok(UserWebVerificationStatus::Unknown)
             }
         } else {
             info!("timeout verifying account {:?}", nip);
-            return Ok(UserWebVerificationStatus::Unknown);
+            Ok(UserWebVerificationStatus::Unknown)
         }
-        Ok(UserWebVerificationStatus::Unknown)
     }
 
     /// Perform NIP-05 verifier tasks.
