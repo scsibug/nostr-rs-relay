@@ -1256,6 +1256,7 @@ async fn nostr_server(
                 };
 
                 // convert ws_next into proto_next
+                debug!("received message: {:?}", nostr_msg);
                 match nostr_msg {
                     Ok(NostrMessage::EventMsg(ec)) => {
                         // An EventCmd needs to be validated to be converted into an Event
@@ -1264,6 +1265,13 @@ async fn nostr_server(
                         let parsed : Result<EventWrapper> = Result::<EventWrapper>::from(ec);
                         match parsed {
                             Ok(WrappedEvent(e)) => {
+                                if settings.authorization.nip42_auth && conn.auth_pubkey().is_none() {
+                                    info!("client: {} sent an event without authenticating", cid);
+                                    let notice = Notice::auth_required(e.id, "You must authenticate before sending events");
+                                    ws_stream.send(make_notice_message(&notice)).await.ok();
+                                    continue;
+                                }
+
                                 metrics.cmd_event.inc();
                                 let id_prefix:String = e.id.chars().take(8).collect();
                                 debug!("successfully parsed/validated event: {:?} (cid: {}, kind: {})", id_prefix, cid, e.kind);
@@ -1342,6 +1350,14 @@ async fn nostr_server(
                         if conn.has_subscription(&s) {
                             info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
                         } else {
+                            if settings.authorization.nip42_auth && conn.auth_pubkey().is_none() {
+                                info!("client: {} sent a req without authenticating, {:?}", cid, conn.auth_pubkey());
+
+                                let json = json!(["CLOSED", cid, "auth-required: we can't serve events to unauthenticated users"]);
+                                let message = Message::text(json.to_string());
+                                ws_stream.send(message).await.ok();
+                                continue
+                            }
                             metrics.cmd_req.inc();
                             if let Some(ref lim) = sub_lim_opt {
                                 lim.until_ready_with_jitter(jitter).await;

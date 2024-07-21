@@ -1,0 +1,16 @@
+services:
+  nostr-relay:
+    build: .
+    container_name: nostr-relay
+    ports:
+      - "7000:8080"
+    user: "100:100"
+    environment:
+      - RUST_LOG=debug
+    volumes:
+      - ./data:/usr/src/app/db:Z
+      - ./config.toml:/usr/src/app/config.toml:ro,Z
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+

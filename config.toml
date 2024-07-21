@@ -2,13 +2,13 @@
 
 [info]
 # The advertised URL for the Nostr websocket.
-relay_url = "wss://nostr.example.com/"
+relay_url = "wss://olympics2024.nos.social"
 
 # Relay information for clients.  Put your unique server name here.
 name = "nostr-rs-relay"
 
 # Description
-description = "A newly created nostr-rs-relay.\n\nCustomize this with your own info."
+description = "Paris 2024 Olympics Nostr Relay"
 
 # Administrative contact pubkey (32-byte hex, not npub)
 #pubkey = "0c2d168a4ae8ca58c9f1ab237b5df682599c6c7ab74307ea8b05684b60405d41"
@@ -164,12 +164,16 @@ limit_scrapers = false
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable
 # is set.
-#pubkey_whitelist = [
-#  "35d26e4690cbe1a898af61cc3515661eb5fa763b57bd0b42e45099c8b32fd50f",
-#  "887645fef0ce0c3c1218d2f5d8e6132a19304cdc57cd20281d082f38cfea0072",
-#]
+pubkey_whitelist = [
+  "0403c86a1bb4cfbc34c8a493fbd1f0d158d42dd06d03eaa3720882a066d3a378", # Global Sport Center
+  "89ef92b9ebe6dc1e4ea398f6477f227e95429627b0a33dc89b640e137b256be5", # Daniel
+  "d0a1ffb8761b974cec4a3be8cbcb2e96a7090dcf465ffeac839aa4ca20c9a59e", # Matt
+  "27cf2c68535ae1fc06510e827670053f5dcd39e6bd7e05f1ffb487ef2ac13549", # Josh
+  "76c71aae3a491f1d9eec47cba17e229cda4113a0bbb6e6ae1776d7643e29cafa", # Rabble
+  "969e6a28ee5214cb0296ee69cbdce4f43229124a78b1043d85df31e5636d0f1f", # Linda
+]
 # Enable NIP-42 authentication
-#nip42_auth = false
+nip42_auth = true
 # Send DMs (kind 4 and 44) and gift wraps (kind 1059) only to their authenticated recipients
 #nip42_dms = false
 

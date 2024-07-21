@@ -171,6 +171,7 @@ impl ClientConn {
         match event.validate() {
             Ok(_) => {
                 if event.kind != 22242 {
+                    debug!("Auth kind is not 22242");
                     return Err(Error::AuthFailure);
                 }
 
@@ -178,6 +179,7 @@ impl ClientConn {
                 let past_cutoff = curr_time - 600; // 10 minutes
                 let future_cutoff = curr_time + 600; // 10 minutes
                 if event.created_at < past_cutoff || event.created_at > future_cutoff {
+                    debug!("Invalid auth created_at");
                     return Err(Error::AuthFailure);
                 }
 
@@ -196,10 +198,12 @@ impl ClientConn {
                 match (challenge, &self.auth) {
                     (Some(received_challenge), Challenge(sent_challenge)) => {
                         if received_challenge != sent_challenge {
+                            debug!("Invalid auth challenge");
                             return Err(Error::AuthFailure);
                         }
                     }
                     (_, _) => {
+                        debug!("Invalid auth challenge");
                         return Err(Error::AuthFailure);
                     }
                 }
@@ -207,10 +211,12 @@ impl ClientConn {
                 match (relay.and_then(host_str), host_str(relay_url)) {
                     (Some(received_relay), Some(our_relay)) => {
                         if received_relay != our_relay {
+                            debug!("Invalid auth relay. Should be: {}", our_relay);
                             return Err(Error::AuthFailure);
                         }
                     }
                     (_, _) => {
+                        debug!("Invalid auth relay");
                         return Err(Error::AuthFailure);
                     }
                 }
