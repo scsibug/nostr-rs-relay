@@ -3,7 +3,7 @@ services:
     build: .
     container_name: nostr-relay
     ports:
-      - "7000:7777"
+      - "8000:7777"
     user: "100:100"
     environment:
       - RUST_LOG=debug
