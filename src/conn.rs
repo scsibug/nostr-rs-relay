@@ -5,8 +5,8 @@ use tracing::{debug, trace};
 use uuid::Uuid;
 
 use crate::close::Close;
+use crate::config::Settings;
 use crate::conn::Nip42AuthState::{AuthPubkey, Challenge, NoAuth};
-use crate::config::{Settings, VerifiedUsersMode};
 use crate::error::Error;
 use crate::error::Result;
 use crate::event::Event;
@@ -44,7 +44,7 @@ pub struct ClientConn {
 
 impl Default for ClientConn {
     fn default() -> Self {
-        Self::new("unknown".to_owned(), Settings::new(&None).expect("couldn't create Settings"))
+        Self::new_with_default_settings("unknown".to_owned())
     }
 }
 
@@ -61,6 +61,15 @@ impl ClientConn {
             auth: NoAuth,
             settings: settings,
         }
+    }
+
+    /// Create a new, empty connection state.
+    #[must_use]
+    pub fn new_with_default_settings(client_ip_addr: String) -> Self {
+        ClientConn::new(
+            client_ip_addr,
+            Settings::new(&None).expect("couldn't create Settings"),
+        )
     }
 
     #[must_use]
@@ -174,7 +183,12 @@ impl ClientConn {
         }
         match event.validate() {
             Ok(_) => {
-                let whitelist = self.settings.authorization.pubkey_whitelist.as_ref().unwrap();
+                let whitelist = self
+                    .settings
+                    .authorization
+                    .pubkey_whitelist
+                    .as_ref()
+                    .unwrap();
                 if !whitelist.contains(&event.pubkey) {
                     debug!("User is not in whitelist");
                     return Err(Error::AuthFailure);
