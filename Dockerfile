@@ -29,7 +29,7 @@ RUN apt-get update \
     && apt-get install -y ca-certificates tzdata sqlite3 libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 8080
+EXPOSE 7777
 
 ENV TZ=Etc/UTC \
     APP_USER=appuser

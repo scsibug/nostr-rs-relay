@@ -85,7 +85,7 @@ description = "Paris 2024 Olympics Nostr Relay"
 address = "0.0.0.0"
 
 # Listen on this port
-port = 8080
+port = 7777
 
 # If present, read this HTTP header for logging client IP addresses.
 # Examples for common proxies, cloudflare:
