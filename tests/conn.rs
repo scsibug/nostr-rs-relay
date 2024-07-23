@@ -6,6 +6,7 @@ mod tests {
     use secp256k1::rand;
     use secp256k1::{KeyPair, Secp256k1, XOnlyPublicKey};
 
+    use nostr_rs_relay::config::Settings;
     use nostr_rs_relay::conn::ClientConn;
     use nostr_rs_relay::error::Error;
     use nostr_rs_relay::event::Event;
@@ -39,7 +40,12 @@ mod tests {
 
     #[test]
     fn test_authenticate_with_valid_event() {
-        let mut client_conn = ClientConn::new_with_default_settings("127.0.0.1".into());
+        let key_pair = KeyPair::new(&Secp256k1::new(), &mut rand::thread_rng());
+        let pubkey = XOnlyPublicKey::from_keypair(&key_pair);
+
+        let mut settings = Settings::new(&None).unwrap();
+        settings.authorization.pubkey_whitelist = Some(vec![pubkey.to_hex()]);
+        let mut client_conn = ClientConn::new("127.0.0.1".into(), settings);
 
         assert_eq!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), None);
@@ -50,7 +56,7 @@ mod tests {
         assert_eq!(client_conn.auth_pubkey(), None);
 
         let challenge = client_conn.auth_challenge().unwrap();
-        let event = auth_event(challenge);
+        let event = auth_event(Some(key_pair), challenge);
 
         let result = client_conn.authenticate(&event, RELAY);
 
@@ -66,7 +72,7 @@ mod tests {
         assert_eq!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), None);
 
-        let event = auth_event(&"challenge".into());
+        let event = auth_event(None, &"challenge".into());
         let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Err(Error::AuthFailure)));
@@ -74,7 +80,12 @@ mod tests {
 
     #[test]
     fn test_authenticate_when_already_authenticated() {
-        let mut client_conn = ClientConn::new_with_default_settings("127.0.0.1".into());
+        let key_pair = KeyPair::new(&Secp256k1::new(), &mut rand::thread_rng());
+        let pubkey = XOnlyPublicKey::from_keypair(&key_pair);
+
+        let mut settings = Settings::new(&None).unwrap();
+        settings.authorization.pubkey_whitelist = Some(vec![pubkey.to_hex()]);
+        let mut client_conn = ClientConn::new("127.0.0.1".into(), settings);
 
         assert_eq!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), None);
@@ -86,14 +97,15 @@ mod tests {
 
         let challenge = client_conn.auth_challenge().unwrap().clone();
 
-        let event = auth_event(&challenge);
+        let event = auth_event(Some(key_pair), &challenge);
         let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Ok(())));
         assert_eq!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), Some(&event.pubkey));
 
-        let event1 = auth_event(&challenge);
+        let another_key_pair = KeyPair::new(&Secp256k1::new(), &mut rand::thread_rng());
+        let event1 = auth_event(Some(another_key_pair), &challenge);
         let result1 = client_conn.authenticate(&event1, RELAY);
 
         assert!(matches!(result1, Ok(())));
@@ -115,7 +127,7 @@ mod tests {
         assert_eq!(client_conn.auth_pubkey(), None);
 
         let challenge = client_conn.auth_challenge().unwrap();
-        let mut event = auth_event(challenge);
+        let mut event = auth_event(None, challenge);
         event.sig = event.sig.chars().rev().collect::<String>();
 
         let result = client_conn.authenticate(&event, RELAY);
@@ -253,7 +265,7 @@ mod tests {
         assert_ne!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), None);
 
-        let event = auth_event(&"invalid challenge".into());
+        let event = auth_event(None, &"invalid challenge".into());
 
         let result = client_conn.authenticate(&event, RELAY);
 
@@ -280,42 +292,62 @@ mod tests {
         assert!(matches!(result, Err(Error::AuthFailure)));
     }
 
-    fn auth_event(challenge: &String) -> Event {
-        create_auth_event(Some(challenge), Some(&RELAY.into()), 22242, unix_time())
+    fn auth_event(maybe_keypair: Option<KeyPair>, challenge: &String) -> Event {
+        create_auth_event(
+            maybe_keypair,
+            Some(challenge),
+            Some(&RELAY.into()),
+            22242,
+            unix_time(),
+        )
     }
 
     fn auth_event_with_kind(challenge: &String, kind: u64) -> Event {
-        create_auth_event(Some(challenge), Some(&RELAY.into()), kind, unix_time())
+        create_auth_event(
+            None,
+            Some(challenge),
+            Some(&RELAY.into()),
+            kind,
+            unix_time(),
+        )
     }
 
     fn auth_event_with_created_at(challenge: &String, created_at: u64) -> Event {
-        create_auth_event(Some(challenge), Some(&RELAY.into()), 22242, created_at)
+        create_auth_event(
+            None,
+            Some(challenge),
+            Some(&RELAY.into()),
+            22242,
+            created_at,
+        )
     }
 
     fn auth_event_without_challenge() -> Event {
-        create_auth_event(None, Some(&RELAY.into()), 22242, unix_time())
+        create_auth_event(None, None, Some(&RELAY.into()), 22242, unix_time())
     }
 
     fn auth_event_without_relay(challenge: &String) -> Event {
-        create_auth_event(Some(challenge), None, 22242, unix_time())
+        create_auth_event(None, Some(challenge), None, 22242, unix_time())
     }
 
     fn auth_event_without_tags() -> Event {
-        create_auth_event(None, None, 22242, unix_time())
+        create_auth_event(None, None, None, 22242, unix_time())
     }
 
     fn auth_event_with_relay(challenge: &String, relay: &String) -> Event {
-        create_auth_event(Some(challenge), Some(relay), 22242, unix_time())
+        create_auth_event(None, Some(challenge), Some(relay), 22242, unix_time())
     }
 
     fn create_auth_event(
+        maybe_key_pair: Option<KeyPair>,
         challenge: Option<&String>,
         relay: Option<&String>,
         kind: u64,
         created_at: u64,
     ) -> Event {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::new(&secp, &mut rand::thread_rng());
+        let key_pair =
+            maybe_key_pair.unwrap_or_else(|| KeyPair::new(&secp, &mut rand::thread_rng()));
         let public_key = XOnlyPublicKey::from_keypair(&key_pair);
 
         let mut tags: Vec<Vec<String>> = vec![];
