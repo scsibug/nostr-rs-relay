@@ -35,7 +35,7 @@ RUN apt-get update && \
 EXPOSE 7777
 
 ENV TZ=Etc/UTC \
-    RUST_LOG=info,nostr_rs_relay=info \
+    RUST_LOG=info,nostr_rs_relay=debug \
     APP_DATA=${APP_DATA}
 
 RUN mkdir -p ${APP} && \
