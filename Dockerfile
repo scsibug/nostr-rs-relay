@@ -35,23 +35,15 @@ RUN apt-get update && \
 EXPOSE 7777
 
 ENV TZ=Etc/UTC \
-    APP_USER=appuser \
     RUST_LOG=info,nostr_rs_relay=info \
     APP_DATA=${APP_DATA}
 
-RUN groupadd $APP_USER && \
-    useradd -g $APP_USER $APP_USER && \
-    mkdir -p ${APP} && \
-    mkdir -p ${APP_DATA} && \
-    chown -R $APP_USER:$APP_USER ${APP} ${APP_DATA}
+RUN mkdir -p ${APP} && \
+    mkdir -p ${APP_DATA}
 
 COPY --from=builder /nostr-rs-relay/target/release/nostr-rs-relay ${APP}/nostr-rs-relay
 COPY --from=builder /usr/src/app/config.toml ${APP}/config.toml
 
-RUN chown $APP_USER:$APP_USER ${APP}/config.toml
-
-USER $APP_USER
 WORKDIR ${APP}
 
 CMD ./nostr-rs-relay --db ${APP_DATA}
-
