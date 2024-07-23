@@ -1318,6 +1318,8 @@ async fn nostr_server(
                                                         None => "<unspecified>".to_string(),
                                                     };
                                                     info!("client is authenticated: (cid: {}, pubkey: {:?})", cid, pubkey);
+                                                    let notice = Notice::saved(event.id);
+                                                    ws_stream.send(make_notice_message(&notice)).await.ok();
                                                 },
                                                 Err(e) => {
                                                     info!("authentication error: {} (cid: {})", e, cid);
