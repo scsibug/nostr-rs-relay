@@ -43,7 +43,7 @@ RUN groupadd $APP_USER && \
     useradd -g $APP_USER $APP_USER && \
     mkdir -p ${APP} && \
     mkdir -p ${APP_DATA} && \
-    chown -R $APP_USER:$APP_USER ${APP}
+    chown -R $APP_USER:$APP_USER ${APP} ${APP_DATA}
 
 COPY --from=builder /nostr-rs-relay/target/release/nostr-rs-relay ${APP}/nostr-rs-relay
 COPY --from=builder /usr/src/app/config.toml ${APP}/config.toml
