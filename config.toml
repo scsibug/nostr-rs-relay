@@ -164,9 +164,6 @@ limit_scrapers = false
 word_whitelist = [
   "olympics2024",
   "paris2024",
-  "paris2024olympics",
-  "paris2024olympicgames",
-  "paris2024olympic",
 ]
 
 # Pubkey addresses in this array are whitelisted for event publishing.
