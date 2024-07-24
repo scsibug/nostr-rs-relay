@@ -1146,6 +1146,14 @@ async fn nostr_server(
         }
     }
 
+    let word_whitelist = settings.authorization.word_whitelist.as_ref().unwrap();
+    let write_whitelist = settings.authorization.pubkey_whitelist.as_ref().unwrap();
+    let read_whitelist = settings
+        .authorization
+        .pubkey_whitelist_readers
+        .as_ref()
+        .unwrap();
+
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
@@ -1265,11 +1273,30 @@ async fn nostr_server(
                         let parsed : Result<EventWrapper> = Result::<EventWrapper>::from(ec);
                         match parsed {
                             Ok(WrappedEvent(e)) => {
-                                if settings.authorization.nip42_auth && conn.auth_pubkey().is_none() {
-                                    info!("client: {} sent an event without authenticating", cid);
-                                    let notice = Notice::auth_required(e.id, "You must authenticate before sending events");
-                                    ws_stream.send(make_notice_message(&notice)).await.ok();
-                                    continue;
+                                if settings.authorization.nip42_auth {
+                                    match conn.auth_pubkey() {
+                                        None => {
+                                            info!("client: {} sent an event without authenticating", cid);
+                                            let notice = Notice::auth_required(e.id, "You must authenticate before sending events");
+                                            ws_stream.send(make_notice_message(&notice)).await.ok();
+                                            continue;
+                                        },
+                                        Some(pubkey) => {
+                                            if !write_whitelist.contains(&pubkey) {
+                                                info!("client: {} not authorized to write, {:?}", cid, pubkey);
+                                                let notice = Notice::restricted(e.id, "Writes not allowed for this account. Contact nprofile1qqsq7gkqd6kpqqngfm7vdr6ks4qwsdpdzcya2z9u6scjcquwvx203dsrg7t4x");
+                                                ws_stream.send(make_notice_message(&notice)).await.ok();
+                                                continue;
+                                            }
+
+                                            if !word_whitelist.is_empty() && !word_whitelist.iter().any(|word| e.content.contains(word)) {
+                                                info!("client: {} tried to write an event with no keyword, {:?}", cid, e.id);
+                                                let notice = Notice::restricted(e.id, "The event doesn't contain a keyword");
+                                                ws_stream.send(make_notice_message(&notice)).await.ok();
+                                                continue;
+                                            }
+                                        }
+                                    }
                                 }
 
                                 metrics.cmd_event.inc();
@@ -1352,13 +1379,25 @@ async fn nostr_server(
                         if conn.has_subscription(&s) {
                             info!("client sent duplicate subscription, ignoring (cid: {}, sub: {:?})", cid, s.id);
                         } else {
-                            if settings.authorization.nip42_auth && conn.auth_pubkey().is_none() {
-                                info!("client: {} sent a req without authenticating, {:?}", cid, conn.auth_pubkey());
-
-                                let json = json!(["CLOSED", cid, "auth-required: we can't serve events to unauthenticated users"]);
-                                let message = Message::text(json.to_string());
-                                ws_stream.send(message).await.ok();
-                                continue
+                            if settings.authorization.nip42_auth {
+                                match conn.auth_pubkey() {
+                                    None => {
+                                        info!("client: {} sent a req without authenticating, {:?}", cid, conn.auth_pubkey());
+                                        let json = json!(["CLOSED", cid, "auth-required: we can't serve events to unauthenticated users"]);
+                                        let message = Message::text(json.to_string());
+                                        ws_stream.send(message).await.ok();
+                                        continue
+                                    },
+                                    Some(pubkey) => {
+                                        if !read_whitelist.contains(&pubkey) {
+                                            info!("client: {} not authorized to read, {:?}", cid, pubkey);
+                                            let json = json!(["CLOSED", cid, "restricted: Reads not allowed for this account. Contact nprofile1qqsq7gkqd6kpqqngfm7vdr6ks4qwsdpdzcya2z9u6scjcquwvx203dsrg7t4x"]);
+                                            let message = Message::text(json.to_string());
+                                            ws_stream.send(message).await.ok();
+                                            continue
+                                        }
+                                    }
+                                }
                             }
                             metrics.cmd_req.inc();
                             if let Some(ref lim) = sub_lim_opt {

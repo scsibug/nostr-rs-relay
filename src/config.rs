@@ -80,7 +80,9 @@ pub struct Limits {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Authorization {
+    pub word_whitelist: Option<Vec<String>>, // If present, only allow event contents that contain these words
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
+    pub pubkey_whitelist_readers: Option<Vec<String>>, // List of pubkeys that can read this relay
     pub nip42_auth: bool,                      // if true enables NIP-42 authentication
     pub nip42_dms: bool, // if true send DMs only to their authenticated recipients
 }
@@ -309,12 +311,14 @@ impl Default for Settings {
                 event_persist_buffer: 4096,
                 event_kind_blacklist: None,
                 event_kind_allowlist: None,
-                limit_scrapers: false
+                limit_scrapers: false,
             },
             authorization: Authorization {
-                pubkey_whitelist: None, // Allow any address to publish
-                nip42_auth: false,      // Disable NIP-42 authentication
-                nip42_dms: false,       // Send DMs to everybody
+                word_whitelist: None, // Words needed in the content to be able to publish to the relay
+                pubkey_whitelist: None, // Allow any pubkey from this list to publish
+                pubkey_whitelist_readers: None, // Allow any pubkey from this list to read
+                nip42_auth: false,    // Disable NIP-42 authentication
+                nip42_dms: false,     // Send DMs to everybody
             },
             pay_to_relay: PayToRelay {
                 enabled: false,
