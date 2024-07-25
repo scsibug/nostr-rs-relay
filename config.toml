@@ -162,8 +162,6 @@ limit_scrapers = false
 
 [authorization]
 word_whitelist = [
-  "olympics2024",
-  "paris2024",
 ]
 
 # Pubkey addresses in this array are whitelisted for event publishing.
@@ -179,6 +177,19 @@ pubkey_whitelist = [
 ]
 
 pubkey_whitelist_readers = [
+  # July 24 am
+  "40bdcc08888d98d49d03fb93bffd1cc46d9b8f187d08c9fc81b4adf0ad00fd2c",
+  "d12c4697332c1e7043c17dbc8391d70630b198f2eb8f7343597e8ba38ac21182",
+  "22e13d7bb2df6cc1b4c975296ead122fd97aa104167fd03e8c8137e556cdb56f",
+  "dcef2a8ab271e9db365c85b58f34988aee08f56f43c6fc934a667873c226132e",
+  "81c4d638dfec1beb4ecf0bd38b1619daa5f26a18c39d426d8b0b2228200bd5e4",
+  "de2494d0bbeb97a83f6efb211a909f9a6e1b60692153a6dd14174f0c1c5c469a",
+  "58b3070adbee964fd24c152d2840f81453e68eb6f1ed440be6d5086d45a38fd4",
+  "cf5caca51204e03d5723e41c4a7aac2f4bd770d8018a722ab8f10d361bd754f2",
+  "eaba7a49cdcc542942567ab92ec08d0622b538a34a1392fbbbdbc75697790a4d",
+  "7a117235267b09b67956eb98361e462165fa1af7ce2111347fb800cb7e176dc7",
+  "06b7819d7f1c7f5472118266ed7bca8785dceae09e36ea3a4af665c6d1d8327c",
+
   "0403c86a1bb4cfbc34c8a493fbd1f0d158d42dd06d03eaa3720882a066d3a378", # Global Sport Center
   "89ef92b9ebe6dc1e4ea398f6477f227e95429627b0a33dc89b640e137b256be5", # Daniel
   "d0a1ffb8761b974cec4a3be8cbcb2e96a7090dcf465ffeac839aa4ca20c9a59e", # Matt
