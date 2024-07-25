@@ -169,16 +169,16 @@ word_whitelist = [
 # is set.
 pubkey_whitelist = [
   "0403c86a1bb4cfbc34c8a493fbd1f0d158d42dd06d03eaa3720882a066d3a378", # Global Sport Center
-  "89ef92b9ebe6dc1e4ea398f6477f227e95429627b0a33dc89b640e137b256be5", # Daniel
-  "d0a1ffb8761b974cec4a3be8cbcb2e96a7090dcf465ffeac839aa4ca20c9a59e", # Matt
-  "27cf2c68535ae1fc06510e827670053f5dcd39e6bd7e05f1ffb487ef2ac13549", # Josh
-  "76c71aae3a491f1d9eec47cba17e229cda4113a0bbb6e6ae1776d7643e29cafa", # Rabble
-  "969e6a28ee5214cb0296ee69cbdce4f43229124a78b1043d85df31e5636d0f1f", # Linda
+  "0f22c06eac1002684efcc68f568540e8342d1609d508bcd4312c038e6194f8b6", # Nos
 ]
 
 pubkey_whitelist_readers = [
+  # July 24 pm
+  "0b8b3280d61b2951a9136b9b7178e0071d62d844a5c56ee5e8189a3f802391e5", # Linda olympics test account
+  "49e2566f8b1ef0da8aeb89865a862ead30dd5e1fc1e540edebf980a04fe9e853",
+
   # July 24 am
-  "40bdcc08888d98d49d03fb93bffd1cc46d9b8f187d08c9fc81b4adf0ad00fd2c",
+  "40bdcc08888d98d49d03fb93bffd1cc46d9b8f187d08c9fc81b4adf0ad00fd2c", # dan@nostrpurple.com
   "d12c4697332c1e7043c17dbc8391d70630b198f2eb8f7343597e8ba38ac21182",
   "22e13d7bb2df6cc1b4c975296ead122fd97aa104167fd03e8c8137e556cdb56f",
   "dcef2a8ab271e9db365c85b58f34988aee08f56f43c6fc934a667873c226132e",
