@@ -183,17 +183,6 @@ impl ClientConn {
         }
         match event.validate() {
             Ok(_) => {
-                let whitelist = self
-                    .settings
-                    .authorization
-                    .pubkey_whitelist
-                    .as_ref()
-                    .unwrap();
-                if !whitelist.contains(&event.pubkey) {
-                    debug!("User is not in whitelist");
-                    return Err(Error::AuthFailure);
-                }
-
                 if event.kind != 22242 {
                     debug!("Auth kind is not 22242");
                     return Err(Error::AuthFailure);
