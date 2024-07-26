@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1-bookworm as builder
+FROM docker.io/library/rust:1.79.0-bookworm as builder
 
 RUN apt-get update && \
     apt-get install -y cmake protobuf-compiler && \
