@@ -173,11 +173,19 @@ pubkey_whitelist = [
 ]
 
 pubkey_whitelist_readers = [
-  # July 24 pm
+  # July 26 am
+  "eec9e66352d7a8c08dab8e1ae3aa9c21dd51fae3aec14f284f71ea79a91b7bc8",
+  "31c7f8c1a6c81eef0029c1a91a52f5da29dc14c599bfb0c93b645207e8413cfd",
+  "716508f379d392c16867ba60193526edca7b3ab11339e2e3c7a5e6a93c401c9d",
+  "7e7c6363792ca6e803ef96ed0cdc87ec131599971bb1767a3cfcb659455bfdad",
+  "7e7c6363792ca6e803ef96ed0cdc87ec131599971bb1767a3cfcb659455bfdad",
+  "df478ecdffe91db90469aeced8d5a33efcaaf75231bb4d768e711184495107a7",
+
+  # July 25 pm
   "0b8b3280d61b2951a9136b9b7178e0071d62d844a5c56ee5e8189a3f802391e5", # Linda olympics test account
   "49e2566f8b1ef0da8aeb89865a862ead30dd5e1fc1e540edebf980a04fe9e853",
 
-  # July 24 am
+  # July 25 am
   "40bdcc08888d98d49d03fb93bffd1cc46d9b8f187d08c9fc81b4adf0ad00fd2c", # dan@nostrpurple.com
   "d12c4697332c1e7043c17dbc8391d70630b198f2eb8f7343597e8ba38ac21182",
   "22e13d7bb2df6cc1b4c975296ead122fd97aa104167fd03e8c8137e556cdb56f",
