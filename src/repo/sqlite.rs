@@ -1016,7 +1016,8 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
         let mut id_searches: Vec<String> = vec![];
         for id in idvec {
             id_searches.push("event_hash=?".to_owned());
-            params.push(Box::new(id.clone()));
+            let id_bin = hex::decode(id).ok();
+            params.push(Box::new(id_bin));
         }
         if idvec.is_empty() {
             // if the ids list was empty, we should never return
