@@ -120,7 +120,7 @@ pub async fn db_writer(
     //upgrade_db(&mut pool.get()?)?;
 
     // Make a copy of the whitelist
-    let whitelist = &settings.authorization.pubkey_whitelist.clone();
+    let whitelist = &settings.authorization.write_pubkeys.clone();
 
     // get rate limit settings
     let rps_setting = settings.limits.messages_per_sec;
@@ -203,28 +203,23 @@ pub async fn db_writer(
         let mut user_balance: Option<u64> = None;
         if !pay_to_relay_enabled {
             // check if this event is authorized.
-            if let Some(allowed_addrs) = whitelist {
-                // TODO: incorporate delegated pubkeys
-                // if the event address is not in allowed_addrs.
-                if !allowed_addrs.contains(&event.pubkey) {
-                    debug!(
-                        "rejecting event: {}, unauthorized author",
-                        event.get_event_id_prefix()
-                    );
-                    notice_tx
-                        .try_send(Notice::blocked(
-                            event.id,
-                            "pubkey is not allowed to publish to this relay",
-                        ))
-                        .ok();
-                    continue;
-                }
+            // if the event address is not in allowed_addrs.
+            if !whitelist.contains(&event.pubkey) {
+                debug!(
+                    "rejecting event: {}, unauthorized author",
+                    event.get_event_id_prefix()
+                );
+                notice_tx
+                    .try_send(Notice::blocked(
+                        event.id,
+                        "pubkey is not allowed to publish to this relay",
+                    ))
+                    .ok();
+                continue;
             }
         } else {
             // If the user is on whitelist there is no need to check if the user is admitted or has balance to post
-            if whitelist.is_none()
-                || (whitelist.is_some() && !whitelist.as_ref().unwrap().contains(&event.pubkey))
-            {
+            if whitelist.contains(&event.pubkey) {
                 let key = Keys::from_pk_str(&event.pubkey).unwrap();
                 match repo.get_account_balance(&key).await {
                     Ok((user_admitted, balance)) => {

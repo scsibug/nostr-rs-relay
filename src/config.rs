@@ -2,7 +2,7 @@
 use crate::payment::Processor;
 use config::{Config, ConfigError, File};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{default, time::Duration};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(unused)]
@@ -80,11 +80,14 @@ pub struct Limits {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Authorization {
-    pub word_whitelist: Option<Vec<String>>, // If present, only allow event contents that contain these words
-    pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
-    pub pubkey_whitelist_readers: Option<Vec<String>>, // List of pubkeys that can read this relay
-    pub nip42_auth: bool,                      // if true enables NIP-42 authentication
-    pub nip42_dms: bool, // if true send DMs only to their authenticated recipients
+    #[serde(default)]
+    pub required_words: Vec<String>, // If present, only allow event contents that contain these words
+    #[serde(default)]
+    pub write_pubkeys: Vec<String>, // If present, only allow these pubkeys to publish events
+    #[serde(default)]
+    pub read_pubkeys: Vec<String>, // List of pubkeys that can read this relay
+    pub nip42_auth: bool, // if true enables NIP-42 authentication
+    pub nip42_dms: bool,  // if true send DMs only to their authenticated recipients
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,11 +317,11 @@ impl Default for Settings {
                 limit_scrapers: false,
             },
             authorization: Authorization {
-                word_whitelist: None, // Words needed in the content to be able to publish to the relay
-                pubkey_whitelist: None, // Allow any pubkey from this list to publish
-                pubkey_whitelist_readers: None, // Allow any pubkey from this list to read
-                nip42_auth: false,    // Disable NIP-42 authentication
-                nip42_dms: false,     // Send DMs to everybody
+                required_words: Vec::new(), // Words needed in the content to be able to publish to the relay
+                write_pubkeys: Vec::new(),  // Allow any pubkey from this list to publish
+                read_pubkeys: Vec::new(),   // Allow any pubkey from this list to read
+                nip42_auth: false,          // Disable NIP-42 authentication
+                nip42_dms: false,           // Send DMs to everybody
             },
             pay_to_relay: PayToRelay {
                 enabled: false,

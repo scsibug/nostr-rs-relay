@@ -18,12 +18,12 @@ pub struct Relay {
     pub shutdown_tx: MpscSender<()>,
 }
 
-pub fn start_relay() -> Result<Relay> {
+pub fn start_relay(settings: Option<config::Settings>) -> Result<Relay> {
     // setup tracing
     let _trace_sub = tracing_subscriber::fmt::try_init();
     info!("Starting a new relay");
     // replace default settings
-    let mut settings = config::Settings::default();
+    let mut settings = settings.unwrap_or_default();
     // identify open port
     info!("Checking for address...");
     let port = get_available_port().unwrap();

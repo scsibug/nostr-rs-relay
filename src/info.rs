@@ -81,7 +81,7 @@ impl From<Settings> for RelayInfo {
             restricted_writes: Some(
                 p.enabled
                     || c.verified_users.is_enabled()
-                    || c.authorization.pubkey_whitelist.is_some()
+                    || !c.authorization.write_pubkeys.is_empty()
                     || c.grpc.restricts_write,
             ),
         };

@@ -774,10 +774,10 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
     );
     let socket_addr = addr.parse().expect("listening address not valid");
     // address whitelisting settings
-    if let Some(addr_whitelist) = &settings.authorization.pubkey_whitelist {
+    if !settings.authorization.write_pubkeys.is_empty() {
         info!(
             "Event publishing restricted to {} pubkey(s)",
-            addr_whitelist.len()
+            settings.authorization.write_pubkeys.len()
         );
     }
     // check if NIP-05 enforced user verification is on
@@ -1146,13 +1146,9 @@ async fn nostr_server(
         }
     }
 
-    let word_whitelist = settings.authorization.word_whitelist.as_ref().unwrap();
-    let write_whitelist = settings.authorization.pubkey_whitelist.as_ref().unwrap();
-    let read_whitelist = settings
-        .authorization
-        .pubkey_whitelist_readers
-        .as_ref()
-        .unwrap();
+    let required_words = &settings.authorization.required_words;
+    let write_pubkeys = &settings.authorization.write_pubkeys;
+    let read_pubkeys = &settings.authorization.read_pubkeys;
 
     loop {
         tokio::select! {
@@ -1282,14 +1278,14 @@ async fn nostr_server(
                                             continue;
                                         },
                                         Some(pubkey) => {
-                                            if !write_whitelist.contains(&pubkey) {
+                                            if !write_pubkeys.contains(pubkey) {
                                                 info!("client: {} not authorized to write, {:?}", cid, pubkey);
                                                 let notice = Notice::restricted(e.id, "Writes not allowed for this account. Contact nprofile1qqsq7gkqd6kpqqngfm7vdr6ks4qwsdpdzcya2z9u6scjcquwvx203dsrg7t4x");
                                                 ws_stream.send(make_notice_message(&notice)).await.ok();
                                                 continue;
                                             }
 
-                                            if !word_whitelist.is_empty() && !word_whitelist.iter().any(|word| e.content.contains(word)) {
+                                            if !required_words.is_empty() && !required_words.iter().any(|word| e.content.contains(word)) {
                                                 info!("client: {} tried to write an event with no keyword, {:?}", cid, e.id);
                                                 let notice = Notice::restricted(e.id, "The event doesn't contain a keyword");
                                                 ws_stream.send(make_notice_message(&notice)).await.ok();
@@ -1389,7 +1385,7 @@ async fn nostr_server(
                                         continue
                                     },
                                     Some(pubkey) => {
-                                        if !read_whitelist.contains(&pubkey) {
+                                        if !read_pubkeys.contains(pubkey) {
                                             info!("client: {} not authorized to read, {:?}", cid, pubkey);
                                             let json = json!(["CLOSED", cid, "restricted: Reads not allowed for this account. Contact nprofile1qqsq7gkqd6kpqqngfm7vdr6ks4qwsdpdzcya2z9u6scjcquwvx203dsrg7t4x"]);
                                             let message = Message::text(json.to_string());

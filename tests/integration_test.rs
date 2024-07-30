@@ -11,7 +11,7 @@ mod common;
 async fn start_and_stop() -> Result<()> {
     // this will be the common pattern for acquiring a new relay:
     // start a fresh relay, on a port to-be-provided back to us:
-    let relay = common::start_relay()?;
+    let relay = common::start_relay(None)?;
     // wait for the relay's webserver to start up and deliver a page:
     common::wait_for_healthy_relay(&relay).await?;
     let port = relay.port;
@@ -41,18 +41,17 @@ async fn start_and_stop() -> Result<()> {
 #[tokio::test]
 async fn relay_home_page() -> Result<()> {
     // get a relay and wait for startup...
-    let relay = common::start_relay()?;
+    let relay = common::start_relay(None)?;
     common::wait_for_healthy_relay(&relay).await?;
     // tell relay to shutdown
     let _res = relay.shutdown_tx.send(());
     Ok(())
 }
 
-//#[tokio::test]
-// Still inwork
+#[tokio::test]
 async fn publish_test() -> Result<()> {
     // get a relay and wait for startup
-    let relay = common::start_relay()?;
+    let relay = common::start_relay(None)?;
     common::wait_for_healthy_relay(&relay).await?;
     // open a non-secure websocket connection.
     let (mut ws, _res) = connect_async(format!("ws://localhost:{}", relay.port)).await?;

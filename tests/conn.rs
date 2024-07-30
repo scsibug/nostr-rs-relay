@@ -44,7 +44,7 @@ mod tests {
         let pubkey = XOnlyPublicKey::from_keypair(&key_pair);
 
         let mut settings = Settings::new(&None).unwrap();
-        settings.authorization.pubkey_whitelist = Some(vec![pubkey.to_hex()]);
+        settings.authorization.write_pubkeys = vec![pubkey.to_hex()];
         let mut client_conn = ClientConn::new("127.0.0.1".into(), settings);
 
         assert_eq!(client_conn.auth_challenge(), None);
@@ -84,7 +84,7 @@ mod tests {
         let pubkey = XOnlyPublicKey::from_keypair(&key_pair);
 
         let mut settings = Settings::new(&None).unwrap();
-        settings.authorization.pubkey_whitelist = Some(vec![pubkey.to_hex()]);
+        settings.authorization.write_pubkeys = vec![pubkey.to_hex()];
         let mut client_conn = ClientConn::new("127.0.0.1".into(), settings);
 
         assert_eq!(client_conn.auth_challenge(), None);
