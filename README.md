@@ -98,6 +98,11 @@ The following OS packages will be helpful; on Debian/Ubuntu:
 $ sudo apt-get install build-essential cmake protobuf-compiler pkg-config libssl-dev
 ```
 
+On OpenBSD:
+```console
+$ doas pkg_add rust protobuf
+```
+
 Clone this repository, and then build a release version of the relay:
 
 ```console
