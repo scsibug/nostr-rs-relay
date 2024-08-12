@@ -10,13 +10,13 @@ use std::process;
 use std::sync::mpsc as syncmpsc;
 use std::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 use std::thread;
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(target_os = "openbsd")))]
 use tikv_jemallocator::Jemalloc;
 use tracing::info;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(target_os = "openbsd")))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
