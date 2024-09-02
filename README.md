@@ -141,6 +141,7 @@ be mounted into a docker container like so:
 $ docker run -it -p 7000:8080 \
   --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
   --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
+  --mount src=$(pwd)/index.html,target=/usr/src/app/index.html,type=bind \
   nostr-rs-relay
 ```
 

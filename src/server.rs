@@ -194,6 +194,21 @@ async fn handle_web_request(
                     .unwrap());
             }
 
+            if let Some(relay_file_path) = settings.info.relay_page {
+                match file_bytes(&relay_file_path) {
+                    Ok(file_content) => {
+                        return Ok(Response::builder()
+                            .status(200)
+                            .header("Content-Type", "text/html; charset=UTF-8")
+                            .body(Body::from(file_content))
+                            .expect("request builder"));
+                    },
+                    Err(err) => {
+                        error!("Failed to read relay_page file: {}. Will use default", err);
+                    }
+                }
+            }
+
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain")
