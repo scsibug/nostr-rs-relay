@@ -23,6 +23,9 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # URL of Relay's icon.
 #relay_icon = "https://example.test/img.png"
 
+# Path to custom relay html page
+#relay_page = "index.html"
+
 [diagnostics]
 # Enable tokio tracing (for use with tokio-console)
 #tracing = false
