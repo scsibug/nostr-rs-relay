@@ -1,4 +1,5 @@
 FROM docker.io/library/rust:1-bookworm as builder
+ARG CARGO_LOG
 RUN apt-get update \
     && apt-get install -y cmake protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
