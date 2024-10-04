@@ -11,7 +11,7 @@ mirrored on [GitHub](https://github.com/scsibug/nostr-rs-relay).
 
 [![builds.sr.ht status](https://builds.sr.ht/~gheartsfield/nostr-rs-relay/commits/master.svg)](https://builds.sr.ht/~gheartsfield/nostr-rs-relay/commits/master?)
 
-![Github CI](https://github.com/schlunsen/nostr-rs-relay/actions/workflows/ci.yml/badge.svg)
+![Github CI](https://github.com/scsibug/nostr-rs-relay/actions/workflows/ci.yml/badge.svg)
 
 
 ## Features
