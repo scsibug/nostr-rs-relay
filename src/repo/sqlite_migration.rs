@@ -40,7 +40,7 @@ PRAGMA user_version = {};
 -- Event Table
 CREATE TABLE IF NOT EXISTS event (
 id INTEGER PRIMARY KEY,
-event_hash BLOB NOT NULL, -- 4-byte hash
+event_hash BLOB NOT NULL, -- 32-byte SHA256 hash
 first_seen INTEGER NOT NULL, -- when the event was first seen (not authored!) (seconds since 1970)
 created_at INTEGER NOT NULL, -- when the event was authored
 expires_at INTEGER, -- when the event expires and may be deleted
