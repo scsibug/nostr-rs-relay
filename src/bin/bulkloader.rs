@@ -22,7 +22,7 @@ pub fn main() -> Result<()> {
     // check for a database file, or create one.
     let settings = config::Settings::new(&None)?;
     if !Path::new(&settings.database.data_directory).is_dir() {
-        info!("Database directory does not exist");
+        info!("Database directory {:?} does not exist", settings.database.data_directory);
         return Err(Error::DatabaseDirError);
     }
     // Get a database pool
