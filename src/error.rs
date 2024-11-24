@@ -66,6 +66,7 @@ pub enum Error {
     ChannelClosed,
     #[error("Authz error")]
     AuthzError,
+    #[cfg(feature = "grpc")]
     #[error("Tonic GRPC error")]
     TonicError(tonic::Status),
     #[error("Invalid AUTH message")]
@@ -151,6 +152,7 @@ impl From<config::ConfigError> for Error {
     }
 }
 
+#[cfg(feature = "grpc")]
 impl From<tonic::Status> for Error {
     /// Wrap Config error
     fn from(r: tonic::Status) -> Self {
