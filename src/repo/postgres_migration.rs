@@ -37,6 +37,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     run_migration(m003::migration(), db).await;
     run_migration(m004::migration(), db).await;
     run_migration(m005::migration(), db).await;
+    run_migration(m006::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -286,7 +287,7 @@ mod m005 {
 
     pub fn migration() -> impl Migration {
         SimpleSqlMigration {
-            serial_number: VERSION,
+            serial_number: crate::repo::postgres_migration::m005::VERSION,
             sql: vec![
                 r#"
 -- Create account table
@@ -314,6 +315,31 @@ CREATE TABLE "invoice" (
     CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
         "#,
+            ],
+        }
+    }
+}
+
+mod m006 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 6;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+--- Use text column for content
+ALTER TABLE "event" ALTER COLUMN "content" TYPE text USING convert_from("content", 'utf-8);
+
+--- Create search col for event content
+ALTER TABLE event
+ADD COLUMN ts_content tsvector
+GENERATED ALWAYS AS (to_tsvector('english', "content"::json->>'content')) stored;
+
+CREATE INDEX ts_content_idx ON event USING GIN (ts_content);
+"#,
             ],
         }
     }
