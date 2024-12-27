@@ -176,6 +176,9 @@ limit_scrapers = false
 # Send DMs (kind 4 and 44) and gift wraps (kind 1059) only to their authenticated recipients
 #nip42_dms = false
 
+# Domain names that are allowed to publish events
+#domain_only_whitelist = ["damus.io"]
+
 [verified_users]
 # NIP-05 verification of users.  Can be "enabled" to require NIP-05
 # metadata for event authors, "passive" to perform validation but

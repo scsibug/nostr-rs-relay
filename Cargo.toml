@@ -52,7 +52,7 @@ chrono = "0.4.23"
 prometheus = "0.13.3"
 indicatif = "0.17.3"
 bech32 = "0.9.1"
-url = "2.3.1"
+url = "2.5.0"
 qrcode = { version = "0.12.0", default-features = false, features = ["svg"] }
 nostr = { version = "0.18.0", default-features = false, features = ["base", "nip04", "nip19"] }
 log = "0.4"

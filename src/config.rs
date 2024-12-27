@@ -84,6 +84,7 @@ pub struct Authorization {
     pub pubkey_whitelist: Option<Vec<String>>, // If present, only allow these pubkeys to publish events
     pub nip42_auth: bool,                      // if true enables NIP-42 authentication
     pub nip42_dms: bool, // if true send DMs only to their authenticated recipients
+    pub domain_only_whitelist: Option<Vec<String>>, // If present, only allow verified domains to publish events
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,9 +324,10 @@ impl Default for Settings {
                 limit_scrapers: false,
             },
             authorization: Authorization {
-                pubkey_whitelist: None, // Allow any address to publish
-                nip42_auth: false,      // Disable NIP-42 authentication
-                nip42_dms: false,       // Send DMs to everybody
+                pubkey_whitelist: None,      // Allow any address to publish
+                nip42_auth: false,           // Disable NIP-42 authentication
+                nip42_dms: false,            // Send DMs to everybody
+                domain_only_whitelist: None, // Allow any domain
             },
             pay_to_relay: PayToRelay {
                 enabled: false,

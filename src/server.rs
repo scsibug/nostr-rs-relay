@@ -62,6 +62,7 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
+use url::Url;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -115,6 +116,16 @@ async fn handle_web_request(
                                 .await;
                                 let origin = get_header_string("origin", request.headers());
                                 let user_agent = get_header_string("user-agent", request.headers());
+
+                                // Check domain whitelist if configured
+                                if let Some(whitelist) =
+                                    &settings.authorization.domain_only_whitelist
+                                {
+                                    if !check_domain_whitelist(whitelist, &origin) {
+                                        return;
+                                    }
+                                }
+
                                 // determine the remote IP from headers if the exist
                                 let header_ip = settings
                                     .network
@@ -669,6 +680,29 @@ fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
         .and_then(|x| x.to_str().ok().map(std::string::ToString::to_string))
 }
 
+fn check_domain_whitelist(whitelist: &[String], origin: &Option<String>) -> bool {
+    let origin = match origin {
+        Some(o) => o,
+        None => {
+            warn!("Connection rejected: no origin header provided");
+            return false;
+        }
+    };
+
+    let origin_host = Url::parse(origin)
+        .ok()
+        .and_then(|url| url.host_str().map(String::from));
+
+    if !origin_host
+        .map(|host| whitelist.iter().any(|domain| host == *domain))
+        .unwrap_or(false)
+    {
+        warn!("Connection rejected: origin {} not in whitelist", origin);
+        return false;
+    }
+    true
+}
+
 // return on a control-c or internally requested shutdown signal
 async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
     let mut term_signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -800,6 +834,11 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             addr_whitelist.len()
         );
     }
+    // check if domain on whitelist
+    if let Some(domain_only) = &settings.authorization.domain_only_whitelist {
+        info!("Event publishing restricted to: {:?}", domain_only);
+    }
+
     // check if NIP-05 enforced user verification is on
     if settings.verified_users.is_active() {
         info!(
