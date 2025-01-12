@@ -1,0 +1,67 @@
+<!doctype HTML>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background-color: #6320a7;
+      color: white;
+    }
+
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 400px;
+    }
+
+    a {
+      color: pink;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        max-width: 500px;
+        box-sizing: border-box;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div style="width:75%;">
+    <h1>Enter your pubkey</h1>
+    <form action="/invoice" onsubmit="return checkForm(this);">
+      <input type="text" name="pubkey" id="pubkey-input"><br><br>
+      <input type="checkbox" id="terms" required>
+      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
+      <button type="submit">Submit</button>
+    </form>
+    <button id="get-public-key-btn">Get Public Key</button>
+  </div>
+  <script>
+    function checkForm(form) {
+      if (!form.terms.checked) {
+        alert("Please agree to the terms and conditions");
+        return false;
+      }
+      return true;
+    }
+
+    const pubkeyInput = document.getElementById('pubkey-input');
+      const getPublicKeyBtn = document.getElementById('get-public-key-btn');
+      getPublicKeyBtn.addEventListener('click', async function() {
+        try {
+          const publicKey = await window.nostr.getPublicKey();
+          pubkeyInput.value = publicKey;
+        } catch (error) {
+          console.error(error);
+        }
+      });
+  </script>
+</body>
+</html>

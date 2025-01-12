@@ -30,6 +30,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use lazy_static::lazy_static;
 use nostr::key::FromPkStr;
 use nostr::key::Keys;
 use prometheus::IntCounterVec;
@@ -62,6 +63,21 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
+use tera::{Context, Tera};
+
+lazy_static! {
+    pub static ref TERA: Tera = {
+        let mut tera = match Tera::new("templates/**/*.html") {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        tera.autoescape_on(vec![".html"]);
+        tera
+    };
+}
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -280,75 +296,7 @@ async fn handle_web_request(
                     .unwrap());
             }
 
-            let html = r#"
-<!doctype HTML>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      font-family: Arial, sans-serif;
-      background-color: #6320a7;
-      color: white;
-    }
-
-    .container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 400px;
-    }
-
-    a {
-      color: pink;
-    }
-
-    input[type="text"] {
-        width: 100%;
-        max-width: 500px;
-        box-sizing: border-box;
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-  </style>
-</head>
-<body>
-  <div style="width:75%;">
-    <h1>Enter your pubkey</h1>
-    <form action="/invoice" onsubmit="return checkForm(this);">
-      <input type="text" name="pubkey" id="pubkey-input"><br><br>
-      <input type="checkbox" id="terms" required>
-      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
-      <button type="submit">Submit</button>
-    </form>
-    <button id="get-public-key-btn">Get Public Key</button>
-  </div>
-  <script>
-    function checkForm(form) {
-      if (!form.terms.checked) {
-        alert("Please agree to the terms and conditions");
-        return false;
-      }
-      return true;
-    }
-
-    const pubkeyInput = document.getElementById('pubkey-input');
-      const getPublicKeyBtn = document.getElementById('get-public-key-btn');
-      getPublicKeyBtn.addEventListener('click', async function() {
-        try {
-          const publicKey = await window.nostr.getPublicKey();
-          pubkeyInput.value = publicKey;
-        } catch (error) {
-          console.error(error);
-        }
-      });
-  </script>
-</body>
-</html>
-            "#;
+            let html = TERA.render("join.html", &Context::default()).unwrap();
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(html))
@@ -458,92 +406,11 @@ async fn handle_web_request(
                 qr_code = "Could not render image".to_string();
             }
 
-            let html_result = format!(
-                r#"
-<!DOCTYPE html>
-<html>
-  <head>
-  <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color:  #6320a7 ;
-        color: white;
-      }}
-      #copy-button {{
-        background-color: #bb5f0d ;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        border: none;
-        cursor: pointer;
-      }}
-      #copy-button:hover {{
-        background-color: #8f29f4;
-      }}
-    .container {{
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 400px;
-    }}
-    a {{
-        color: pink;
-    }}
-    </style>
-  </head>
-  <body>
-    <div style="width:75%;">
-      <h3>
-        To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
-      </h3>
-    </div>
-    <div>
-        <div style="max-height: 300px;">
-            {}
-        </div>
-    </div>
-    <div>
-    <div style="width: 75%;">
-        <p style="overflow-wrap: break-word; width: 500px;">{}</p>
-        <button id="copy-button">Copy</button>
-    </div>
-    <div>
-        <p> This page will not refresh </p>
-        <p> Verify admission <a href=/account?pubkey={}>here</a> once you have paid</p>
-    </div>
-    </div>
-  </body>
-</html>
-
-
-<script>
-  const copyButton = document.getElementById("copy-button");
-  if (navigator.clipboard) {{
-    copyButton.addEventListener("click", function() {{
-      const textToCopy = "{}";
-      navigator.clipboard.writeText(textToCopy).then(function() {{
-        console.log("Text copied to clipboard");
-      }}, function(err) {{
-        console.error("Could not copy text: ", err);
-      }});
-    }});
-  }} else {{
-    copyButton.style.display = "none";
-    console.warn("Clipboard API is not supported in this browser");
-  }}
-</script>
-"#,
-                settings.pay_to_relay.admission_cost,
-                qr_code,
-                invoice_info.bolt11,
-                pubkey,
-                invoice_info.bolt11
-            );
+            let mut ctx = Context::new();
+            ctx.insert("admission_cost", &settings.pay_to_relay.admission_cost);
+            ctx.insert("qr_code", &qr_code);
+            ctx.insert("bolt11", &invoice_info.bolt11);
+            let html_result = TERA.render("invoice.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -600,36 +467,10 @@ async fn handle_web_request(
                     "Could not get admission status"
                 };
 
-            let html_result = format!(
-                r#"
-            <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color: #6320a7;
-        color: white;
-        height: 100vh;
-      }}
-    </style>
-  </head>
-  <body>
-    <div>
-      <h5>{} {} admitted</h5>
-    </div>
-  </body>
-</html>
-
-
-            "#,
-                pubkey, text
-            );
+            let mut ctx = Context::new();
+            ctx.insert("pubkey", &pubkey);
+            ctx.insert("text", &text);
+            let html_result = TERA.render("account.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
