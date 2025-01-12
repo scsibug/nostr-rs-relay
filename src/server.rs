@@ -433,7 +433,7 @@ async fn handle_web_request(
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
                 return Ok(Response::builder()
-                    .status(404)
+                    .status(302)
                     .header("location", "/join")
                     .body(Body::empty())
                     .unwrap());
