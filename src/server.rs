@@ -64,6 +64,7 @@ use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
 use tera::{Context, Tera};
+use hyper_staticfile::Static;
 
 lazy_static! {
     pub static ref TERA: Tera = {
@@ -90,9 +91,9 @@ async fn handle_web_request(
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
     shutdown: Receiver<()>,
-    favicon: Option<Vec<u8>>,
     registry: Registry,
     metrics: NostrMetrics,
+    static_: Static,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -243,23 +244,6 @@ async fn handle_web_request(
                 .body(Body::from(buffer))
                 .unwrap())
         }
-        ("/favicon.ico", false) => {
-            if let Some(favicon_bytes) = favicon {
-                info!("returning favicon");
-                Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "image/x-icon")
-                    // 1 month cache
-                    .header("Cache-Control", "public, max-age=2419200")
-                    .body(Body::from(favicon_bytes))
-                    .unwrap())
-            } else {
-                Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::from(""))
-                    .unwrap())
-            }
-        }
         // LN bits callback endpoint for paid invoices
         ("/lnbits", false) => {
             let callback: payment::lnbits::LNBitsCallback =
@@ -319,7 +303,7 @@ async fn handle_web_request(
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
                 return Ok(Response::builder()
-                    .status(404)
+                    .status(302)
                     .header("location", "/join")
                     .body(Body::empty())
                     .unwrap());
@@ -478,13 +462,7 @@ async fn handle_web_request(
                 .unwrap())
         }
         // later balance
-        (_, _) => {
-            // handle any other url
-            Ok(Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("Nothing here."))
-                .unwrap())
-        }
+        (_, _) => Ok(static_.serve(request).await.unwrap())
     }
 }
 
@@ -796,12 +774,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // spawn a task to check the pool size.
         //let pool_monitor = pool.clone();
         //tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
-
-        // Read in the favicon if it exists
-        let favicon = settings.info.favicon.as_ref().and_then(|x| {
-            info!("reading favicon...");
-            file_bytes(x).ok()
-        });
+        let static_ = Static::new(Path::new("./public"));
 
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
@@ -813,9 +786,9 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let payment_tx = payment_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
-            let favicon = favicon.clone();
             let registry = registry.clone();
             let metrics = metrics.clone();
+            let static_ = static_.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -828,9 +801,9 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         event.clone(),
                         payment_tx.clone(),
                         stop.subscribe(),
-                        favicon.clone(),
                         registry.clone(),
                         metrics.clone(),
+                        static_.clone(),
                     )
                 }))
             }
