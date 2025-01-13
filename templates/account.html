@@ -1,23 +1,22 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      body {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color: #6320a7;
-        color: white;
-        height: 100vh;
-      }
-    </style>
-  </head>
-  <body>
-    <div>
-      <h5>{{ pubkey }} {{ text }} admitted</h5>
-    </div>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    background-color: #6320a7;
+    color: white;
+    height: 100vh;
+  }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div>
+  <h5>{{ pubkey }} {{ text }} admitted</h5>
+</div>
+{% endblock content %}
