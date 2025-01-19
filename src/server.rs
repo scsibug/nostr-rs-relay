@@ -30,7 +30,6 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
-use lazy_static::lazy_static;
 use nostr::key::FromPkStr;
 use nostr::key::Keys;
 use prometheus::IntCounterVec;
@@ -66,20 +65,6 @@ use tungstenite::protocol::WebSocketConfig;
 use tera::{Context, Tera};
 use hyper_staticfile::Static;
 
-lazy_static! {
-    pub static ref TERA: Tera = {
-        let mut tera = match Tera::new("templates/**/*.html") {
-            Ok(t) => t,
-            Err(e) => {
-                println!("Parsing error(s): {}", e);
-                ::std::process::exit(1);
-            }
-        };
-        tera.autoescape_on(vec![".html"]);
-        tera
-    };
-}
-
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
 async fn handle_web_request(
@@ -93,6 +78,7 @@ async fn handle_web_request(
     shutdown: Receiver<()>,
     registry: Registry,
     metrics: NostrMetrics,
+    tera: Arc<Tera>,
     static_: Static,
 ) -> Result<Response<Body>, Infallible> {
     match (
@@ -280,7 +266,7 @@ async fn handle_web_request(
                     .unwrap());
             }
 
-            let html = TERA.render("join.html", &Context::default()).unwrap();
+            let html = tera.render("join.html", &Context::default()).unwrap();
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(html))
@@ -394,7 +380,7 @@ async fn handle_web_request(
             ctx.insert("admission_cost", &settings.pay_to_relay.admission_cost);
             ctx.insert("qr_code", &qr_code);
             ctx.insert("bolt11", &invoice_info.bolt11);
-            let html_result = TERA.render("invoice.html", &ctx).unwrap();
+            let html_result = tera.render("invoice.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -454,7 +440,7 @@ async fn handle_web_request(
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
             ctx.insert("text", &text);
-            let html_result = TERA.render("account.html", &ctx).unwrap();
+            let html_result = tera.render("account.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -774,6 +760,19 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // spawn a task to check the pool size.
         //let pool_monitor = pool.clone();
         //tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
+        let mut template_path = settings.info.template_path.clone().unwrap_or("templates/".into());
+        if !template_path.ends_with('/') {
+            template_path += "/";
+        }
+        let mut _tera = match Tera::new(&(template_path + "**/*.html")) {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        _tera.autoescape_on(vec![".html"]);
+        let tera = Arc::new(_tera);
         let static_ = Static::new(Path::new("./public"));
 
         // A `Service` is needed for every connection, so this
@@ -788,6 +787,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let settings = settings.clone();
             let registry = registry.clone();
             let metrics = metrics.clone();
+            let tera = tera.clone();
             let static_ = static_.clone();
             async move {
                 // service_fn converts our function into a `Service`
@@ -803,6 +803,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         stop.subscribe(),
                         registry.clone(),
                         metrics.clone(),
+                        tera.clone(),
                         static_.clone(),
                     )
                 }))
