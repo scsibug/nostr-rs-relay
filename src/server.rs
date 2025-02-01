@@ -250,11 +250,15 @@ async fn handle_web_request(
                 .unwrap())
         }
         // Endpoint for relays terms
-        ("/terms", false) => Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text/plain")
-            .body(Body::from(settings.pay_to_relay.terms_message))
-            .unwrap()),
+        ("/terms", false) => {
+            let mut ctx = Context::new();
+            ctx.insert("terms_message", &settings.pay_to_relay.terms_message);
+            let html = tera.render("terms.html", &ctx).unwrap();
+            Ok(Response::builder()
+                .status(200)
+                .body(Body::from(html))
+                .unwrap())
+        }
         // Endpoint to allow users to sign up
         ("/join", false) => {
             // Stops sign ups if disabled
@@ -381,11 +385,11 @@ async fn handle_web_request(
             ctx.insert("qr_code", &qr_code);
             ctx.insert("bolt11", &invoice_info.bolt11);
             ctx.insert("pubkey", &pubkey);
-            let html_result = tera.render("invoice.html", &ctx).unwrap();
+            let html = tera.render("invoice.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Body::from(html_result))
+                .body(Body::from(html))
                 .unwrap())
         }
         ("/account", false) => {
@@ -441,11 +445,11 @@ async fn handle_web_request(
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
             ctx.insert("text", &text);
-            let html_result = tera.render("account.html", &ctx).unwrap();
+            let html = tera.render("account.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Body::from(html_result))
+                .body(Body::from(html))
                 .unwrap())
         }
         // later balance
