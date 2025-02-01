@@ -380,6 +380,7 @@ async fn handle_web_request(
             ctx.insert("admission_cost", &settings.pay_to_relay.admission_cost);
             ctx.insert("qr_code", &qr_code);
             ctx.insert("bolt11", &invoice_info.bolt11);
+            ctx.insert("pubkey", &pubkey);
             let html_result = tera.render("invoice.html", &ctx).unwrap();
 
             Ok(Response::builder()

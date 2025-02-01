@@ -3,3 +3,6 @@ nostr.db
 nostr.db-*
 justfile
 result
+
+public/
+config.local.toml
