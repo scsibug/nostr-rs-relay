@@ -431,20 +431,20 @@ async fn handle_web_request(
                 warn!("Could not check account: {}", e);
             }
             // Checks if user is already admitted
-            let text =
+            let status =
                 if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                     if admission_status {
-                        r#"<span style="color: green;">is</span>"#
+                        "admitted"
                     } else {
-                        r#"<span style="color: red;">is not</span>"#
+                        "denied"
                     }
                 } else {
-                    "Could not get admission status"
+                    "unknown"
                 };
 
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
-            ctx.insert("text", &text);
+            ctx.insert("status", &status);
             let html = tera.render("account.html", &ctx).unwrap();
 
             Ok(Response::builder()

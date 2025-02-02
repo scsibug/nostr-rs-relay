@@ -17,6 +17,14 @@
 
 {% block content %}
 <div>
-  <h5>{{ pubkey }} {{ text }} admitted</h5>
+  <h5>{{ pubkey }}
+    {% if status == "admitted" %}
+      <span style="color: green;">is</span> admitted
+    {% elif status == "denied" %}
+      <span style="color: red;">is not</span> admitted
+    {% else %}
+      Could not get admission status
+    {% endif %}
+  </h5>
 </div>
 {% endblock content %}
