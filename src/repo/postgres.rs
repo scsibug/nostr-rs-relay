@@ -1,3 +1,4 @@
+use crate::account::AccountStatistics;
 use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
@@ -711,6 +712,10 @@ LIMIT 1;
             })),
             None => Ok(None),
         }
+    }
+
+    async fn get_account_statistics(&self, _pubkey: &Keys) -> Result<AccountStatistics> {
+        panic!("Not implemented!");
     }
 }
 

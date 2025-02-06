@@ -1,4 +1,5 @@
 //! Event persistence and querying
+use crate::account::{AccountStatistics, KindStatistics};
 //use crate::config::SETTINGS;
 use crate::config::Settings;
 use crate::db::QueryResult;
@@ -924,6 +925,35 @@ LIMIT 1;
             memo: description,
             confirmed_at: None,
         }))
+    }
+
+    async fn get_account_statistics(&self, pubkey: &Keys) -> Result<AccountStatistics> {
+        let mut conn = self.read_pool.get()?;
+        let pubkey_str = pubkey.clone().public_key().to_string();
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let query = r"
+SELECT kind, COUNT(*), MAX(created_at)
+FROM event
+where author = ?
+GROUP BY kind
+;";
+            let mut stmt = tx.prepare_cached(query)?;
+            let kinds = stmt.query_map(params![hex::decode(&pubkey_str).ok()], |r| {
+                let kind: u64 = r.get(0)?;
+                let count: usize = r.get(1)?;
+                let last_created_at: u64 = r.get(2)?;
+                Ok(KindStatistics {
+                    kind,
+                    count,
+                    last_created_at,
+                })
+            })?.map(|k| k.unwrap())
+            .collect();
+            Ok(AccountStatistics {
+                kinds,
+            })
+        }).await?
     }
 }
 

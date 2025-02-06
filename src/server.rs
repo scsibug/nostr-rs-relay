@@ -65,6 +65,29 @@ use tungstenite::protocol::WebSocketConfig;
 use tera::{Context, Tera};
 use hyper_staticfile::Static;
 
+fn redirect() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header("location", "/join")
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn server_error(msg: &'static str) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .body(Body::from(msg))
+        .unwrap()
+}
+
+fn unauthorized(msg: &'static str) -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(msg))
+        .unwrap()
+}
+
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
 async fn handle_web_request(
@@ -238,10 +261,7 @@ async fn handle_web_request(
 
             if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback.payment_hash)) {
                 warn!("Could not send invoice update: {}", e);
-                return Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Error processing callback"))
-                    .unwrap());
+                return Ok(server_error("Error processing callback"));
             }
 
             Ok(Response::builder()
@@ -263,11 +283,7 @@ async fn handle_web_request(
         ("/join", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
-                return Ok(Response::builder()
-                    .status(401)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("Sorry, joining is not allowed at the moment"))
-                    .unwrap());
+                return Ok(unauthorized("Sorry, joining is not allowed at the moment"));
             }
 
             let html = tera.render("join.html", &Context::default()).unwrap();
@@ -280,11 +296,7 @@ async fn handle_web_request(
         ("/invoice", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
-                return Ok(Response::builder()
-                    .status(401)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("Sorry, joining is not allowed at the moment"))
-                    .unwrap());
+                return Ok(unauthorized("Sorry, joining is not allowed at the moment"));
             }
 
             // Get query pubkey from query string
@@ -292,22 +304,14 @@ async fn handle_web_request(
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                return Ok(Response::builder()
-                    .status(302)
-                    .header("location", "/join")
-                    .body(Body::empty())
-                    .unwrap());
+                return Ok(redirect());
             }
 
             // Checks key is valid
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
             if key.is_err() {
-                return Ok(Response::builder()
-                    .status(401)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("Looks like your key is invalid"))
-                    .unwrap());
+                return Ok(unauthorized("Looks like your key is invalid"));
             }
 
             // Checks if user is already admitted
@@ -395,11 +399,7 @@ async fn handle_web_request(
         ("/account", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.enabled {
-                return Ok(Response::builder()
-                    .status(401)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("This relay is not paid"))
-                    .unwrap());
+                return Ok(unauthorized("This relay is not paid"));
             }
 
             // Gets the pubkey from query string
@@ -407,22 +407,14 @@ async fn handle_web_request(
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                return Ok(Response::builder()
-                    .status(302)
-                    .header("location", "/join")
-                    .body(Body::empty())
-                    .unwrap());
+                return Ok(redirect());
             }
 
             // Checks key is valid
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
             if key.is_err() {
-                return Ok(Response::builder()
-                    .status(401)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("Looks like your key is invalid"))
-                    .unwrap());
+                return Ok(unauthorized("Looks like your key is invalid"));
             }
 
             // Account is checked async so user will have to refresh the page a couple times after
@@ -446,6 +438,47 @@ async fn handle_web_request(
             ctx.insert("pubkey", &pubkey);
             ctx.insert("status", &status);
             let html = tera.render("account.html", &ctx).unwrap();
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from(html))
+                .unwrap())
+        }
+        ("/summary", false) => {
+            if !settings.pay_to_relay.enabled {
+                return Ok(unauthorized("This relay is not paid"));
+            }
+
+            // Gets the pubkey from query string
+            let pubkey = get_pubkey(request);
+
+            // Redirect back to join page if no pub key is found in query string
+            if pubkey.is_none() {
+                return Ok(redirect());
+            }
+
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(unauthorized("Looks like your key is invalid"));
+            }
+
+            if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
+                if !admission_status {
+                    return Ok(unauthorized("Statistics are for registered members only"));
+                }
+            } else {
+                return Ok(server_error("Unable to get registration"));
+            }
+
+            let stats = repo.get_account_statistics(&key.unwrap())
+                .await
+                .unwrap();
+
+            let mut ctx = Context::new();
+            ctx.insert("stats", &stats);
+            let html = tera.render("_statistics.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -995,17 +1028,17 @@ async fn nostr_server(
     loop {
         tokio::select! {
             _ = shutdown.recv() => {
-        metrics.disconnects.with_label_values(&["shutdown"]).inc();
-                info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
-                // server shutting down, exit loop
-                break;
-            },
+                metrics.disconnects.with_label_values(&["shutdown"]).inc();
+                    info!("Close connection down due to shutdown, client: {}, ip: {:?}, connected: {:?}", cid, conn.ip(), orig_start.elapsed());
+                    // server shutting down, exit loop
+                    break;
+                },
             _ = ping_interval.tick() => {
                 // check how long since we talked to client
                 // if it has been too long, disconnect
                 if last_message_time.elapsed() > max_quiet_time {
                     debug!("ending connection due to lack of client ping response");
-            metrics.disconnects.with_label_values(&["timeout"]).inc();
+                    metrics.disconnects.with_label_values(&["timeout"]).inc();
                     break;
                 }
                 // Send a ping
@@ -1082,20 +1115,20 @@ async fn nostr_server(
                              WsError::Protocol(tungstenite::error::ProtocolError::ResetWithoutClosingHandshake)))
                         => {
                             debug!("websocket close from client (cid: {}, ip: {:?})",cid, conn.ip());
-                metrics.disconnects.with_label_values(&["normal"]).inc();
+                            metrics.disconnects.with_label_values(&["normal"]).inc();
                             break;
                         },
                     Some(Err(WsError::Io(e))) => {
                         // IO errors are considered fatal
                         warn!("IO error (cid: {}, ip: {:?}): {:?}", cid, conn.ip(), e);
-            metrics.disconnects.with_label_values(&["error"]).inc();
+                        metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
                     x => {
                         // default condition on error is to close the client connection
                         info!("unknown error (cid: {}, ip: {:?}): {:?} (closing conn)", cid, conn.ip(), x);
-            metrics.disconnects.with_label_values(&["error"]).inc();
+                        metrics.disconnects.with_label_values(&["error"]).inc();
 
                         break;
                     }
