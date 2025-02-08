@@ -1,6 +1,8 @@
 //! Common utility functions
 use bech32::FromBase32;
-use std::time::SystemTime;
+use hyper::body::to_bytes;
+use hyper::Body;
+use std::{collections::HashMap, time::SystemTime};
 use url::Url;
 
 /// Seconds since 1970.
@@ -41,6 +43,29 @@ pub fn host_str(url: &str) -> Option<String> {
     Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))
+}
+
+pub async fn to_map(body: Body) -> HashMap<String, String> {
+    let body_data = String::from_utf8(
+            to_bytes(body)
+            .await
+            .unwrap()
+            .to_vec())
+        .unwrap();
+    let kv_pairs = body_data.split('&')
+        .filter_map(|s| {
+            let parts: Vec<&str> = s.split('=').collect();
+            if parts.len() == 2 {
+                let kv = (
+                    String::from(*parts.get(0).unwrap()),
+                    String::from(*parts.get(1).unwrap())
+                );
+                Some(kv)
+            } else {
+                None
+            }
+        });
+    HashMap::from_iter(kv_pairs)
 }
 
 #[cfg(test)]

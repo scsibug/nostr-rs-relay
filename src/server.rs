@@ -19,10 +19,12 @@ use crate::repo::NostrRepo;
 use crate::server::Error::CommandUnknownError;
 use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::subscription::Subscription;
+use crate::utils::to_map;
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 use http::header::HeaderMap;
+use http::Method;
 use hyper::body::to_bytes;
 use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
@@ -65,18 +67,18 @@ use tungstenite::protocol::WebSocketConfig;
 use tera::{Context, Tera};
 use hyper_staticfile::Static;
 
-fn ok_text(msg: &'static str) -> Response<Body> {
+fn status_and_text(status: StatusCode, msg: &'static str) -> Response<Body> {
     Response::builder()
-        .status(200)
+        .status(status)
         .header("Content-Type", "text/plain")
         .body(Body::from(msg))
         .unwrap()
 }
 
-fn ok_template(tera: &Tera, template: &'static str, ctx: &Context) -> Response<Body> {
+fn template(tera: &Tera, template: &'static str, ctx: &Context) -> Response<Body> {
     let html = tera.render(template, &ctx).unwrap();
     Response::builder()
-        .status(200)
+        .status(StatusCode::OK)
         .body(Body::from(html))
         .unwrap()
 }
@@ -86,21 +88,6 @@ fn redirect() -> Response<Body> {
         .status(StatusCode::FOUND)
         .header("location", "/join")
         .body(Body::empty())
-        .unwrap()
-}
-
-fn server_error(msg: &'static str) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(Body::from(msg))
-        .unwrap()
-}
-
-fn unauthorized(msg: &'static str) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::UNAUTHORIZED)
-        .header("Content-Type", "text/plain")
-        .body(Body::from(msg))
         .unwrap()
 }
 
@@ -251,7 +238,7 @@ async fn handle_web_request(
                 }
             }
 
-            Ok(ok_text("Please use a Nostr client to connect."))
+            Ok(status_and_text(StatusCode::OK, "Please use a Nostr client to connect."))
         }
         ("/metrics", false) => {
             let mut buffer = vec![];
@@ -273,31 +260,31 @@ async fn handle_web_request(
 
             if let Err(e) = payment_tx.send(PaymentMessage::InvoicePaid(callback.payment_hash)) {
                 warn!("Could not send invoice update: {}", e);
-                return Ok(server_error("Error processing callback"));
+                return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Error processing callback"));
             }
 
-            Ok(ok_text("ok"))
+            Ok(status_and_text(StatusCode::OK, "ok"))
         }
         // Endpoint for relays terms
         ("/terms", false) => {
             let mut ctx = Context::new();
             ctx.insert("terms_message", &settings.pay_to_relay.terms_message);
-            Ok(ok_template(&tera, "terms.html", &ctx))
+            Ok(template(&tera, "terms.html", &ctx))
         }
         // Endpoint to allow users to sign up
         ("/join", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
-                return Ok(unauthorized("Sorry, joining is not allowed at the moment"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Sorry, joining is not allowed at the moment"));
             }
 
-            Ok(ok_template(&tera, "join.html", &Context::default()))
+            Ok(template(&tera, "join.html", &Context::default()))
         }
         // Endpoint to display invoice
         ("/invoice", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.sign_ups {
-                return Ok(unauthorized("Sorry, joining is not allowed at the moment"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Sorry, joining is not allowed at the moment"));
             }
 
             // Get query pubkey from query string
@@ -312,14 +299,14 @@ async fn handle_web_request(
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
             if key.is_err() {
-                return Ok(unauthorized("Looks like your key is invalid"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
 
             // Checks if user is already admitted
             let payment_message;
             if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                 if admission_status {
-                    return Ok(ok_text("Already admitted"));
+                    return Ok(status_and_text(StatusCode::OK, "Already admitted"));
                 } else {
                     payment_message = PaymentMessage::CheckAccount(pubkey.clone());
                 }
@@ -330,11 +317,7 @@ async fn handle_web_request(
             // Send message on payment channel requesting invoice
             if payment_tx.send(payment_message).is_err() {
                 warn!("Could not send payment tx");
-                return Ok(Response::builder()
-                    .status(501)
-                    .header("Content-Type", "text/plain")
-                    .body(Body::from("Sorry, something went wrong"))
-                    .unwrap());
+                return Ok(status_and_text(StatusCode::NOT_IMPLEMENTED, "Sorry, something went wrong"));
             }
 
             // wait for message with invoice back that matched the pub key
@@ -349,7 +332,7 @@ async fn handle_web_request(
                     }
                     PaymentMessage::AccountAdmitted(m_pubkey) => {
                         if m_pubkey == pubkey.clone() {
-                            return Ok(ok_text("Already admitted"));
+                            return Ok(status_and_text(StatusCode::OK, "Already admitted"));
                         }
                     }
                     _ => (),
@@ -358,7 +341,7 @@ async fn handle_web_request(
 
             // Return early if cant get invoice
             if invoice_info.is_none() {
-                return Ok(server_error("Sorry, could not get invoice"));
+                return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Sorry, could not get invoice"));
             }
 
             // Since invoice is checked to be not none, unwrap
@@ -382,12 +365,12 @@ async fn handle_web_request(
             ctx.insert("bolt11", &invoice_info.bolt11);
             ctx.insert("pubkey", &pubkey);
             
-            Ok(ok_template(&tera, "invoice.html", &ctx))
+            Ok(template(&tera, "invoice.html", &ctx))
         }
         ("/account", false) => {
             // Stops sign ups if disabled
             if !settings.pay_to_relay.enabled {
-                return Ok(unauthorized("This relay is not paid"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
             }
 
             // Gets the pubkey from query string
@@ -402,7 +385,7 @@ async fn handle_web_request(
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
             if key.is_err() {
-                return Ok(unauthorized("Looks like your key is invalid"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
 
             // Account is checked async so user will have to refresh the page a couple times after
@@ -426,11 +409,11 @@ async fn handle_web_request(
             ctx.insert("pubkey", &pubkey);
             ctx.insert("status", &status);
             
-            Ok(ok_template(&tera, "account.html", &ctx))
+            Ok(template(&tera, "account.html", &ctx))
         }
         ("/summary", false) => {
             if !settings.pay_to_relay.enabled {
-                return Ok(unauthorized("This relay is not paid"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
             }
 
             // Gets the pubkey from query string
@@ -445,15 +428,15 @@ async fn handle_web_request(
             let pubkey = pubkey.unwrap();
             let key = Keys::from_pk_str(&pubkey);
             if key.is_err() {
-                return Ok(unauthorized("Looks like your key is invalid"));
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
 
             if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
                 if !admission_status {
-                    return Ok(unauthorized("Statistics are for registered members only"));
+                    return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Statistics are for registered members only"));
                 }
             } else {
-                return Ok(server_error("Unable to get registration"));
+                return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get registration"));
             }
 
             let stats = repo.get_account_statistics(&key.unwrap())
@@ -464,7 +447,47 @@ async fn handle_web_request(
             ctx.insert("pubkey", &pubkey);
             ctx.insert("stats", &stats);
             
-            Ok(ok_template(&tera, "_statistics.html", &ctx))
+            Ok(template(&tera, "_statistics.html", &ctx))
+        }
+        ("/download", false) => {
+            if request.method() != Method::POST {
+                return Ok(Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .body(Body::from("Invalid HTTP method"))
+                    .unwrap());
+            }
+
+            if !settings.pay_to_relay.enabled {
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
+            }
+
+            let form_data = to_map(request.into_body()).await;
+            
+            let pubkey = form_data.get("pubkey");
+            // Redirect back to join page if no pub key is found in the body
+            if pubkey.is_none() {
+                return Ok(redirect());
+            }
+
+            // Checks key is valid
+            let pubkey = pubkey.unwrap();
+            let key = Keys::from_pk_str(&pubkey);
+            if key.is_err() {
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
+            }
+
+            if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
+                if !admission_status {
+                    return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Downloads are for registered members only"));
+                }
+            } else {
+                return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get registration"));
+            }
+
+            let kind = form_data.get("kind");
+            if kind.is_none() {
+                return Ok(status_and_text(StatusCode::BAD_REQUEST, "No kind specified"));
+            }
         }
         // later balance
         (_, _) => Ok(static_.serve(request).await.unwrap())
