@@ -65,6 +65,22 @@ use tungstenite::protocol::WebSocketConfig;
 use tera::{Context, Tera};
 use hyper_staticfile::Static;
 
+fn ok_text(msg: &'static str) -> Response<Body> {
+    Response::builder()
+        .status(200)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(msg))
+        .unwrap()
+}
+
+fn ok_template(tera: &Tera, template: &'static str, ctx: &Context) -> Response<Body> {
+    let html = tera.render(template, &ctx).unwrap();
+    Response::builder()
+        .status(200)
+        .body(Body::from(html))
+        .unwrap()
+}
+
 fn redirect() -> Response<Body> {
     Response::builder()
         .status(StatusCode::FOUND)
@@ -235,11 +251,7 @@ async fn handle_web_request(
                 }
             }
 
-            Ok(Response::builder()
-                .status(200)
-                .header("Content-Type", "text/plain")
-                .body(Body::from("Please use a Nostr client to connect."))
-                .unwrap())
+            Ok(ok_text("Please use a Nostr client to connect."))
         }
         ("/metrics", false) => {
             let mut buffer = vec![];
@@ -264,20 +276,13 @@ async fn handle_web_request(
                 return Ok(server_error("Error processing callback"));
             }
 
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from("ok"))
-                .unwrap())
+            Ok(ok_text("ok"))
         }
         // Endpoint for relays terms
         ("/terms", false) => {
             let mut ctx = Context::new();
             ctx.insert("terms_message", &settings.pay_to_relay.terms_message);
-            let html = tera.render("terms.html", &ctx).unwrap();
-            Ok(Response::builder()
-                .status(200)
-                .body(Body::from(html))
-                .unwrap())
+            Ok(ok_template(&tera, "terms.html", &ctx))
         }
         // Endpoint to allow users to sign up
         ("/join", false) => {
@@ -286,11 +291,7 @@ async fn handle_web_request(
                 return Ok(unauthorized("Sorry, joining is not allowed at the moment"));
             }
 
-            let html = tera.render("join.html", &Context::default()).unwrap();
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(html))
-                .unwrap())
+            Ok(ok_template(&tera, "join.html", &Context::default()))
         }
         // Endpoint to display invoice
         ("/invoice", false) => {
@@ -318,10 +319,7 @@ async fn handle_web_request(
             let payment_message;
             if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                 if admission_status {
-                    return Ok(Response::builder()
-                        .status(StatusCode::OK)
-                        .body(Body::from("Already admitted"))
-                        .unwrap());
+                    return Ok(ok_text("Already admitted"));
                 } else {
                     payment_message = PaymentMessage::CheckAccount(pubkey.clone());
                 }
@@ -351,10 +349,7 @@ async fn handle_web_request(
                     }
                     PaymentMessage::AccountAdmitted(m_pubkey) => {
                         if m_pubkey == pubkey.clone() {
-                            return Ok(Response::builder()
-                                .status(StatusCode::OK)
-                                .body(Body::from("Already admitted"))
-                                .unwrap());
+                            return Ok(ok_text("Already admitted"));
                         }
                     }
                     _ => (),
@@ -363,10 +358,7 @@ async fn handle_web_request(
 
             // Return early if cant get invoice
             if invoice_info.is_none() {
-                return Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Sorry, could not get invoice"))
-                    .unwrap());
+                return Ok(server_error("Sorry, could not get invoice"));
             }
 
             // Since invoice is checked to be not none, unwrap
@@ -389,12 +381,8 @@ async fn handle_web_request(
             ctx.insert("qr_code", &qr_code);
             ctx.insert("bolt11", &invoice_info.bolt11);
             ctx.insert("pubkey", &pubkey);
-            let html = tera.render("invoice.html", &ctx).unwrap();
-
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(html))
-                .unwrap())
+            
+            Ok(ok_template(&tera, "invoice.html", &ctx))
         }
         ("/account", false) => {
             // Stops sign ups if disabled
@@ -437,12 +425,8 @@ async fn handle_web_request(
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
             ctx.insert("status", &status);
-            let html = tera.render("account.html", &ctx).unwrap();
-
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(html))
-                .unwrap())
+            
+            Ok(ok_template(&tera, "account.html", &ctx))
         }
         ("/summary", false) => {
             if !settings.pay_to_relay.enabled {
@@ -477,13 +461,10 @@ async fn handle_web_request(
                 .unwrap();
 
             let mut ctx = Context::new();
+            ctx.insert("pubkey", &pubkey);
             ctx.insert("stats", &stats);
-            let html = tera.render("_statistics.html", &ctx).unwrap();
-
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(Body::from(html))
-                .unwrap())
+            
+            Ok(ok_template(&tera, "_statistics.html", &ctx))
         }
         // later balance
         (_, _) => Ok(static_.serve(request).await.unwrap())
