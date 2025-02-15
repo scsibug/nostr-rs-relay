@@ -76,7 +76,14 @@ fn status_and_text(status: StatusCode, msg: &'static str) -> Response<Body> {
 }
 
 fn template(tera: &Tera, template: &'static str, ctx: &Context) -> Response<Body> {
-    let html = tera.render(template, &ctx).unwrap();
+    // re-compile templates on each request when in debug mode
+    let html = if cfg!(debug_assertions) {
+        let mut mutable_tera = tera.clone();
+        mutable_tera.full_reload().unwrap();
+        mutable_tera.render(template, &ctx).unwrap()
+    } else {
+        tera.render(template, &ctx).unwrap()
+    };
     Response::builder()
         .status(StatusCode::OK)
         .body(Body::from(html))
@@ -488,6 +495,8 @@ async fn handle_web_request(
             if kind.is_none() {
                 return Ok(status_and_text(StatusCode::BAD_REQUEST, "No kind specified"));
             }
+
+            return Ok(status_and_text(StatusCode::NOT_IMPLEMENTED, "Downloading data is WIP!"));
         }
         // later balance
         (_, _) => Ok(static_.serve(request).await.unwrap())
