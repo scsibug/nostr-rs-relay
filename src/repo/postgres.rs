@@ -268,6 +268,34 @@ ON CONFLICT (id) DO NOTHING"#,
                 update_count,
                 e.get_author_prefix()
             );
+        } else if e.kind == 62 {
+            // NIP-62: Relays MUST fully delete any events from the `.pubkey` if
+            // their service URL is tagged in the event. Relays SHOULD delete
+            // all NIP-59 Gift Wraps that p-tagged the `.pubkey`
+            if e.tag_values_by_name("relay")
+                .iter()
+                .any(|_r| todo!("r == relay_url"))
+            {
+                let mut deleted_events = sqlx::query("DELETE FROM \"event\" WHERE pub_key = $1")
+                    .bind(hex::decode(&e.pubkey).ok())
+                    .execute(&mut tx)
+                    .await?
+                    .rows_affected();
+
+                deleted_events += sqlx::query(
+                    "DELETE FROM \"event\" WHERE kind = 1059 AND id IN (SELECT t.event_id FROM tag t WHERE t.\"name\" = 'p' AND t.value = $1)"
+                )
+                .bind(hex::decode(&e.pubkey).ok())
+                .execute(&mut tx)
+                .await?
+                .rows_affected();
+
+                info!(
+                    "removed {} older events for author due to kind 62: {:?}",
+                    deleted_events,
+                    e.get_author_prefix()
+                );
+            }
         } else {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
