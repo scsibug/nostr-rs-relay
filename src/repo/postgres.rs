@@ -274,7 +274,7 @@ ON CONFLICT (id) DO NOTHING"#,
             // all NIP-59 Gift Wraps that p-tagged the `.pubkey`
             if e.tag_values_by_name("relay")
                 .iter()
-                .any(|_r| todo!("r == relay_url"))
+                .any(|_r| todo!(r#"r == relay_url || r == "ALL_RELAYS""#))
             {
                 let mut deleted_events = sqlx::query("DELETE FROM \"event\" WHERE pub_key = $1")
                     .bind(hex::decode(&e.pubkey).ok())

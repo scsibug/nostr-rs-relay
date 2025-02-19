@@ -224,7 +224,7 @@ impl SqliteRepo {
             // all NIP-59 Gift Wraps that p-tagged the `.pubkey`
             if e.tag_values_by_name("relay")
                 .iter()
-                .any(|_r| todo!("r == relay_url"))
+                .any(|_r| todo!(r#"r == relay_url || r == "ALL_RELAYS""#))
             {
                 let mut deleted_events =
                     tx.execute("DELETE FROM event WHERE author=?", params![pubkey_blob])?;
