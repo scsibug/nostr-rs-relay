@@ -281,15 +281,6 @@ pub async fn db_writer(
             }
         }
 
-        // send any metadata events to the NIP-05 verifier
-        if nip05_active && event.is_kind_metadata() {
-            // we are sending this prior to even deciding if we
-            // persist it.  this allows the nip05 module to
-            // inspect it, update if necessary, or persist a new
-            // event and broadcast it itself.
-            metadata_tx.send(event.clone()).ok();
-        }
-
         // get a validation result for use in verification and GPRC
         let validation = if nip05_active {
             Some(repo.get_latest_user_verification(&event.pubkey).await)
@@ -388,6 +379,15 @@ pub async fn db_writer(
                     warn!("GRPC server error: {:?}", e);
                 }
             }
+        }
+
+        // send any metadata events to the NIP-05 verifier
+        if nip05_active && event.is_kind_metadata() {
+            // we are sending this prior to even deciding if we
+            // persist it.  this allows the nip05 module to
+            // inspect it, update if necessary, or persist a new
+            // event and broadcast it itself.
+            metadata_tx.send(event.clone()).ok();
         }
 
         // TODO: cache recent list of authors to remove a DB call.
