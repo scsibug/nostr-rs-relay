@@ -55,12 +55,12 @@ pub enum InvoiceStatus {
     Expired,
 }
 
-impl ToString for InvoiceStatus {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for InvoiceStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InvoiceStatus::Paid => "Paid".to_string(),
-            InvoiceStatus::Unpaid => "Unpaid".to_string(),
-            InvoiceStatus::Expired => "Expired".to_string(),
+            InvoiceStatus::Paid => write!(f, "Paid"),
+            InvoiceStatus::Unpaid => write!(f, "Unpaid"),
+            InvoiceStatus::Expired => write!(f, "Expired"),
         }
     }
 }

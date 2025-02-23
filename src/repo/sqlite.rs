@@ -156,14 +156,11 @@ impl SqliteRepo {
                 let tagval = &tag[1];
                 // only single-char tags are searchable
                 let tagchar_opt = single_char_tagname(tagname);
-                match &tagchar_opt {
-                    Some(_) => {
-                        tx.execute(
-                            "INSERT OR IGNORE INTO tag (event_id, name, value, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                            params![ev_id, &tagname, &tagval, e.kind, e.created_at],
-                        )?;
-                    }
-                    None => {}
+                if tagchar_opt.is_some() {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO tag (event_id, name, value, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![ev_id, &tagname, &tagval, e.kind, e.created_at],
+                    )?;
                 }
             }
         }

@@ -15,7 +15,6 @@ use tracing::info;
 /// Bulk load JSONL data from STDIN to the database specified in config.toml (or ./nostr.db as a default).
 /// The database must already exist, this will not create a new one.
 /// Tested against schema v13.
-
 pub fn main() -> Result<()> {
     let _trace_sub = tracing_subscriber::fmt::try_init();
     println!("Nostr-rs-relay Bulk Loader");

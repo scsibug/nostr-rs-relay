@@ -38,7 +38,7 @@ impl ClnRestPaymentProcessor {
             .ok_or(ConfigError::NotFound("rune_path".to_string()))?;
         let rune = String::from_utf8(fs::read(rune_path)?)
             .map_err(|_| ConfigError::Message("Rune should be UTF8".to_string()))?;
-        let mut rune_header = HeaderValue::from_str(&rune.trim())
+        let mut rune_header = HeaderValue::from_str(rune.trim())
             .map_err(|_| ConfigError::Message("Invalid Rune header".to_string()))?;
         rune_header.set_sensitive(true);
 

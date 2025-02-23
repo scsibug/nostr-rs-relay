@@ -121,7 +121,7 @@ fn body_contains_user(username: &str, address: &str, bytes: &hyper::body::Bytes)
     // get the pubkey for the requested user
     let check_name = names_map.get(username).and_then(serde_json::Value::as_str);
     // ensure the address is a match
-    Ok(check_name.map_or(false, |x| x == address))
+    Ok(check_name == Some(address))
 }
 
 impl Verifier {
@@ -243,7 +243,11 @@ impl Verifier {
             let response_content_length = match response.body().size_hint().upper() {
                 Some(v) => v,
                 None => {
-                    info!("missing content length header for account {:?} at URL: {}", nip.to_string(), url);
+                    info!(
+                        "missing content length header for account {:?} at URL: {}",
+                        nip.to_string(),
+                        url
+                    );
                     return Ok(UserWebVerificationStatus::Unknown);
                 }
             };
