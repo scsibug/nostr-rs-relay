@@ -202,7 +202,7 @@ async fn handle_web_request(
                             .header("Content-Type", "text/html; charset=UTF-8")
                             .body(Body::from(file_content))
                             .expect("request builder"));
-                    },
+                    }
                     Err(err) => {
                         error!("Failed to read relay_page file: {}. Will use default", err);
                     }
@@ -920,7 +920,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         info!("starting payment process ...");
                         p.run().await;
                     });
-                },
+                }
                 Err(e) => {
                     error!("Failed to start payment process {e}");
                     std::process::exit(1);

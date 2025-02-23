@@ -25,7 +25,9 @@ impl EventResultStatus {
     pub fn to_bool(&self) -> bool {
         match self {
             Self::Duplicate | Self::Saved => true,
-            Self::Invalid | Self::Blocked | Self::RateLimited | Self::Error | Self::Restricted => false,
+            Self::Invalid | Self::Blocked | Self::RateLimited | Self::Error | Self::Restricted => {
+                false
+            }
         }
     }
 
