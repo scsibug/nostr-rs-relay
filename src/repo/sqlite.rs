@@ -229,7 +229,7 @@ impl SqliteRepo {
                 let mut deleted_events =
                     tx.execute("DELETE FROM event WHERE author=?", params![pubkey_blob])?;
                 deleted_events += tx.execute(
-                    "DELETE FROM event WHERE kind=1059 AND id IN (SELECT t.event_id FROM tag t WHERE t.name='p' AND t.kind=1059 AND t.value=?)",
+                    "DELETE FROM event WHERE id IN (SELECT t.event_id FROM tag t WHERE t.kind=1059 AND t.name='p' AND t.value=?)",
                     params![&e.pubkey],
                 )?;
                 info!(

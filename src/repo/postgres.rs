@@ -283,7 +283,7 @@ ON CONFLICT (id) DO NOTHING"#,
                     .rows_affected();
 
                 deleted_events += sqlx::query(
-                    "DELETE FROM \"event\" WHERE kind = 1059 AND id IN (SELECT t.event_id FROM tag t WHERE t.\"name\" = 'p' AND t.value = $1)"
+                    "DELETE FROM \"event\" WHERE id IN (SELECT t.event_id FROM tag t WHERE t.kind = 1059 AND t.\"name\" = 'p' AND t.value = $1)"
                 )
                 .bind(hex::decode(&e.pubkey).ok())
                 .execute(&mut tx)
