@@ -291,8 +291,7 @@ ON CONFLICT (id) DO NOTHING"#,
                 .rows_affected();
 
                 info!(
-                    "removed {} older events for author due to kind 62: {:?}",
-                    deleted_events,
+                    "removed {deleted_events} older events for author due to kind 62: {:?}",
                     e.get_author_prefix()
                 );
             }
