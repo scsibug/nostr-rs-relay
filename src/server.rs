@@ -5,6 +5,7 @@ use crate::config::{Settings, VerifiedUsersMode};
 use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
+use crate::delegation::SECP;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::event::EventCmd;
@@ -20,6 +21,8 @@ use crate::server::Error::CommandUnknownError;
 use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::subscription::Subscription;
 use crate::utils::to_map;
+use bitcoin_hashes::sha256;
+use bitcoin_hashes::Hash;
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
@@ -39,6 +42,8 @@ use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
 use qrcode::render::svg;
 use qrcode::QrCode;
+use secp256k1::schnorr;
+use secp256k1::XOnlyPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -48,6 +53,7 @@ use std::io::BufReader;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::sync::Arc;
@@ -373,6 +379,38 @@ async fn handle_web_request(
             ctx.insert("pubkey", &pubkey);
             
             Ok(template(&tera, "invoice.html", &ctx))
+        }
+        ("/authorize", false) => {
+            if !settings.pay_to_relay.enabled {
+                return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
+            }
+            
+            let form_data = to_map(request.into_body()).await;
+            
+            if let Some(pub_key) = form_data.get("pubkey") {
+                if let Some(signature) = form_data.get("signature") {
+                    let data = format!("nostr:permission:{}:allowed", pub_key);
+                    let digest: sha256::Hash = sha256::Hash::hash(data.as_bytes());
+                    let sig = schnorr::Signature::from_str(signature).unwrap();
+                    if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
+                        if let Ok(pubkey) = XOnlyPublicKey::from_str(pub_key) {
+                            let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
+                            if verify.is_ok() {
+                                let resp = Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("Cookie", "a token, bruh!")
+                                    .body(Body::from("Logged in"))
+                                    .unwrap();
+                                return Ok(resp);
+                            }
+
+                            return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
+                        }
+                    }
+                }
+            }
+
+            Ok(status_and_text(StatusCode::BAD_REQUEST, "Missing required values"))
         }
         ("/account", false) => {
             // Stops sign ups if disabled
