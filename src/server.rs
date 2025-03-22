@@ -386,27 +386,26 @@ async fn handle_web_request(
             }
             
             let form_data = to_map(request.into_body()).await;
+            let form_vals = (form_data.get("pubkey"), form_data.get("signature"));
             
-            if let Some(pub_key) = form_data.get("pubkey") {
-                if let Some(signature) = form_data.get("signature") {
-                    let data = format!("nostr:permission:{}:allowed", pub_key);
-                    let digest: sha256::Hash = sha256::Hash::hash(data.as_bytes());
-                    let sig = schnorr::Signature::from_str(signature).unwrap();
-                    if let Ok(msg) = secp256k1::Message::from_slice(digest.as_ref()) {
-                        if let Ok(pubkey) = XOnlyPublicKey::from_str(pub_key) {
-                            let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
-                            if verify.is_ok() {
-                                let resp = Response::builder()
-                                    .status(StatusCode::OK)
-                                    .header("Cookie", "a token, bruh!")
-                                    .body(Body::from("Logged in"))
-                                    .unwrap();
-                                return Ok(resp);
-                            }
-
-                            return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
+            if let (Some(pub_key), Some(signature)) = form_vals {
+                if let Ok(pubkey) = XOnlyPublicKey::from_str(pub_key) {
+                    if let Ok(sig) = schnorr::Signature::from_str(signature) {
+                        let data = format!("nostr:permission:{}:allowed", pub_key);
+                        let digest: sha256::Hash = sha256::Hash::hash(data.as_bytes());
+                        let msg = secp256k1::Message::from_slice(digest.as_ref()).unwrap();
+                        let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
+                        if verify.is_ok() {
+                            let resp = Response::builder()
+                                .status(StatusCode::OK)
+                                .header("Cookie", "a token, bruh!")
+                                .body(Body::from("Logged in"))
+                                .unwrap();
+                            return Ok(resp);
                         }
+
                     }
+                    return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
                 }
             }
 
