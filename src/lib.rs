@@ -17,3 +17,4 @@ pub mod utils;
 pub mod payment;
 pub mod server;
 pub mod account;
+pub mod authentication;

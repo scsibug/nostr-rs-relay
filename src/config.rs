@@ -100,6 +100,7 @@ pub struct PayToRelay {
     pub secret_key: Option<String>,
     pub processor: Processor,
     pub rune_path: Option<String>, // To access clightning API
+    pub auth_secret: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +340,7 @@ impl Default for Settings {
                 direct_message: false,
                 secret_key: None,
                 processor: Processor::LNBits,
+                auth_secret: "".to_string(),
             },
             verified_users: VerifiedUsers {
                 mode: VerifiedUsersMode::Disabled,

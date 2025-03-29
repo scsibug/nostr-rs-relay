@@ -1,11 +1,14 @@
 //! Server process
+use crate::authentication::authenticate;
+use crate::authentication::generate_auth_token;
+use crate::authentication::get_token_value;
+use crate::authentication::validate_auth_token;
 use crate::close::Close;
 use crate::close::CloseCmd;
 use crate::config::{Settings, VerifiedUsersMode};
 use crate::conn;
 use crate::db;
 use crate::db::SubmittedEvent;
-use crate::delegation::SECP;
 use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::event::EventCmd;
@@ -21,12 +24,11 @@ use crate::server::Error::CommandUnknownError;
 use crate::server::EventWrapper::{WrappedAuth, WrappedEvent};
 use crate::subscription::Subscription;
 use crate::utils::to_map;
-use bitcoin_hashes::sha256;
-use bitcoin_hashes::Hash;
 use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 use http::header::HeaderMap;
+use http::header::SET_COOKIE;
 use http::Method;
 use hyper::body::to_bytes;
 use hyper::header::ACCEPT;
@@ -42,8 +44,6 @@ use prometheus::IntGauge;
 use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, Opts, Registry, TextEncoder};
 use qrcode::render::svg;
 use qrcode::QrCode;
-use secp256k1::schnorr;
-use secp256k1::XOnlyPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -53,7 +53,6 @@ use std::io::BufReader;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver as MpscReceiver;
 use std::sync::Arc;
@@ -301,7 +300,7 @@ async fn handle_web_request(
             }
 
             // Get query pubkey from query string
-            let pubkey = get_pubkey(request);
+            let pubkey = get_pubkey(&request);
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
@@ -389,24 +388,27 @@ async fn handle_web_request(
             let form_vals = (form_data.get("pubkey"), form_data.get("signature"));
             
             if let (Some(pub_key), Some(signature)) = form_vals {
-                if let Ok(pubkey) = XOnlyPublicKey::from_str(pub_key) {
-                    if let Ok(sig) = schnorr::Signature::from_str(signature) {
-                        let data = format!("nostr:permission:{}:allowed", pub_key);
-                        let digest: sha256::Hash = sha256::Hash::hash(data.as_bytes());
-                        let msg = secp256k1::Message::from_slice(digest.as_ref()).unwrap();
-                        let verify = SECP.verify_schnorr(&sig, &msg, &pubkey);
-                        if verify.is_ok() {
-                            let resp = Response::builder()
-                                .status(StatusCode::OK)
-                                .header("Cookie", "a token, bruh!")
-                                .body(Body::from("Logged in"))
-                                .unwrap();
-                            return Ok(resp);
-                        }
+                if authenticate(pub_key, signature) {
+                    info!("User {} successfully authenticated", pub_key);
+                    let key = Keys::from_pk_str(&pub_key).unwrap();
+                    let token = generate_auth_token(&key.public_key().to_string(), &settings);
+                    let stats = repo.get_account_statistics(&key)
+                        .await
+                        .unwrap();
 
-                    }
-                    return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
+                    let mut ctx = Context::new();
+                    ctx.insert("pubkey", &pub_key);
+                    ctx.insert("stats", &stats);
+                    ctx.insert("status", "authorized");
+                    
+                    let resp = Response::builder()
+                        .status(StatusCode::OK)
+                        .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
+                        .body(Body::from(tera.render("_statistics.html", &ctx).unwrap()))
+                        .unwrap();
+                    return Ok(resp);
                 }
+                return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
             }
 
             Ok(status_and_text(StatusCode::BAD_REQUEST, "Missing required values"))
@@ -418,7 +420,7 @@ async fn handle_web_request(
             }
 
             // Gets the pubkey from query string
-            let pubkey = get_pubkey(request);
+            let pubkey = get_pubkey(&request);
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
@@ -437,17 +439,22 @@ async fn handle_web_request(
             if let Err(e) = payment_tx.send(PaymentMessage::CheckAccount(pubkey.clone())) {
                 warn!("Could not check account: {}", e);
             }
-            // Checks if user is already admitted
-            let status =
-                if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
-                    if admission_status {
-                        "admitted"
-                    } else {
-                        "denied"
+
+            let mut status = "unknown";
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+                if admission_status {
+                    status = "admitted";
+                    if let Some(cookie) = request.headers().get("Cookie") {
+                        if let Some(token) = get_token_value(cookie) {
+                            if validate_auth_token(token, &settings) {
+                                status = "authorized";
+                            }
+                        }
                     }
                 } else {
-                    "unknown"
-                };
+                    status = "denied";
+                }
+            }
 
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
@@ -461,7 +468,7 @@ async fn handle_web_request(
             }
 
             // Gets the pubkey from query string
-            let pubkey = get_pubkey(request);
+            let pubkey = get_pubkey(&request);
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
@@ -483,15 +490,24 @@ async fn handle_web_request(
                 return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get registration"));
             }
 
-            let stats = repo.get_account_statistics(&key.unwrap())
-                .await
-                .unwrap();
-
-            let mut ctx = Context::new();
-            ctx.insert("pubkey", &pubkey);
-            ctx.insert("stats", &stats);
+            if let Some(cookie) = request.headers().get("Cookie") {
+                if let Some(token) = get_token_value(cookie) {
+                    if validate_auth_token(token, &settings) {
+                        let stats = repo.get_account_statistics(&key.unwrap())
+                            .await
+                            .unwrap();
             
-            Ok(template(&tera, "_statistics.html", &ctx))
+                        let mut ctx = Context::new();
+                        ctx.insert("pubkey", &pubkey);
+                        ctx.insert("stats", &stats);
+                        ctx.insert("status", "authorized");
+                        
+                        return Ok(template(&tera, "_statistics.html", &ctx));
+                    }
+                }
+            }
+
+            Ok(status_and_text(StatusCode::UNAUTHORIZED, "You are not authorized to perform this operation"))
         }
         ("/download", false) => {
             if request.method() != Method::POST {
@@ -541,7 +557,7 @@ async fn handle_web_request(
 }
 
 // Get pubkey from request query string
-fn get_pubkey(request: Request<Body>) -> Option<String> {
+fn get_pubkey(request: &Request<Body>) -> Option<String> {
     let query = request.uri().query().unwrap_or("").to_string();
 
     // Gets the pubkey value from query string
