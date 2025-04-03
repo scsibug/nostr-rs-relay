@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1-bookworm as builder
+FROM docker.io/library/rust:1-bookworm AS builder
 RUN apt-get update \
     && apt-get install -y cmake protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
@@ -49,4 +49,4 @@ WORKDIR ${APP}
 ENV RUST_LOG=info,nostr_rs_relay=info
 ENV APP_DATA=${APP_DATA}
 
-CMD ./nostr-rs-relay --db ${APP_DATA}
+CMD [ "./nostr-rs-relay", "--db", "${APP_DATA}"]
