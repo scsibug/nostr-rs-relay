@@ -89,6 +89,13 @@ pub trait NostrRepo: Send + Sync {
     async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>>;
 
     async fn get_account_statistics(&self, pubkey: &Keys) -> Result<AccountStatistics>;
+
+    async fn get_all_user_events(
+        &self,
+        pubkey: &Keys,
+        query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
+        mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<()>;
 }
 
 // Current time, with a slight forward jitter in seconds

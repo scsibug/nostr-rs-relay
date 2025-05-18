@@ -521,6 +521,7 @@ async fn handle_web_request(
                 return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
             }
 
+            let cookie_header = request.headers().get("Cookie").cloned();
             let form_data = to_map(request.into_body()).await;
             
             let pubkey = form_data.get("pubkey");
@@ -538,18 +539,21 @@ async fn handle_web_request(
 
             if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
                 if !admission_status {
-                    return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Downloads are for registered members only"));
+                    return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Download events is for registered members only"));
                 }
             } else {
                 return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get registration"));
             }
 
-            let kind = form_data.get("kind");
-            if kind.is_none() {
-                return Ok(status_and_text(StatusCode::BAD_REQUEST, "No kind specified"));
+            if let Some(cookie) = cookie_header {
+                if let Some(token) = get_token_value(&cookie) {
+                    if validate_auth_token(token, &settings) {
+                        
+                    }
+                }
             }
 
-            return Ok(status_and_text(StatusCode::NOT_IMPLEMENTED, "Downloading data is WIP!"));
+            return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Not logged in."));
         }
         // later balance
         (_, _) => Ok(static_.serve(request).await.unwrap())

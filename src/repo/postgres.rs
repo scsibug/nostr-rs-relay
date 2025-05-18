@@ -715,7 +715,16 @@ LIMIT 1;
     }
 
     async fn get_account_statistics(&self, _pubkey: &Keys) -> Result<AccountStatistics> {
-        panic!("Not implemented!");
+        todo!("get_account_statistics() is not implemented for Postgres");
+    }
+
+    async fn get_all_user_events(
+        &self,
+        _pubkey: &Keys,
+        _query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
+        mut _abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<()> {
+        todo!("get_all_user_events() is not implemented for Postgres");
     }
 }
 
