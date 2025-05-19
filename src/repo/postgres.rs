@@ -722,7 +722,7 @@ LIMIT 1;
         &self,
         _pubkey: &Keys,
         _query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
-        mut _abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+        mut _cancel_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<()> {
         todo!("get_all_user_events() is not implemented for Postgres");
     }

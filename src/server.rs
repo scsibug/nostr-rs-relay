@@ -1,4 +1,5 @@
 //! Server process
+use crate::account::write_user_events;
 use crate::authentication::authenticate;
 use crate::authentication::generate_auth_token;
 use crate::authentication::get_token_value;
@@ -392,21 +393,25 @@ async fn handle_web_request(
                     info!("User {} successfully authenticated", pub_key);
                     let key = Keys::from_pk_str(&pub_key).unwrap();
                     let token = generate_auth_token(&key.public_key().to_string(), &settings);
-                    let stats = repo.get_account_statistics(&key)
-                        .await
-                        .unwrap();
-
-                    let mut ctx = Context::new();
-                    ctx.insert("pubkey", &pub_key);
-                    ctx.insert("stats", &stats);
-                    ctx.insert("status", "authorized");
-                    
-                    let resp = Response::builder()
-                        .status(StatusCode::OK)
-                        .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
-                        .body(Body::from(tera.render("_statistics.html", &ctx).unwrap()))
-                        .unwrap();
-                    return Ok(resp);
+                    return match repo.get_account_statistics(&key).await {
+                        Ok(stats) => {
+                            let mut ctx = Context::new();
+                            ctx.insert("pubkey", &pub_key);
+                            ctx.insert("stats", &stats);
+                            ctx.insert("status", "authorized");
+                            
+                            let resp = Response::builder()
+                                .status(StatusCode::OK)
+                                .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
+                                .body(Body::from(tera.render("_statistics.html", &ctx).unwrap()))
+                                .unwrap();
+                            Ok(resp)
+                        }
+                        Err(e) => {
+                            warn!("Error getting statistics: {}", e);
+                            Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Error getting account statistics"))
+                        }
+                    }
                 }
                 return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
             }
@@ -433,6 +438,7 @@ async fn handle_web_request(
             if key.is_err() {
                 return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
+            let key = key.unwrap();
 
             // Account is checked async so user will have to refresh the page a couple times after
             // they have paid.
@@ -441,7 +447,7 @@ async fn handle_web_request(
             }
 
             let mut status = "unknown";
-            if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key).await {
                 if admission_status {
                     status = "admitted";
                     if let Some(cookie) = request.headers().get("Cookie") {
@@ -481,8 +487,9 @@ async fn handle_web_request(
             if key.is_err() {
                 return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
+            let key = key.unwrap();
 
-            if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key).await {
                 if !admission_status {
                     return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Statistics are for registered members only"));
                 }
@@ -493,16 +500,19 @@ async fn handle_web_request(
             if let Some(cookie) = request.headers().get("Cookie") {
                 if let Some(token) = get_token_value(cookie) {
                     if validate_auth_token(token, &settings) {
-                        let stats = repo.get_account_statistics(&key.unwrap())
-                            .await
-                            .unwrap();
-            
-                        let mut ctx = Context::new();
-                        ctx.insert("pubkey", &pubkey);
-                        ctx.insert("stats", &stats);
-                        ctx.insert("status", "authorized");
-                        
-                        return Ok(template(&tera, "_statistics.html", &ctx));
+                        return match repo.get_account_statistics(&key).await {
+                            Ok(stats) => {
+                                let mut ctx = Context::new();
+                                ctx.insert("pubkey", &pubkey);
+                                ctx.insert("stats", &stats);
+                                ctx.insert("status", "authorized");
+                                Ok(template(&tera, "_statistics.html", &ctx))
+                            }
+                            Err(e) => {
+                                warn!("Error getting statistics: {}", e);
+                                Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Error getting account statistics"))
+                            }
+                        };
                     }
                 }
             }
@@ -537,7 +547,8 @@ async fn handle_web_request(
                 return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Looks like your key is invalid"));
             }
 
-            if let Ok((admission_status, _)) = repo.get_account_balance(key.as_ref().unwrap()).await {
+            let key = key.unwrap();
+            if let Ok((admission_status, _)) = repo.get_account_balance(&key).await {
                 if !admission_status {
                     return Ok(status_and_text(StatusCode::UNAUTHORIZED, "Download events is for registered members only"));
                 }
@@ -548,7 +559,22 @@ async fn handle_web_request(
             if let Some(cookie) = cookie_header {
                 if let Some(token) = get_token_value(&cookie) {
                     if validate_auth_token(token, &settings) {
+                        let (results_tx, results_rx) = mpsc::channel::<Vec<Event>>(10);
                         
+                        if let Err(e) = repo.get_all_user_events(&key, results_tx, shutdown.resubscribe()).await {
+                            warn!("Error getting user events: {}", e);
+                            return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get user events"));
+                        }
+
+                        return match write_user_events(pubkey, results_rx, shutdown.resubscribe()).await {
+                            Ok(file) => {
+                                Ok(status_and_text(StatusCode::OK, "Yay!"))
+                            }
+                            Err(e) => {
+                                warn!("Error writing user events: {}", e);
+                                Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to write user events"))
+                            }
+                        }
                     }
                 }
             }

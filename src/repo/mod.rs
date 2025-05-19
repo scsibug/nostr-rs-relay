@@ -94,7 +94,7 @@ pub trait NostrRepo: Send + Sync {
         &self,
         pubkey: &Keys,
         query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
-        mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+        mut cancel_rs: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<()>;
 }
 

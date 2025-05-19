@@ -961,7 +961,7 @@ GROUP BY kind
         &self,
         pubkey: &Keys,
         query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
-        mut abandon_query_rx: tokio::sync::oneshot::Receiver<()>,
+        mut cancel_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<()> {
         // if we let every request spawn a thread, we'll exhaust the
         // thread pool waiting for queries to finish under high load.
@@ -982,7 +982,7 @@ GROUP BY kind
                 let _x = self.checkpoint_in_progress.blocking_lock();
             }
             // check before getting a DB connection if the client still wants the results
-            if abandon_query_rx.try_recv().is_ok() {
+            if cancel_rx.try_recv().is_ok() {
                 debug!(
                     "query cancelled by client (before execution) (pubkey: {})",
                     pubkey_str
