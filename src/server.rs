@@ -385,31 +385,32 @@ async fn handle_web_request(
             let form_vals = (form_data.get("pubkey"), form_data.get("signature"));
             
             if let (Some(pub_key), Some(signature)) = form_vals {
-                if authenticate(pub_key, signature) {
-                    info!("User {} successfully authenticated", pub_key);
-                    let key = Keys::from_pk_str(&pub_key).unwrap();
-                    let token = generate_auth_token(&key.public_key().to_string(), &settings);
-                    return match repo.get_account_statistics(&key).await {
-                        Ok(stats) => {
-                            let mut ctx = Context::new();
-                            ctx.insert("pubkey", &pub_key);
-                            ctx.insert("stats", &stats);
-                            ctx.insert("status", "authorized");
-                            
-                            let resp = Response::builder()
-                                .status(StatusCode::OK)
-                                .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
-                                .body(Body::from(tera.render("_statistics.html", &ctx).unwrap()))
-                                .unwrap();
-                            Ok(resp)
-                        }
-                        Err(e) => {
-                            warn!("Error getting statistics: {}", e);
-                            Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Error getting account statistics"))
+                if let Ok(key) = Keys::from_pk_str(&pub_key) {
+                    if authenticate(&key, signature) {
+                        info!("User {} successfully authenticated", pub_key);
+                        let token = generate_auth_token(&key.public_key().to_string(), &settings);
+                        return match repo.get_account_statistics(&key).await {
+                            Ok(stats) => {
+                                let mut ctx = Context::new();
+                                ctx.insert("pubkey", &pub_key);
+                                ctx.insert("stats", &stats);
+                                ctx.insert("status", "authorized");
+                                
+                                let resp = Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
+                                    .body(Body::from(tera.render("_statistics.html", &ctx).unwrap()))
+                                    .unwrap();
+                                Ok(resp)
+                            }
+                            Err(e) => {
+                                warn!("Error getting statistics: {}", e);
+                                Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Error getting account statistics"))
+                            }
                         }
                     }
+                    return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
                 }
-                return Ok(status_and_text(StatusCode::BAD_REQUEST, "Invalid signature"));
             }
 
             Ok(status_and_text(StatusCode::BAD_REQUEST, "Missing required values"))
