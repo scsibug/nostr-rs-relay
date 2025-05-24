@@ -96,10 +96,10 @@ fn template(tera: &Tera, template: &'static str, ctx: &Context) -> Response<Body
         .unwrap()
 }
 
-fn redirect() -> Response<Body> {
+fn redirect(location: &str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::FOUND)
-        .header("location", "/join")
+        .header("location", location)
         .body(Body::empty())
         .unwrap()
 }
@@ -229,11 +229,7 @@ async fn handle_web_request(
 
             // Redirect users to join page when pay to relay enabled
             if settings.pay_to_relay.enabled {
-                return Ok(Response::builder()
-                    .status(StatusCode::TEMPORARY_REDIRECT)
-                    .header("location", "/join")
-                    .body(Body::empty())
-                    .unwrap());
+                return Ok(redirect("/join"));
             }
 
             if let Some(relay_file_path) = settings.info.relay_page {
@@ -305,7 +301,7 @@ async fn handle_web_request(
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                return Ok(redirect());
+                return Ok(redirect("/join"));
             }
 
             // Checks key is valid
@@ -319,7 +315,7 @@ async fn handle_web_request(
             let payment_message;
             if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                 if admission_status {
-                    return Ok(status_and_text(StatusCode::OK, "Already admitted"));
+                    return Ok(redirect(&format!("/account?pubkey={}", &pubkey)));
                 } else {
                     payment_message = PaymentMessage::CheckAccount(pubkey.clone());
                 }
@@ -345,7 +341,7 @@ async fn handle_web_request(
                     }
                     PaymentMessage::AccountAdmitted(m_pubkey) => {
                         if m_pubkey == pubkey.clone() {
-                            return Ok(status_and_text(StatusCode::OK, "Already admitted"));
+                            return Ok(redirect(&format!("/account?pubkey={}", &pubkey)));
                         }
                     }
                     _ => (),
@@ -429,7 +425,7 @@ async fn handle_web_request(
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                return Ok(redirect());
+                return Ok(redirect("/join"));
             }
 
             // Checks key is valid
@@ -478,7 +474,7 @@ async fn handle_web_request(
 
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
-                return Ok(redirect());
+                return Ok(redirect("/join"));
             }
 
             // Checks key is valid
@@ -537,7 +533,7 @@ async fn handle_web_request(
             let pubkey = form_data.get("pubkey");
             // Redirect back to join page if no pub key is found in the body
             if pubkey.is_none() {
-                return Ok(redirect());
+                return Ok(redirect("/join"));
             }
 
             // Checks key is valid
