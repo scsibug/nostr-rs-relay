@@ -38,6 +38,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use hyper_staticfile::FileBytesStream;
 use nostr::key::FromPkStr;
 use nostr::key::Keys;
 use prometheus::IntCounterVec;
@@ -565,7 +566,13 @@ async fn handle_web_request(
 
                         return match write_user_events(pubkey, results_rx, shutdown.resubscribe()).await {
                             Ok(file) => {
-                                Ok(status_and_text(StatusCode::OK, "Yay!"))
+                                let stream = FileBytesStream::new(file);
+                                Ok(Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("Content-Type", "text/csv")
+                                    .header("Content-Disposition", "attachment")
+                                    .body(Body::wrap_stream(stream))
+                                    .unwrap())
                             }
                             Err(e) => {
                                 warn!("Error writing user events: {}", e);

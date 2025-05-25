@@ -1,5 +1,8 @@
-use std::{fs::File, io};
+use std::io;
+use std::time;
 
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::Receiver;
 use serde::Serialize;
 
@@ -22,10 +25,26 @@ pub async fn write_user_events(
     mut events_rx: Receiver<Vec<Event>>,
     mut cancel_rx: tokio::sync::broadcast::Receiver<()>
 ) -> Result<File, io::Error> {
-    let file = File::create(format!("{}.csv", &pubkey))?;
+    let mut file = File::create(
+        format!("{}_{}.csv",
+        &pubkey,
+        time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap_or_default().as_secs())).await?;
+    file.write_all(b"id,pubkey,delegated_by,created_at,kind,content\n").await?;
     while let Some(events) = events_rx.recv().await {
         if cancel_rx.try_recv().is_ok() {
             break;
+        }
+        for event in events {
+            let line = format!(
+                r#"{},{},{},{},{},"{}"\n"#,
+                &event.id,
+                &event.pubkey,
+                &event.delegated_by.unwrap_or_default(),
+                &event.created_at,
+                &event.kind,
+                &event.content
+            );
+            file.write_all(line.as_bytes()).await?;
         }
     }
     Ok(file)
