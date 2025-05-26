@@ -992,7 +992,7 @@ GROUP BY kind
 
             if let Ok(conn) = self.read_pool.get() {
                 let query = r"
-                    SELECT id, created_at, author, delegated_by, kind, content
+                    SELECT cast(id as text), created_at, author, delegated_by, kind, content
                     FROM event
                     WHERE author = ? AND hidden = 0
                     LIMIT 1000
@@ -1007,14 +1007,14 @@ GROUP BY kind
                     let events: Vec<Event> = stmt.query_map(params![hex::decode(&pubkey_str).ok(), offset], |row| {
                         let id = row.get(0)?;
                         let created_at = row.get(1)?;
-                        let pubkey = row.get(2)?;
+                        let pubkey: Vec<u8> = row.get(2)?;
                         let delegated_by = row.get(3)?;
                         let kind = row.get(4)?;
                         let content = row.get(5)?;
 
                         Ok(Event {
                             id,
-                            pubkey,
+                            pubkey: hex::encode(pubkey),
                             content,
                             created_at,
                             delegated_by,
@@ -1024,7 +1024,12 @@ GROUP BY kind
                             tags: vec![],
                         })
                     })?
-                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        if let Err(ex) = &e {
+                            warn!("Error downloading events: {}", ex);
+                        }
+                        e.ok()
+                    })
                     .collect();
                     
                     let event_count = events.len();
