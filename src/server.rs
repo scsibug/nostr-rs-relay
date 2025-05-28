@@ -567,7 +567,7 @@ async fn handle_web_request(
                             Ok((file_name, buff)) => {
                                 Ok(Response::builder()
                                     .status(StatusCode::OK)
-                                    .header("Content-Type", "application/octet-stream")
+                                    .header("Content-Type", "text/csv")
                                     .header("Content-Disposition", format!("attachment; filename=\"{}\"", file_name))
                                     .body(Body::from(buff))
                                     .unwrap())
