@@ -373,17 +373,21 @@ async fn handle_web_request(
             ctx.insert("qr_code", &qr_code);
             ctx.insert("bolt11", &invoice_info.bolt11);
             ctx.insert("pubkey", &pubkey);
-            
+
             Ok(template(&tera, "invoice.html", &ctx))
         }
         ("/authorize", false) => {
+            if request.method() != Method::POST {
+                return Ok(status_and_text(StatusCode::METHOD_NOT_ALLOWED, "Invalid HTTP method"));
+            }
+
             if !settings.pay_to_relay.enabled {
                 return Ok(status_and_text(StatusCode::UNAUTHORIZED, "This relay is not paid"));
             }
-            
+
             let form_data = to_map(request.into_body()).await;
             let form_vals = (form_data.get("pubkey"), form_data.get("signature"));
-            
+
             if let (Some(pub_key), Some(signature)) = form_vals {
                 if let Ok(key) = Keys::from_pk_str(&pub_key) {
                     if authenticate(&key, signature) {
@@ -395,7 +399,7 @@ async fn handle_web_request(
                                 ctx.insert("pubkey", &pub_key);
                                 ctx.insert("stats", &stats);
                                 ctx.insert("status", "authorized");
-                                
+
                                 let resp = Response::builder()
                                     .status(StatusCode::OK)
                                     .header(SET_COOKIE, format!("token={}; HttpOnly; Secure; SameSite=Lax", token))
@@ -462,7 +466,7 @@ async fn handle_web_request(
             let mut ctx = Context::new();
             ctx.insert("pubkey", &pubkey);
             ctx.insert("status", &status);
-            
+
             Ok(template(&tera, "account.html", &ctx))
         }
         ("/summary", false) => {
@@ -518,10 +522,7 @@ async fn handle_web_request(
         }
         ("/download", false) => {
             if request.method() != Method::POST {
-                return Ok(Response::builder()
-                    .status(StatusCode::METHOD_NOT_ALLOWED)
-                    .body(Body::from("Invalid HTTP method"))
-                    .unwrap());
+                return Ok(status_and_text(StatusCode::METHOD_NOT_ALLOWED, "Invalid HTTP method"));
             }
 
             if !settings.pay_to_relay.enabled {
@@ -530,7 +531,7 @@ async fn handle_web_request(
 
             let cookie_header = request.headers().get("Cookie").cloned();
             let form_data = to_map(request.into_body()).await;
-            
+
             let pubkey = form_data.get("pubkey");
             // Redirect back to join page if no pub key is found in the body
             if pubkey.is_none() {
@@ -557,7 +558,7 @@ async fn handle_web_request(
                 if let Some(token) = get_token_value(&cookie) {
                     if validate_auth_token(token, &settings) {
                         let (results_tx, results_rx) = mpsc::channel::<Vec<Event>>(10);
-                        
+
                         if let Err(e) = repo.get_all_user_events(&key, results_tx, shutdown.resubscribe()).await {
                             warn!("Error getting user events: {}", e);
                             return Ok(status_and_text(StatusCode::INTERNAL_SERVER_ERROR, "Unable to get user events"));
