@@ -1,0 +1,43 @@
+<!doctype HTML>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="shortcut icon" type="image/png" href="/favicon.ico" />
+  {% block head %}
+  {% endblock head %}
+
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      background-color: #6320a7;
+      color: white;
+    }
+
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 400px;
+    }
+
+    a {
+      color: pink;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        max-width: 500px;
+        box-sizing: border-box;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  {% block content %}
+  {% endblock content %}
+</body>

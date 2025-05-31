@@ -16,9 +16,8 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Administrative contact URI
 #contact = "mailto:contact@example.com"
 
-# Favicon location.  Relative to the current directory.  Assumes an
-# ICO format.
-#favicon = "favicon.ico"
+# Template location.  Relative to the current directory.
+# template_path = "templates/"
 
 # URL of Relay's icon.
 #relay_icon = "https://example.test/img.png"

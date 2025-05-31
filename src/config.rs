@@ -12,9 +12,9 @@ pub struct Info {
     pub description: Option<String>,
     pub pubkey: Option<String>,
     pub contact: Option<String>,
-    pub favicon: Option<String>,
     pub relay_icon: Option<String>,
     pub relay_page: Option<String>,
+    pub template_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,9 +284,9 @@ impl Default for Settings {
                 description: None,
                 pubkey: None,
                 contact: None,
-                favicon: None,
                 relay_icon: None,
                 relay_page: None,
+                template_path: None,
             },
             diagnostics: Diagnostics { tracing: false },
             database: Database {

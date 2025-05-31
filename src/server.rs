@@ -62,6 +62,8 @@ use tungstenite::error::Error as WsError;
 use tungstenite::handshake;
 use tungstenite::protocol::Message;
 use tungstenite::protocol::WebSocketConfig;
+use tera::{Context, Tera};
+use hyper_staticfile::Static;
 
 /// Handle arbitrary HTTP requests, including for `WebSocket` upgrades.
 #[allow(clippy::too_many_arguments)]
@@ -74,9 +76,10 @@ async fn handle_web_request(
     event_tx: tokio::sync::mpsc::Sender<SubmittedEvent>,
     payment_tx: tokio::sync::broadcast::Sender<PaymentMessage>,
     shutdown: Receiver<()>,
-    favicon: Option<Vec<u8>>,
     registry: Registry,
     metrics: NostrMetrics,
+    tera: Arc<Tera>,
+    static_: Static,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -227,23 +230,6 @@ async fn handle_web_request(
                 .body(Body::from(buffer))
                 .unwrap())
         }
-        ("/favicon.ico", false) => {
-            if let Some(favicon_bytes) = favicon {
-                info!("returning favicon");
-                Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "image/x-icon")
-                    // 1 month cache
-                    .header("Cache-Control", "public, max-age=2419200")
-                    .body(Body::from(favicon_bytes))
-                    .unwrap())
-            } else {
-                Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::from(""))
-                    .unwrap())
-            }
-        }
         // LN bits callback endpoint for paid invoices
         ("/lnbits", false) => {
             let callback: payment::lnbits::LNBitsCallback =
@@ -264,11 +250,15 @@ async fn handle_web_request(
                 .unwrap())
         }
         // Endpoint for relays terms
-        ("/terms", false) => Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text/plain")
-            .body(Body::from(settings.pay_to_relay.terms_message))
-            .unwrap()),
+        ("/terms", false) => {
+            let mut ctx = Context::new();
+            ctx.insert("terms_message", &settings.pay_to_relay.terms_message);
+            let html = tera.render("terms.html", &ctx).unwrap();
+            Ok(Response::builder()
+                .status(200)
+                .body(Body::from(html))
+                .unwrap())
+        }
         // Endpoint to allow users to sign up
         ("/join", false) => {
             // Stops sign ups if disabled
@@ -280,75 +270,7 @@ async fn handle_web_request(
                     .unwrap());
             }
 
-            let html = r#"
-<!doctype HTML>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      font-family: Arial, sans-serif;
-      background-color: #6320a7;
-      color: white;
-    }
-
-    .container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 400px;
-    }
-
-    a {
-      color: pink;
-    }
-
-    input[type="text"] {
-        width: 100%;
-        max-width: 500px;
-        box-sizing: border-box;
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-  </style>
-</head>
-<body>
-  <div style="width:75%;">
-    <h1>Enter your pubkey</h1>
-    <form action="/invoice" onsubmit="return checkForm(this);">
-      <input type="text" name="pubkey" id="pubkey-input"><br><br>
-      <input type="checkbox" id="terms" required>
-      <label for="terms">I agree to the <a href="/terms">terms and conditions</a></label><br><br>
-      <button type="submit">Submit</button>
-    </form>
-    <button id="get-public-key-btn">Get Public Key</button>
-  </div>
-  <script>
-    function checkForm(form) {
-      if (!form.terms.checked) {
-        alert("Please agree to the terms and conditions");
-        return false;
-      }
-      return true;
-    }
-
-    const pubkeyInput = document.getElementById('pubkey-input');
-      const getPublicKeyBtn = document.getElementById('get-public-key-btn');
-      getPublicKeyBtn.addEventListener('click', async function() {
-        try {
-          const publicKey = await window.nostr.getPublicKey();
-          pubkeyInput.value = publicKey;
-        } catch (error) {
-          console.error(error);
-        }
-      });
-  </script>
-</body>
-</html>
-            "#;
+            let html = tera.render("join.html", &Context::default()).unwrap();
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::from(html))
@@ -371,7 +293,7 @@ async fn handle_web_request(
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
                 return Ok(Response::builder()
-                    .status(404)
+                    .status(302)
                     .header("location", "/join")
                     .body(Body::empty())
                     .unwrap());
@@ -458,96 +380,16 @@ async fn handle_web_request(
                 qr_code = "Could not render image".to_string();
             }
 
-            let html_result = format!(
-                r#"
-<!DOCTYPE html>
-<html>
-  <head>
-  <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color:  #6320a7 ;
-        color: white;
-      }}
-      #copy-button {{
-        background-color: #bb5f0d ;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        border: none;
-        cursor: pointer;
-      }}
-      #copy-button:hover {{
-        background-color: #8f29f4;
-      }}
-    .container {{
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 400px;
-    }}
-    a {{
-        color: pink;
-    }}
-    </style>
-  </head>
-  <body>
-    <div style="width:75%;">
-      <h3>
-        To use this relay, an admission fee of {} sats is required. By paying the fee, you agree to the <a href='terms'>terms</a>.
-      </h3>
-    </div>
-    <div>
-        <div style="max-height: 300px;">
-            {}
-        </div>
-    </div>
-    <div>
-    <div style="width: 75%;">
-        <p style="overflow-wrap: break-word; width: 500px;">{}</p>
-        <button id="copy-button">Copy</button>
-    </div>
-    <div>
-        <p> This page will not refresh </p>
-        <p> Verify admission <a href=/account?pubkey={}>here</a> once you have paid</p>
-    </div>
-    </div>
-  </body>
-</html>
-
-
-<script>
-  const copyButton = document.getElementById("copy-button");
-  if (navigator.clipboard) {{
-    copyButton.addEventListener("click", function() {{
-      const textToCopy = "{}";
-      navigator.clipboard.writeText(textToCopy).then(function() {{
-        console.log("Text copied to clipboard");
-      }}, function(err) {{
-        console.error("Could not copy text: ", err);
-      }});
-    }});
-  }} else {{
-    copyButton.style.display = "none";
-    console.warn("Clipboard API is not supported in this browser");
-  }}
-</script>
-"#,
-                settings.pay_to_relay.admission_cost,
-                qr_code,
-                invoice_info.bolt11,
-                pubkey,
-                invoice_info.bolt11
-            );
+            let mut ctx = Context::new();
+            ctx.insert("admission_cost", &settings.pay_to_relay.admission_cost);
+            ctx.insert("qr_code", &qr_code);
+            ctx.insert("bolt11", &invoice_info.bolt11);
+            ctx.insert("pubkey", &pubkey);
+            let html = tera.render("invoice.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Body::from(html_result))
+                .body(Body::from(html))
                 .unwrap())
         }
         ("/account", false) => {
@@ -566,7 +408,7 @@ async fn handle_web_request(
             // Redirect back to join page if no pub key is found in query string
             if pubkey.is_none() {
                 return Ok(Response::builder()
-                    .status(404)
+                    .status(302)
                     .header("location", "/join")
                     .body(Body::empty())
                     .unwrap());
@@ -589,61 +431,29 @@ async fn handle_web_request(
                 warn!("Could not check account: {}", e);
             }
             // Checks if user is already admitted
-            let text =
+            let status =
                 if let Ok((admission_status, _)) = repo.get_account_balance(&key.unwrap()).await {
                     if admission_status {
-                        r#"<span style="color: green;">is</span>"#
+                        "admitted"
                     } else {
-                        r#"<span style="color: red;">is not</span>"#
+                        "denied"
                     }
                 } else {
-                    "Could not get admission status"
+                    "unknown"
                 };
 
-            let html_result = format!(
-                r#"
-            <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      body {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        font-family: Arial, sans-serif;
-        background-color: #6320a7;
-        color: white;
-        height: 100vh;
-      }}
-    </style>
-  </head>
-  <body>
-    <div>
-      <h5>{} {} admitted</h5>
-    </div>
-  </body>
-</html>
-
-
-            "#,
-                pubkey, text
-            );
+            let mut ctx = Context::new();
+            ctx.insert("pubkey", &pubkey);
+            ctx.insert("status", &status);
+            let html = tera.render("account.html", &ctx).unwrap();
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Body::from(html_result))
+                .body(Body::from(html))
                 .unwrap())
         }
         // later balance
-        (_, _) => {
-            // handle any other url
-            Ok(Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("Nothing here."))
-                .unwrap())
-        }
+        (_, _) => Ok(static_.serve(request).await.unwrap())
     }
 }
 
@@ -955,12 +765,20 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
         // spawn a task to check the pool size.
         //let pool_monitor = pool.clone();
         //tokio::spawn(async move {db::monitor_pool("reader", pool_monitor).await;});
-
-        // Read in the favicon if it exists
-        let favicon = settings.info.favicon.as_ref().and_then(|x| {
-            info!("reading favicon...");
-            file_bytes(x).ok()
-        });
+        let mut template_path = settings.info.template_path.clone().unwrap_or("templates/".into());
+        if !template_path.ends_with('/') {
+            template_path += "/";
+        }
+        let mut _tera = match Tera::new(&(template_path + "**/*.html")) {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        _tera.autoescape_on(vec![".html"]);
+        let tera = Arc::new(_tera);
+        let static_ = Static::new(Path::new("./public"));
 
         // A `Service` is needed for every connection, so this
         // creates one from our `handle_request` function.
@@ -972,9 +790,10 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let payment_tx = payment_tx.clone();
             let stop = invoke_shutdown.clone();
             let settings = settings.clone();
-            let favicon = favicon.clone();
             let registry = registry.clone();
             let metrics = metrics.clone();
+            let tera = tera.clone();
+            let static_ = static_.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -987,9 +806,10 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         event.clone(),
                         payment_tx.clone(),
                         stop.subscribe(),
-                        favicon.clone(),
                         registry.clone(),
                         metrics.clone(),
+                        tera.clone(),
+                        static_.clone(),
                     )
                 }))
             }

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    background-color: #6320a7;
+    color: white;
+  }
+
+  #copy-button {
+    background-color: #bb5f0d;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+  }
+
+  #copy-button:hover {
+    background-color: #8f29f4;
+  }
+
+  .container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 400px;
+  }
+
+  a {
+    color: pink;
+  }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div style="width:75%;">
+  <h3>
+    To use this relay, an admission fee of {{ admission_cost }} sats is required. By paying the fee, you agree to the <a
+      href='terms'>terms</a>.
+  </h3>
+</div>
+<div>
+  <div style="max-height: 300px;">
+    {{ qr_code | safe }}
+  </div>
+</div>
+<div>
+  <div style="width: 75%;">
+    <p style="overflow-wrap: break-word; width: 500px;">{{ bolt11 }}</p>
+    <button id="copy-button">Copy</button>
+  </div>
+  <div>
+    <p> This page will not refresh </p>
+    <p> Verify admission <a href="/account?pubkey={{ pubkey }}">here</a> once you have paid</p>
+  </div>
+</div>
+<script>
+  const copyButton = document.getElementById("copy-button");
+  if (navigator.clipboard) {
+    copyButton.addEventListener("click", function () {
+      const textToCopy = "{{ bolt11 }}";
+      navigator.clipboard.writeText(textToCopy).then(function () {
+        console.log("Text copied to clipboard");
+      }, function (err) {
+        console.error("Could not copy text: ", err);
+      });
+    });
+  } else {
+    copyButton.style.display = "none";
+    console.warn("Clipboard API is not supported in this browser");
+  }
+</script>
+{% endblock content %}
