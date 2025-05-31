@@ -273,7 +273,7 @@ impl NostrRepo for SqliteRepo {
         let mut conn = self.write_pool.get()?;
         task::spawn_blocking(move || upgrade_db(&mut conn)).await?
     }
-    
+
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
         let start = Instant::now();
@@ -984,7 +984,7 @@ GROUP BY kind
             // check before getting a DB connection if the client still wants the results
             if cancel_rx.try_recv().is_ok() {
                 debug!(
-                    "query cancelled by client (before execution) (pubkey: {})",
+                    "get user events cancelled by client (before execution) (pubkey: {})",
                     pubkey_str
                 );
                 return Ok(());
@@ -1031,10 +1031,10 @@ GROUP BY kind
                         e.ok()
                     })
                     .collect();
-                    
+
                     let event_count = events.len();
                     query_tx.blocking_send(events).ok();
-                    
+
                     total_count += event_count;
                     offset += LIMIT;
                     if event_count < LIMIT {
@@ -1045,12 +1045,6 @@ GROUP BY kind
                 warn!("Could not get a database connection for querying");
             }
             drop(sem); // new query can begin
-            // query_tx
-            //     .blocking_send(QueryResult {
-            //         sub_id: sub.get_id(),
-            //         event: "EOSE".to_string(),
-            //     })
-            //     .ok();
             let ok: Result<()> = Ok(());
             ok
         });
