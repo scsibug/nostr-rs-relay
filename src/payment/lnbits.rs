@@ -111,7 +111,7 @@ impl PaymentProcessor for LNBitsPaymentProcessor {
             webhook: callback_url.to_string(),
             unit: "sat".to_string(),
             internal: false,
-            expiry: 3600,
+            expiry: 3600*24, // 24 hours
         };
         let url = Url::parse(&self.settings.pay_to_relay.node_url)?.join(APIPATH)?;
         let uri = Uri::from_str(url.as_str().strip_suffix('/').unwrap_or(url.as_str())).unwrap();
