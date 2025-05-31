@@ -1823,6 +1823,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jwt"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6204285f77fe7d9784db3fdc449ecce1a0114927a51d5a41c4c7a292011c015f"
+dependencies = [
+ "base64 0.13.1",
+ "crypto-common",
+ "digest",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "kv-log-macro"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2057,11 +2072,13 @@ dependencies = [
  "futures-util",
  "governor",
  "hex",
+ "hmac",
  "http",
  "hyper",
  "hyper-rustls",
  "hyper-staticfile",
  "indicatif",
+ "jwt",
  "lazy_static",
  "log",
  "nonzero_ext",
@@ -2078,6 +2095,7 @@ dependencies = [
  "secp256k1 0.21.3",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tera",
  "thiserror 1.0.69",

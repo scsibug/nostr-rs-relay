@@ -48,7 +48,7 @@ regex = "1"
 async-trait = "0.1.60"
 async-std = "1.12.0"
 sqlx = { version ="0.6.2", features=["runtime-tokio-rustls", "postgres", "chrono"]}
-chrono = "0.4.23"
+chrono = { version = "0.4.23", features = ["now"] }
 prometheus = "0.13.3"
 indicatif = "0.17.3"
 bech32 = "0.9.1"
@@ -57,8 +57,11 @@ qrcode = { version = "0.12.0", default-features = false, features = ["svg"] }
 nostr = { version = "0.18.0", default-features = false, features = ["base", "nip04", "nip19"] }
 log = "0.4"
 cln-rpc = "0.1.9"
-tera = "1.20.0"
+tera = { version = "1.20.0", features = ["builtins"] }
 hyper-staticfile = "0.9.6"
+jwt = "0.16.0"
+hmac = "0.12.1"
+sha2 = "0.10.8"
 
 [target.'cfg(all(not(target_env = "msvc"), not(target_os = "openbsd")))'.dependencies]
 tikv-jemallocator = "0.5"

@@ -1,3 +1,4 @@
+use crate::account::AccountStatistics;
 use crate::db::QueryResult;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
@@ -711,6 +712,19 @@ LIMIT 1;
             })),
             None => Ok(None),
         }
+    }
+
+    async fn get_account_statistics(&self, _pubkey: &Keys) -> Result<AccountStatistics> {
+        todo!("get_account_statistics() is not implemented for Postgres");
+    }
+
+    async fn get_all_user_events(
+        &self,
+        _pubkey: &Keys,
+        _query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
+        mut _cancel_rx: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<()> {
+        todo!("get_all_user_events() is not implemented for Postgres");
     }
 }
 

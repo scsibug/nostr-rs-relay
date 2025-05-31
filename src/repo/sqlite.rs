@@ -1,4 +1,5 @@
 //! Event persistence and querying
+use crate::account::{AccountStatistics, KindStatistics};
 //use crate::config::SETTINGS;
 use crate::config::Settings;
 use crate::db::QueryResult;
@@ -272,6 +273,7 @@ impl NostrRepo for SqliteRepo {
         let mut conn = self.write_pool.get()?;
         task::spawn_blocking(move || upgrade_db(&mut conn)).await?
     }
+
     /// Persist event to database
     async fn write_event(&self, e: &Event) -> Result<u64> {
         let start = Instant::now();
@@ -924,6 +926,129 @@ LIMIT 1;
             memo: description,
             confirmed_at: None,
         }))
+    }
+
+    async fn get_account_statistics(&self, pubkey: &Keys) -> Result<AccountStatistics> {
+        let mut conn = self.read_pool.get()?;
+        let pubkey_str = pubkey.public_key().to_string();
+        tokio::task::spawn_blocking(move || {
+            let tx = conn.transaction()?;
+            let query = r"
+SELECT kind, COUNT(*), MAX(created_at)
+FROM event
+where author = ?
+GROUP BY kind
+;";
+            let mut stmt = tx.prepare_cached(query)?;
+            let kinds = stmt.query_map(params![hex::decode(&pubkey_str).ok()], |r| {
+                let kind: u64 = r.get(0)?;
+                let count: usize = r.get(1)?;
+                let last_created_at: u64 = r.get(2)?;
+                Ok(KindStatistics {
+                    kind,
+                    count,
+                    last_created_at,
+                })
+            })?.map(|k| k.unwrap())
+            .collect();
+            Ok(AccountStatistics {
+                kinds,
+            })
+        }).await?
+    }
+
+    async fn get_all_user_events(
+        &self,
+        pubkey: &Keys,
+        query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
+        mut cancel_rx: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<()> {
+        // if we let every request spawn a thread, we'll exhaust the
+        // thread pool waiting for queries to finish under high load.
+        // Instead, don't bother spawning threads when they will just
+        // block on a database connection.
+        let sem = self
+            .reader_threads_ready
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let self = self.clone();
+        let pubkey_str = pubkey.public_key().to_string();
+        task::spawn_blocking(move || {
+            {
+                // if we are waiting on a checkpoint, stop until it is complete
+                let _x = self.checkpoint_in_progress.blocking_lock();
+            }
+            // check before getting a DB connection if the client still wants the results
+            if cancel_rx.try_recv().is_ok() {
+                debug!(
+                    "get user events cancelled by client (before execution) (pubkey: {})",
+                    pubkey_str
+                );
+                return Ok(());
+            }
+
+            if let Ok(conn) = self.read_pool.get() {
+                let query = r"
+                    SELECT cast(id as text), created_at, author, delegated_by, kind, content
+                    FROM event
+                    WHERE author = ? AND hidden = 0
+                    LIMIT 1000
+                    OFFSET ?
+                    ;";
+                let mut total_count: usize = 0;
+                let mut offset: usize = 0;
+                const MAX_EVENTS: usize = 1_000_000;
+                const LIMIT: usize = 1000;
+                while total_count < MAX_EVENTS {
+                    let mut stmt = conn.prepare_cached(query)?;
+                    let events: Vec<Event> = stmt.query_map(params![hex::decode(&pubkey_str).ok(), offset], |row| {
+                        let id = row.get(0)?;
+                        let created_at = row.get(1)?;
+                        let pubkey: Vec<u8> = row.get(2)?;
+                        let delegated_by = row.get(3)?;
+                        let kind = row.get(4)?;
+                        let content = row.get(5)?;
+
+                        Ok(Event {
+                            id,
+                            pubkey: hex::encode(pubkey),
+                            content,
+                            created_at,
+                            delegated_by,
+                            kind,
+                            sig: String::new(),
+                            tagidx: None,
+                            tags: vec![],
+                        })
+                    })?
+                    .filter_map(|e| {
+                        if let Err(ex) = &e {
+                            warn!("Error downloading events: {}", ex);
+                        }
+                        e.ok()
+                    })
+                    .collect();
+
+                    let event_count = events.len();
+                    query_tx.blocking_send(events).ok();
+
+                    total_count += event_count;
+                    offset += LIMIT;
+                    if event_count < LIMIT {
+                        break;
+                    }
+                }
+            } else {
+                warn!("Could not get a database connection for querying");
+            }
+            drop(sem); // new query can begin
+            let ok: Result<()> = Ok(());
+            ok
+        });
+        Ok(())
     }
 }
 

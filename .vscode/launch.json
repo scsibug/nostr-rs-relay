@@ -1,0 +1,159 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'nostr-rs-relay'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "nostr-rs-relay",
+                    "kind": "lib"
+                }
+            },
+            "env": { "RUST_LOG": "warn,nostr_rs_relay=info" },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'nostr-rs-relay'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=nostr-rs-relay",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "nostr-rs-relay",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--config", "config.local.toml"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'nostr-rs-relay'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=nostr-rs-relay",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "nostr-rs-relay",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'bulkloader'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=bulkloader",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "bulkloader",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'bulkloader'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=bulkloader",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "bulkloader",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_test",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "integration_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'cli'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=cli",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "cli",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'conn'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=conn",
+                    "--package=nostr-rs-relay"
+                ],
+                "filter": {
+                    "name": "conn",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

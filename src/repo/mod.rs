@@ -5,6 +5,7 @@ use crate::nip05::VerificationRecord;
 use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::subscription::Subscription;
 use crate::utils::unix_time;
+use crate::account::AccountStatistics;
 use async_trait::async_trait;
 use nostr::Keys;
 use rand::Rng;
@@ -86,6 +87,15 @@ pub trait NostrRepo: Send + Sync {
     /// Get the most recent invoice for a given pubkey
     /// invoice must be unpaid and not expired
     async fn get_unpaid_invoice(&self, pubkey: &Keys) -> Result<Option<InvoiceInfo>>;
+
+    async fn get_account_statistics(&self, pubkey: &Keys) -> Result<AccountStatistics>;
+
+    async fn get_all_user_events(
+        &self,
+        pubkey: &Keys,
+        query_tx: tokio::sync::mpsc::Sender<Vec<Event>>,
+        mut cancel_rs: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<()>;
 }
 
 // Current time, with a slight forward jitter in seconds
