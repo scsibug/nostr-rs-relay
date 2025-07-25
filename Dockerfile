@@ -49,4 +49,4 @@ WORKDIR ${APP}
 ENV RUST_LOG=info,nostr_rs_relay=info
 ENV APP_DATA=${APP_DATA}
 
-CMD ./nostr-rs-relay --db ${APP_DATA}
+CMD ["/usr/src/app/nostr-rs-relay", "--db", "/usr/src/app/db"]
