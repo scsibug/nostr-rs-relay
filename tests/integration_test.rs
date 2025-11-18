@@ -50,6 +50,7 @@ async fn relay_home_page() -> Result<()> {
 
 //#[tokio::test]
 // Still inwork
+#[allow(dead_code)]
 async fn publish_test() -> Result<()> {
     // get a relay and wait for startup
     let relay = common::start_relay()?;

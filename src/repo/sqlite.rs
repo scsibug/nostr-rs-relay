@@ -8,10 +8,11 @@ use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::payment::{InvoiceInfo, InvoiceStatus};
 use crate::repo::sqlite_migration::{upgrade_db, STARTUP_SQL};
 use crate::server::NostrMetrics;
-use crate::subscription::{ReqFilter, Subscription};
+use crate::subscription::{ReqFilter, Subscription, TagOperand};
 use crate::utils::{is_hex, unix_time};
 use async_trait::async_trait;
 use hex;
+use itertools::Itertools;
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
@@ -1027,14 +1028,11 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
     }
     // Query for tags
     if let Some(map) = &f.tags {
-        for (key, val) in map.iter() {
-            let mut str_vals: Vec<Box<dyn ToSql>> = vec![];
-            for v in val {
-                str_vals.push(Box::new(v.clone()));
+        for (key, val) in map.iter().sorted_by(|(k1, _), (k2, _)| k1.cmp(k2)) {
+            if val.is_empty() {
+                continue;
             }
-            // create clauses with "?" params for each tag value being searched
-            let str_clause = format!("AND value IN ({})", repeat_vars(str_vals.len()));
-            // find evidence of the target tag name/value existing for this event.
+
             // Query for Kind/Since/Until additionally, to reduce the number of tags that come back.
             let kind_clause;
             if let Some(ks) = &f.kinds {
@@ -1057,15 +1055,75 @@ fn query_from_filter(f: &ReqFilter) -> (String, Vec<Box<dyn ToSql>>, Option<Stri
                 String::new()
             };
 
-            let tag_clause = format!(
-		"e.id IN (SELECT t.event_id FROM tag t WHERE (name=? {str_clause} {kind_clause} {since_clause} {until_clause}))"
-            );
+            match val {
+                TagOperand::Or(v_or) => {
+                    // Sort values for consistent query generation
+                    let mut sorted_values: Vec<String> = v_or.iter().cloned().collect();
+                    sorted_values.sort();
 
-            // add the tag name as the first parameter
-            params.push(Box::new(key.to_string()));
-            // add all tag values that are blobs as params
-            params.append(&mut str_vals);
-            filter_components.push(tag_clause);
+                    let mut str_vals: Vec<Box<dyn ToSql>> = vec![];
+                    for v in &sorted_values {
+                        str_vals.push(Box::new(v.clone()));
+                    }
+                    // create clauses with "?" params for each tag value being searched
+                    let str_clause = format!("AND value IN ({})", repeat_vars(str_vals.len()));
+
+                    // Build WHERE clause components
+                    let mut tag_where_parts = vec![format!("name=? {str_clause}")];
+                    if !kind_clause.is_empty() {
+                        tag_where_parts.push(kind_clause.clone());
+                    }
+                    if !since_clause.is_empty() {
+                        tag_where_parts.push(since_clause.clone());
+                    }
+                    if !until_clause.is_empty() {
+                        tag_where_parts.push(until_clause.clone());
+                    }
+
+                    // find evidence of the target tag name/value existing for this event.
+                    let tag_clause = format!(
+                        "e.id IN (SELECT t.event_id FROM tag t WHERE ({}))",
+                        tag_where_parts.join(" ")
+                    );
+
+                    // add the tag name as the first parameter
+                    params.push(Box::new(key.to_string()));
+                    // add all tag values that are blobs as params
+                    params.append(&mut str_vals);
+                    filter_components.push(tag_clause);
+                }
+                TagOperand::And(v_and) => {
+                    // Sort values for consistent query generation
+                    let mut sorted_values: Vec<String> = v_and.iter().cloned().collect();
+                    sorted_values.sort();
+
+                    for v in &sorted_values {
+                        // Build WHERE clause components
+                        let mut tag_where_parts = vec!["name=? AND value=?".to_string()];
+                        if !kind_clause.is_empty() {
+                            tag_where_parts.push(kind_clause.clone());
+                        }
+                        if !since_clause.is_empty() {
+                            tag_where_parts.push(since_clause.clone());
+                        }
+                        if !until_clause.is_empty() {
+                            tag_where_parts.push(until_clause.clone());
+                        }
+
+                        // For AND operations, each value must exist, so we create a separate subquery for each
+                        let tag_clause = format!(
+                            "e.id IN (SELECT t.event_id FROM tag t WHERE ({}))",
+                            tag_where_parts.join(" ")
+                        );
+
+                        // add the tag name as the first parameter
+                        params.push(Box::new(key.to_string()));
+                        // add the tag value
+                        params.push(Box::new(v.clone()));
+                        filter_components.push(tag_clause);
+                    }
+                }
+            }
         }
     }
     // Query for timestamp
@@ -1318,8 +1376,9 @@ fn repeat_vars(count: usize) -> String {
     if count == 0 {
         return "".to_owned();
     }
-    let mut s = "?,".repeat(count);
-    // Remove trailing comma
+    let mut s = "?, ".repeat(count);
+    // Remove trailing comma and space
+    s.pop();
     s.pop();
     s
 }
@@ -1350,4 +1409,206 @@ fn log_pool_stats(name: &str, pool: &SqlitePool) {
 fn _pool_at_capacity(pool: &SqlitePool) -> bool {
     let state: r2d2::State = pool.state();
     state.idle_connections == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subscription::TagOperand;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn test_query_gen_tag_value_or() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
+            limit: None,
+            tags: Some(HashMap::from([(
+                'd',
+                TagOperand::Or(HashSet::from(["test".to_owned()])),
+            )])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        assert_eq!(
+            query,
+            "SELECT e.content FROM event e INDEXED BY author_kind_index WHERE hidden!=TRUE AND (author=?) AND kind IN (1000) AND e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND value IN (?) AND kind IN (1000))) AND (expires_at IS NULL OR expires_at > ?) ORDER BY e.created_at ASC"
+        );
+    }
+
+    #[test]
+    fn test_query_gen_tag_value_or_multiple() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![30_001]),
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([(
+                'd',
+                TagOperand::Or(HashSet::from(["test".to_owned(), "test2".to_owned()])),
+            )])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // Values are sorted, so test comes before test2
+        assert_eq!(
+            query,
+            "SELECT e.content FROM event e  WHERE hidden!=TRUE AND kind IN (30001) AND e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND value IN (?, ?) AND kind IN (30001))) AND (expires_at IS NULL OR expires_at > ?) ORDER BY e.created_at ASC"
+        );
+    }
+
+    #[test]
+    fn test_query_gen_tag_value_and() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
+            limit: None,
+            tags: Some(HashMap::from([(
+                'd',
+                TagOperand::And(HashSet::from(["test".to_owned(), "test2".to_owned()])),
+            )])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // For AND queries, we should have multiple subqueries
+        assert!(query.contains("SELECT e.content FROM event e"));
+        assert!(query.contains("WHERE hidden!=TRUE"));
+        assert!(query.contains("(author=?)"));
+        assert!(query.contains("kind IN (1000)"));
+        // Should contain two separate subqueries for AND operation
+        let subquery_count = query
+            .matches("e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND value=?")
+            .count();
+        assert_eq!(
+            subquery_count, 2,
+            "Should have 2 subqueries for AND operation"
+        );
+        assert!(query.contains("ORDER BY e.created_at ASC"));
+    }
+
+    #[test]
+    fn test_query_gen_tag_value_and_hex() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: Some(vec![
+                "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+            ]),
+            limit: None,
+            tags: Some(HashMap::from([(
+                'p',
+                TagOperand::And(HashSet::from([
+                    "63fe6318dc58583cfe16810f86dd09e18bfd76aabc24a0081ce2856f330504ed".to_owned(),
+                    "84de35e2584d2b144aae823c9ed0b0f3deda09648530b93d1a2a146d1dea9864".to_owned(),
+                ])),
+            )])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // For AND queries with hex values
+        assert!(query.contains("SELECT e.content FROM event e"));
+        assert!(query.contains("WHERE hidden!=TRUE"));
+        assert!(query.contains("(author=?)"));
+        assert!(query.contains("kind IN (1000)"));
+        // Should contain two separate subqueries for AND operation
+        let subquery_count = query
+            .matches("e.id IN (SELECT t.event_id FROM tag t WHERE (name=? AND value=?")
+            .count();
+        assert_eq!(
+            subquery_count, 2,
+            "Should have 2 subqueries for AND operation with hex values"
+        );
+    }
+
+    #[test]
+    fn test_query_empty_tags() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1, 6, 16, 30023, 1063, 6969]),
+            since: Some(1700697846),
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([('a', TagOperand::And(HashSet::new()))])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // Empty tags should still generate a valid query, just without tag filters
+        assert!(query.contains("SELECT e.content FROM event e"));
+        assert!(query.contains("WHERE hidden!=TRUE"));
+        assert!(query.contains("kind IN (1, 6, 16, 30023, 1063, 6969)"));
+        // Should not contain tag subqueries since the tag set is empty
+        assert!(!query.contains("e.id IN (SELECT t.event_id FROM tag t"));
+    }
+
+    #[test]
+    fn test_query_tag_with_since_until() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: Some(1234567890),
+            until: Some(9876543210),
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([(
+                'd',
+                TagOperand::Or(HashSet::from(["test".to_owned()])),
+            )])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // Should include since and until in both the main query and the tag subquery
+        assert!(query.contains("created_at >= 1234567890"));
+        assert!(query.contains("created_at <= 9876543210"));
+        // Tag subquery should also include the time constraints
+        assert!(query.contains("AND created_at >= 1234567890"));
+        assert!(query.contains("AND created_at <= 9876543210"));
+    }
+
+    #[test]
+    fn test_query_multiple_tag_keys_or() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1000]),
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([
+                ('d', TagOperand::Or(HashSet::from(["test".to_owned()]))),
+                ('e', TagOperand::Or(HashSet::from(["event1".to_owned()]))),
+            ])),
+            force_no_match: false,
+        };
+
+        let (query, _params, _idx) = query_from_filter(&filter);
+        // Should have two separate tag subqueries, one for each key
+        let subquery_count = query
+            .matches("e.id IN (SELECT t.event_id FROM tag t WHERE (name=?")
+            .count();
+        assert_eq!(
+            subquery_count, 2,
+            "Should have 2 subqueries for 2 different tag keys"
+        );
+    }
 }

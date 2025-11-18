@@ -1,5 +1,4 @@
 //! Subscription and filter parsing
-use std::collections::hash_set::Iter;
 use crate::error::Result;
 use crate::event::Event;
 use serde::de::Unexpected;
@@ -8,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Deref;
 
 /// Subscription identifier and set of request filters
 #[derive(Serialize, PartialEq, Eq, Debug, Clone)]
@@ -23,14 +23,13 @@ pub enum TagOperand {
     Or(HashSet<String>),
 }
 
-impl<'a> IntoIterator for &'a TagOperand {
-    type Item = &'a String;
-    type IntoIter = Iter<'a, String>;
+impl Deref for TagOperand {
+    type Target = HashSet<String>;
 
-    fn into_iter(self) -> Self::IntoIter {
+    fn deref(&self) -> &Self::Target {
         match self {
-            TagOperand::Or(vv) => vv.iter(),
-            TagOperand::And(vv) => vv.iter()
+            TagOperand::Or(v) => v,
+            TagOperand::And(v) => v,
         }
     }
 }
@@ -65,8 +64,8 @@ pub struct ReqFilter {
 
 impl Serialize for ReqFilter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
         if let Some(ids) = &self.ids {
@@ -90,8 +89,7 @@ impl Serialize for ReqFilter {
         // serialize tags
         if let Some(tags) = &self.tags {
             for (k, v) in tags {
-                let vals: Vec<&String> = v.into_iter().collect();
-                map.serialize_entry(&format!("#{k}"), &vals)?;
+                map.serialize_entry(&format!("#{k}"), v)?;
             }
         }
         map.end()
@@ -100,8 +98,8 @@ impl Serialize for ReqFilter {
 
 impl<'de> Deserialize<'de> for ReqFilter {
     fn deserialize<D>(deserializer: D) -> Result<ReqFilter, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let received: Value = Deserialize::deserialize(deserializer)?;
         let filter = received.as_object().ok_or_else(|| {
@@ -173,7 +171,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
                                     None
                                 }
                             }
-                            _ => None
+                            _ => None,
                         };
                         if let Some(hs_some) = hs_op {
                             m.insert(key.chars().nth(1).unwrap(), hs_some);
@@ -191,8 +189,8 @@ impl<'de> Deserialize<'de> for Subscription {
     /// Custom deserializer for subscriptions, which have a more
     /// complex structure than the other message types.
     fn deserialize<D>(deserializer: D) -> Result<Subscription, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let mut v: Value = Deserialize::deserialize(deserializer)?;
         // this should be a 3-or-more element array.
