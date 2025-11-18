@@ -3,3 +3,4 @@ nostr.db
 nostr.db-*
 justfile
 result
+**/.idea/
