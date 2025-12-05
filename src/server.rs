@@ -1336,6 +1336,8 @@ async fn nostr_server(
                                                         None => "<unspecified>".to_string(),
                                                     };
                                                     info!("client is authenticated: (cid: {}, pubkey: {:?})", cid, pubkey);
+                                                    // Send OK message to confirm successful authentication (NIP-42)
+                                                    ws_stream.send(make_notice_message(&Notice::saved(event.id))).await.ok();
                                                 },
                                                 Err(e) => {
                                                     info!("authentication error: {} (cid: {})", e, cid);
