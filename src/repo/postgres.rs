@@ -410,13 +410,18 @@ ON CONFLICT (id) DO NOTHING"#,
                     }
                 }
 
+                let event_json_str = if filter.ids_only { // id: hex encoded string
+                    format!("\"{}\"", hex::encode(event_json))
+                } else { // event content: utf8 encode
+                    String::from_utf8(event_json).unwrap()
+                };
+
                 // TODO: we could use try_send, but we'd have to juggle
                 // getting the query result back as part of the error
-                // result.
                 query_tx
                     .send(QueryResult {
                         sub_id: sub.get_id(),
-                        event: String::from_utf8(event_json).unwrap(),
+                        event: event_json_str,
                     })
                     .await
                     .ok();
@@ -718,7 +723,14 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
         return None;
     }
 
-    let mut query = QueryBuilder::new("SELECT e.\"content\", e.created_at FROM \"event\" e WHERE ");
+    let mut query = QueryBuilder::new("SELECT ");
+
+    if f.ids_only {
+        query.push("e.id");
+    } else {
+        query.push("e.\"content\", e.created_at");
+    }
+    query.push(" FROM \"event\" e WHERE ");
 
     // This tracks whether we need to push a prefix AND before adding another clause
     let mut push_and = false;
@@ -924,6 +936,7 @@ mod tests {
                 ]),
             )])),
             force_no_match: false,
+            ids_only: false,
         };
 
         let q = query_from_filter(&filter).unwrap();
@@ -943,6 +956,7 @@ mod tests {
             limit: None,
             tags: Some(HashMap::from([('d', HashSet::from(["test".to_owned()]))])),
             force_no_match: false,
+            ids_only: false,
         };
 
         let q = query_from_filter(&filter).unwrap();
@@ -968,6 +982,7 @@ mod tests {
                 ]),
             )])),
             force_no_match: false,
+            ids_only: false,
         };
 
         let q = query_from_filter(&filter).unwrap();
@@ -988,6 +1003,7 @@ mod tests {
                 ('t', HashSet::from(["siamstr".to_owned()])),
             ])),
             force_no_match: false,
+            ids_only: false,
         };
         let q = query_from_filter(&filter).unwrap();
         assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $2 AND (value in ($3))) OR (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
@@ -1004,7 +1020,25 @@ mod tests {
             limit: None,
             tags: Some(HashMap::from([('a', HashSet::new())])),
             force_no_match: false,
+            ids_only: false,
         };
         assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
+    fn test_ids_only_filter() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: Some(vec![1, 6, 16, 30023, 1063, 6969]),
+            since: Some(1700697846),
+            until: None,
+            authors: None,
+            limit: None,
+            tags: None,
+            force_no_match: false,
+            ids_only: true,
+        };
+        let q = query_from_filter(&filter).unwrap();
+        assert_eq!(q.sql(), "SELECT e.id FROM \"event\" e WHERE e.kind in ($1, $2, $3, $4, $5, $6) AND e.created_at >= $7 AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
     }
 }

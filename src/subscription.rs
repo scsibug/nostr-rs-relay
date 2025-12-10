@@ -41,6 +41,8 @@ pub struct ReqFilter {
     // erroneously match.  This basically indicates the req tried to
     // do something invalid.
     pub force_no_match: bool,
+    // NIP-114: If the request was submitted via IDS message, return matching event IDs only
+    pub ids_only: bool,
 }
 
 impl Serialize for ReqFilter {
@@ -66,6 +68,9 @@ impl Serialize for ReqFilter {
         }
         if let Some(authors) = &self.authors {
             map.serialize_entry("authors", &authors)?;
+        }
+        if self.ids_only {
+            map.serialize_entry("ids_only", &self.ids_only)?;
         }
         // serialize tags
         if let Some(tags) = &self.tags {
@@ -99,6 +104,7 @@ impl<'de> Deserialize<'de> for ReqFilter {
             limit: None,
             tags: None,
             force_no_match: false,
+            ids_only: false,
         };
         let empty_string = "".into();
         let mut ts = None;
@@ -135,6 +141,8 @@ impl<'de> Deserialize<'de> for ReqFilter {
                     }
                 }
                 rf.authors = raw_authors;
+            } else if key == "ids_only" {
+                rf.ids_only = Deserialize::deserialize(val).ok().unwrap_or(false);
             } else if key.starts_with('#') && key.len() > 1 && val.is_array() {
                 if let Some(tag_search) = tag_search_char_from_filter(key) {
                     if ts.is_none() {
@@ -276,6 +284,15 @@ impl Subscription {
                 precision += 1;
             }
             if precision < 2 {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn ids_only(&self) -> bool {
+        for f in &self.filters {
+            if f.ids_only {
                 return true;
             }
         }
