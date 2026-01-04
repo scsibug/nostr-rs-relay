@@ -38,6 +38,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     run_migration(m004::migration(), db).await;
     run_migration(m005::migration(), db).await;
     run_migration(m006::migration(), db).await;
+    run_migration(m007::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -336,6 +337,26 @@ CREATE INDEX IF NOT EXISTS event_created_at_only_idx ON "event" (created_at);
 CREATE INDEX IF NOT EXISTS event_kind_created_at_idx ON "event" (kind, created_at);
 CREATE INDEX IF NOT EXISTS event_pub_key_kind_idx ON "event" (pub_key, kind);
 CREATE INDEX IF NOT EXISTS event_pub_key_created_at_idx ON "event" (pub_key, created_at);
+        "#,
+            ],
+        }
+    }
+}
+
+mod m007 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 7;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Add tag metadata columns and indexes for filter performance
+ALTER TABLE "tag" ADD COLUMN kind integer;
+ALTER TABLE "tag" ADD COLUMN created_at timestamp with time zone;
+CREATE INDEX IF NOT EXISTS tag_name_kind_created_at_idx ON tag ("name", kind, created_at, event_id);
         "#,
             ],
         }
