@@ -729,7 +729,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
         // filter out non-hex values
-        let auth_vec: Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
+        let auth_vec: Vec<&String> = auth_vec
+            .iter()
+            .filter(|a| is_hex(a) && a.len() == 64 && is_lower_hex(a))
+            .collect();
 
         if auth_vec.is_empty() {
             return None;
@@ -770,7 +773,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for event,
     if let Some(id_vec) = &f.ids {
         // filter out non-hex values
-        let id_vec: Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+        let id_vec: Vec<&String> = id_vec
+            .iter()
+            .filter(|a| is_hex(a) && a.len() == 64 && is_lower_hex(a))
+            .collect();
         if id_vec.is_empty() {
             return None;
         }
@@ -906,6 +912,36 @@ impl FromRow<'_, PgRow> for VerificationRecord {
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn test_query_rejects_non_lower_hex_ids() {
+        let filter = ReqFilter {
+            ids: Some(vec!["ABCDEF".to_owned()]),
+            kinds: None,
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: None,
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
+    fn test_query_rejects_non_lower_hex_authors() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: None,
+            since: None,
+            until: None,
+            authors: Some(vec!["ABCDEF".to_owned()]),
+            limit: None,
+            tags: None,
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
+    }
 
     #[test]
     fn test_query_gen_tag_value_hex() {
