@@ -803,15 +803,15 @@ ON CONFLICT (id) DO NOTHING"#,
         let query = r#"
 SELECT amount, payment_hash, description, invoice
 FROM invoice
-WHERE pubkey = $1
+WHERE pubkey = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT 1;
         "#;
         match sqlx::query_as::<_, (i64, String, String, String)>(query)
             .bind(pubkey.public_key().to_string())
+            .bind(InvoiceStatus::Unpaid)
             .fetch_optional(&self.conn_write)
-            .await
-            .unwrap()
+            .await?
         {
             Some((amount, payment_hash, description, invoice)) => Ok(Some(InvoiceInfo {
                 pubkey: pubkey.public_key().to_string(),

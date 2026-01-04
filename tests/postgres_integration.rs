@@ -1,5 +1,6 @@
 use anyhow::Result;
 use nostr_rs_relay::event::Event;
+use nostr_rs_relay::payment::{InvoiceInfo, InvoiceStatus};
 use nostr_rs_relay::repo::postgres::{PostgresPool, PostgresRepo};
 use nostr_rs_relay::repo::NostrRepo;
 use nostr_rs_relay::server::NostrMetrics;
@@ -257,6 +258,44 @@ async fn postgres_admit_account_sets_tos_timestamp() -> Result<()> {
             .fetch_one(&pool)
             .await?;
     assert!(has_tos);
+
+    drop(pool);
+    drop_schema(options, &schema).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_gets_latest_unpaid_invoice() -> Result<()> {
+    let Some(url) = postgres_url() else {
+        return Ok(());
+    };
+    let (pool, options, schema) = setup_pool(&url).await?;
+    let metrics = build_metrics();
+    let repo = PostgresRepo::new(pool.clone(), pool.clone(), metrics);
+    repo.migrate_up().await?;
+
+    let keys = Keys::generate();
+    assert!(repo.create_account(&keys).await?);
+
+    let invoice = InvoiceInfo {
+        pubkey: keys.public_key().to_string(),
+        payment_hash: "aa".repeat(32),
+        bolt11: "lnbc1test".to_string(),
+        amount: 42,
+        status: InvoiceStatus::Unpaid,
+        memo: "first".to_string(),
+        confirmed_at: None,
+    };
+    repo.create_invoice_record(&keys, invoice.clone()).await?;
+
+    let unpaid = repo.get_unpaid_invoice(&keys).await?;
+    assert!(unpaid.is_some());
+    assert_eq!(unpaid.unwrap().payment_hash, invoice.payment_hash);
+
+    repo.update_invoice(&invoice.payment_hash, InvoiceStatus::Paid)
+        .await?;
+    let unpaid_after = repo.get_unpaid_invoice(&keys).await?;
+    assert!(unpaid_after.is_none());
 
     drop(pool);
     drop_schema(options, &schema).await?;
