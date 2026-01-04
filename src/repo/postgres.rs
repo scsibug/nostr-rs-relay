@@ -877,10 +877,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Apply per-filter limit to this query.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
-        query.push(" ORDER BY e.created_at DESC LIMIT ");
+        query.push(" ORDER BY e.created_at DESC, e.id ASC LIMIT ");
         query.push(lim.min(1000));
     } else {
-        query.push(" ORDER BY e.created_at ASC LIMIT ");
+        query.push(" ORDER BY e.created_at ASC, e.id ASC LIMIT ");
         query.push(1000);
     }
     Some(query)
@@ -964,7 +964,7 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value_hex in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value_hex in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -983,7 +983,7 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -1008,7 +1008,7 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -1027,7 +1027,7 @@ mod tests {
             force_no_match: false,
         };
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $2 AND (value in ($3))) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $2 AND (value in ($3))) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
