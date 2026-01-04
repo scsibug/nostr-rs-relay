@@ -251,8 +251,13 @@ impl Subscription {
     /// individual filter match is sufficient.
     #[must_use]
     pub fn interested_in_event(&self, event: &Event) -> bool {
+        self.interested_in_event_with_policy(event, false)
+    }
+
+    #[must_use]
+    pub fn interested_in_event_with_policy(&self, event: &Event, exact_match: bool) -> bool {
         for f in &self.filters {
-            if f.interested_in_event(event) {
+            if f.interested_in_event_with_policy(event, exact_match) {
                 return true;
             }
         }
@@ -283,9 +288,13 @@ impl Subscription {
     }
 }
 
-fn prefix_match(prefixes: &[String], target: &str) -> bool {
-    for prefix in prefixes {
-        if target.starts_with(prefix) {
+fn list_match(entries: &[String], target: &str, exact_match: bool) -> bool {
+    for entry in entries {
+        if exact_match {
+            if target == entry {
+                return true;
+            }
+        } else if target.starts_with(entry) {
             return true;
         }
     }
@@ -294,23 +303,23 @@ fn prefix_match(prefixes: &[String], target: &str) -> bool {
 }
 
 impl ReqFilter {
-    fn ids_match(&self, event: &Event) -> bool {
+    fn ids_match(&self, event: &Event, exact_match: bool) -> bool {
         self.ids
             .as_ref()
-            .map_or(true, |vs| prefix_match(vs, &event.id))
+            .map_or(true, |vs| list_match(vs, &event.id, exact_match))
     }
 
-    fn authors_match(&self, event: &Event) -> bool {
+    fn authors_match(&self, event: &Event, exact_match: bool) -> bool {
         self.authors
             .as_ref()
-            .map_or(true, |vs| prefix_match(vs, &event.pubkey))
+            .map_or(true, |vs| list_match(vs, &event.pubkey, exact_match))
     }
 
-    fn delegated_authors_match(&self, event: &Event) -> bool {
+    fn delegated_authors_match(&self, event: &Event, exact_match: bool) -> bool {
         if let Some(delegated_pubkey) = &event.delegated_by {
             self.authors
                 .as_ref()
-                .map_or(true, |vs| prefix_match(vs, delegated_pubkey))
+                .map_or(true, |vs| list_match(vs, delegated_pubkey, exact_match))
         } else {
             false
         }
@@ -340,12 +349,18 @@ impl ReqFilter {
     /// Determine if all populated fields in this filter match the provided event.
     #[must_use]
     pub fn interested_in_event(&self, event: &Event) -> bool {
+        self.interested_in_event_with_policy(event, false)
+    }
+
+    #[must_use]
+    pub fn interested_in_event_with_policy(&self, event: &Event, exact_match: bool) -> bool {
         //        self.id.as_ref().map(|v| v == &event.id).unwrap_or(true)
-        self.ids_match(event)
+        self.ids_match(event, exact_match)
             && self.since.map_or(true, |t| event.created_at >= t)
             && self.until.map_or(true, |t| event.created_at <= t)
             && self.kind_match(event.kind)
-            && (self.authors_match(event) || self.delegated_authors_match(event))
+            && (self.authors_match(event, exact_match)
+                || self.delegated_authors_match(event, exact_match))
             && self.tag_match(event)
             && !self.force_no_match
     }
@@ -453,6 +468,24 @@ mod tests {
     }
 
     #[test]
+    fn interest_author_exact_match() -> Result<()> {
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"authors": ["abc"]}]"#)?;
+        let e = Event {
+            id: "foo".to_owned(),
+            pubkey: "abcd".to_owned(),
+            delegated_by: None,
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(!s.interested_in_event_with_policy(&e, true));
+        Ok(())
+    }
+
+    #[test]
     fn interest_id_prefix_match() -> Result<()> {
         // subscription with a filter for ID
         let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"]}]"#)?;
@@ -468,6 +501,24 @@ mod tests {
             tagidx: None,
         };
         assert!(s.interested_in_event(&e));
+        Ok(())
+    }
+
+    #[test]
+    fn interest_id_exact_match() -> Result<()> {
+        let s: Subscription = serde_json::from_str(r#"["REQ","xyz",{"ids": ["abc"]}]"#)?;
+        let e = Event {
+            id: "abcd".to_owned(),
+            pubkey: "".to_owned(),
+            delegated_by: None,
+            created_at: 0,
+            kind: 0,
+            tags: Vec::new(),
+            content: "".to_owned(),
+            sig: "".to_owned(),
+            tagidx: None,
+        };
+        assert!(!s.interested_in_event_with_policy(&e, true));
         Ok(())
     }
 
