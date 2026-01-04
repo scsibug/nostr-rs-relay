@@ -27,6 +27,7 @@ pub struct Database {
     pub max_conn: u32,
     pub connection: String,
     pub connection_write: Option<String>,
+    pub filter_exact_match: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +195,14 @@ pub struct Settings {
     pub logging: Logging,
 }
 
+impl Database {
+    #[must_use]
+    pub fn filter_exact_match(&self) -> bool {
+        self.filter_exact_match
+            .unwrap_or_else(|| self.engine == "postgres")
+    }
+}
+
 impl Settings {
     pub fn new(config_file_name: &Option<String>) -> Result<Self, ConfigError> {
         let default_settings = Self::default();
@@ -297,6 +306,7 @@ impl Default for Settings {
                 max_conn: 8,
                 connection: "".to_owned(),
                 connection_write: None,
+                filter_exact_match: None,
             },
             grpc: Grpc {
                 event_admission_server: None,
