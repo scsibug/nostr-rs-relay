@@ -272,15 +272,54 @@ ON CONFLICT (id) DO NOTHING"#,
                 update_count,
                 e.get_author_prefix()
             );
+
+            let address_candidates = e.tag_values_by_name("a");
+            for address in address_candidates {
+                let mut parts = address.splitn(3, ':');
+                let kind = parts.next().and_then(|p| p.parse::<i64>().ok());
+                let pubkey = parts.next().and_then(|p| hex::decode(p).ok());
+                let d_tag = parts.next().unwrap_or("");
+                if kind.is_none() || pubkey.is_none() {
+                    continue;
+                }
+                if d_tag.is_empty() {
+                    continue;
+                }
+                let update_count = if is_lower_hex(d_tag) && (d_tag.len() % 2 == 0) {
+                    sqlx::query("UPDATE event SET hidden = 1::bit(1) WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at <= $4);")
+                        .bind(kind.unwrap())
+                        .bind(pubkey.clone().unwrap())
+                        .bind(hex::decode(d_tag).ok())
+                        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                        .execute(&mut tx)
+                        .await?.rows_affected()
+                } else {
+                    sqlx::query("UPDATE event SET hidden = 1::bit(1) WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 AND e.created_at <= $4);")
+                        .bind(kind.unwrap())
+                        .bind(pubkey.clone().unwrap())
+                        .bind(d_tag.as_bytes())
+                        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                        .execute(&mut tx)
+                        .await?.rows_affected()
+                };
+                if update_count > 0 {
+                    info!(
+                        "hid {} deleted addressable events for author {:?}",
+                        update_count,
+                        e.get_author_prefix()
+                    );
+                }
+            }
         } else {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
             let del_count = sqlx::query(
                 "SELECT e.id FROM \"event\" e \
             LEFT JOIN tag t ON e.id = t.event_id \
-            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
+            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND (t.value = $2 OR t.value_hex = $3) LIMIT 1",
             )
             .bind(&pubkey_blob)
+            .bind(&id_blob)
             .bind(&id_blob)
             .fetch_optional(&mut tx)
             .await?;
@@ -1043,5 +1082,13 @@ mod tests {
             force_no_match: false,
         };
         assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
+    fn test_delete_e_tag_query_uses_value_hex() {
+        let query = "SELECT e.id FROM \"event\" e \
+            LEFT JOIN tag t ON e.id = t.event_id \
+            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND (t.value = $2 OR t.value_hex = $3) LIMIT 1";
+        assert!(query.contains("t.value_hex"));
     }
 }
