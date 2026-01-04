@@ -3,6 +3,7 @@ use nostr_rs_relay::event::Event;
 use nostr_rs_relay::repo::postgres::{PostgresPool, PostgresRepo};
 use nostr_rs_relay::repo::NostrRepo;
 use nostr_rs_relay::server::NostrMetrics;
+use nostr::Keys;
 use prometheus::{Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, Opts};
 use sqlx::pool::PoolOptions;
 use sqlx::postgres::{PgConnectOptions, PgConnection};
@@ -230,6 +231,32 @@ async fn postgres_param_replaceable_prunes_older() -> Result<()> {
     .fetch_one(&pool)
     .await?;
     assert_eq!(hex::encode(stored_id), event_newer.id);
+
+    drop(pool);
+    drop_schema(options, &schema).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn postgres_admit_account_sets_tos_timestamp() -> Result<()> {
+    let Some(url) = postgres_url() else {
+        return Ok(());
+    };
+    let (pool, options, schema) = setup_pool(&url).await?;
+    let metrics = build_metrics();
+    let repo = PostgresRepo::new(pool.clone(), pool.clone(), metrics);
+    repo.migrate_up().await?;
+
+    let keys = Keys::generate();
+    assert!(repo.create_account(&keys).await?);
+    repo.admit_account(&keys, 25).await?;
+
+    let has_tos: bool =
+        sqlx::query_scalar("SELECT tos_accepted_at IS NOT NULL FROM account WHERE pubkey = $1")
+            .bind(keys.public_key().to_string())
+            .fetch_one(&pool)
+            .await?;
+    assert!(has_tos);
 
     drop(pool);
     drop_schema(options, &schema).await?;
