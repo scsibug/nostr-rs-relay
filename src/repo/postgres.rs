@@ -105,7 +105,7 @@ impl NostrRepo for PostgresRepo {
         // replaceable event or parameterized replaceable event.
         if e.is_replaceable() {
             let repl_count = sqlx::query(
-                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND e.created_at >= $3 LIMIT 1;")
+                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND e.created_at > $3 LIMIT 1;")
                 .bind(&pubkey_blob)
                 .bind(e.kind as i64)
                 .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
@@ -118,7 +118,7 @@ impl NostrRepo for PostgresRepo {
         if let Some(d_tag) = e.distinct_param() {
             let repl_count: i64 = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
                 sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at >= $4 LIMIT 1;")
+                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at > $4 LIMIT 1;")
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(e.kind as i64)
                     .bind(hex::decode(d_tag).ok())
@@ -127,7 +127,7 @@ impl NostrRepo for PostgresRepo {
                     .await?
             } else {
                 sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 AND e.created_at >= $4 LIMIT 1;")
+                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 AND e.created_at > $4 LIMIT 1;")
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(e.kind as i64)
                     .bind(d_tag.as_bytes())
@@ -204,7 +204,7 @@ ON CONFLICT (id) DO NOTHING"#,
             }
         }
         if e.is_replaceable() {
-            let update_count = sqlx::query("DELETE FROM \"event\" WHERE kind=$1 and pub_key = $2 and id not in (select id from \"event\" where kind=$1 and pub_key=$2 order by created_at desc limit 1);")
+            let update_count = sqlx::query("DELETE FROM \"event\" WHERE kind=$1 and pub_key = $2 and id not in (select id from \"event\" where kind=$1 and pub_key=$2 order by created_at desc, id asc limit 1);")
                 .bind(e.kind as i64)
                 .bind(hex::decode(&e.pubkey).ok())
                 .execute(&mut tx)
@@ -222,14 +222,14 @@ ON CONFLICT (id) DO NOTHING"#,
         // check for parameterized replaceable events that would be hidden; don't insert these either.
         if let Some(d_tag) = e.distinct_param() {
             let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC OFFSET 1);")
+                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC, id ASC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(hex::decode(d_tag).ok())
                     .execute(&mut tx)
                     .await?.rows_affected()
             } else {
-                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC OFFSET 1);")
+                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC, id ASC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(d_tag.as_bytes())
