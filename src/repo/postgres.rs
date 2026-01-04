@@ -104,41 +104,52 @@ impl NostrRepo for PostgresRepo {
         // determine if this event would be shadowed by an existing
         // replaceable event or parameterized replaceable event.
         if e.is_replaceable() {
-            let repl_count = sqlx::query(
-                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND e.created_at > $3 LIMIT 1;")
-                .bind(&pubkey_blob)
-                .bind(e.kind as i64)
-                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                .fetch_optional(&mut tx)
-                .await?;
-            if repl_count.is_some() {
+            let repl_event = sqlx::query(
+                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND \
+                (e.created_at > $3 OR (e.created_at = $3 AND e.id < $4)) LIMIT 1;",
+            )
+            .bind(&pubkey_blob)
+            .bind(e.kind as i64)
+            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+            .bind(&id_blob)
+            .fetch_optional(&mut tx)
+            .await?;
+            if repl_event.is_some() {
                 return Ok(0);
             }
         }
         if let Some(d_tag) = e.distinct_param() {
-            let repl_count: i64 = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at > $4 LIMIT 1;")
-                    .bind(hex::decode(&e.pubkey).ok())
-                    .bind(e.kind as i64)
-                    .bind(hex::decode(d_tag).ok())
-                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                    .fetch_one(&mut tx)
-                    .await?
+            let repl_event = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                sqlx::query(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id \
+                    WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 \
+                    AND (e.created_at > $4 OR (e.created_at = $4 AND e.id < $5)) LIMIT 1;",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(hex::decode(d_tag).ok())
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?
             } else {
-                sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 AND e.created_at > $4 LIMIT 1;")
-                    .bind(hex::decode(&e.pubkey).ok())
-                    .bind(e.kind as i64)
-                    .bind(d_tag.as_bytes())
-                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                    .fetch_one(&mut tx)
-                    .await?
+                sqlx::query(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id \
+                    WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 \
+                    AND (e.created_at > $4 OR (e.created_at = $4 AND e.id < $5)) LIMIT 1;",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(d_tag.as_bytes())
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?
             };
             // if any rows were returned, then some newer event with
             // the same author/kind/tag value exist, and we can ignore
             // this event.
-            if repl_count > 0 {
+            if repl_event.is_some() {
                 return Ok(0);
             }
         }
@@ -239,6 +250,64 @@ ON CONFLICT (id) DO NOTHING"#,
             if update_count > 0 {
                 info!(
                     "removed {} older parameterized replaceable kind {} events for author: {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
+        // if this event is replaceable update, remove other replaceable
+        // event with the same kind from the same author that was issued
+        // earlier than this.
+        if e.is_replaceable() {
+            let update_count = sqlx::query(
+                "DELETE FROM \"event\" WHERE kind=$1 AND pub_key=$2 AND id NOT IN \
+                (SELECT id FROM \"event\" WHERE kind=$1 AND pub_key=$2 ORDER BY created_at DESC, id ASC LIMIT 1)",
+            )
+            .bind(e.kind as i64)
+            .bind(&pubkey_blob)
+            .execute(&mut tx)
+            .await?
+            .rows_affected();
+            if update_count > 0 {
+                info!(
+                    "removed {} older replaceable kind {} events for author {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
+        // if this event is parameterized replaceable, remove other events.
+        if let Some(d_tag) = e.distinct_param() {
+            let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                sqlx::query(
+                    "DELETE FROM \"event\" WHERE id IN (SELECT e.id FROM \"event\" e \
+                    LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 \
+                    AND t.name='d' AND t.value_hex=$3 ORDER BY e.created_at DESC, e.id ASC OFFSET 1)",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(hex::decode(d_tag).ok())
+                .execute(&mut tx)
+                .await?
+                .rows_affected()
+            } else {
+                sqlx::query(
+                    "DELETE FROM \"event\" WHERE id IN (SELECT e.id FROM \"event\" e \
+                    LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 \
+                    AND t.name='d' AND t.value=$3 ORDER BY e.created_at DESC, e.id ASC OFFSET 1)",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(d_tag.as_bytes())
+                .execute(&mut tx)
+                .await?
+                .rows_affected()
+            };
+            if update_count > 0 {
+                info!(
+                    "removed {} older parameterized replaceable kind {} events for author {:?}",
                     update_count,
                     e.kind,
                     e.get_author_prefix()
