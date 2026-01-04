@@ -488,7 +488,11 @@ ON CONFLICT (id) DO NOTHING"#,
     }
 
     async fn optimize_db(&self) -> Result<()> {
-        // Not implemented
+        let start = Instant::now();
+        sqlx::query("VACUUM ANALYZE")
+            .execute(&self.conn_write)
+            .await?;
+        info!("optimize ran in {:?}", start.elapsed());
         Ok(())
     }
 
