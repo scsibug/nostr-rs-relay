@@ -301,3 +301,45 @@ async fn postgres_gets_latest_unpaid_invoice() -> Result<()> {
     drop_schema(options, &schema).await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn postgres_verification_retains_on_failed_insert() -> Result<()> {
+    let Some(url) = postgres_url() else {
+        return Ok(());
+    };
+    let (pool, options, schema) = setup_pool(&url).await?;
+    let metrics = build_metrics();
+    let repo = PostgresRepo::new(pool.clone(), pool.clone(), metrics);
+    repo.migrate_up().await?;
+
+    let pubkey = hex_64(0x31);
+    let event = build_event(hex_64(0x41), pubkey, 0, 100, vec![]);
+    assert_eq!(repo.write_event(&event).await?, 1);
+
+    repo.create_verification_record(&event.id, "alice").await?;
+    let bad_event = hex_64(0x42);
+    assert!(repo
+        .create_verification_record(&bad_event, "alice")
+        .await
+        .is_err());
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM user_verification WHERE \"name\" = $1",
+    )
+    .bind("alice")
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 1);
+
+    let stored_event: Vec<u8> = sqlx::query_scalar(
+        "SELECT event_id FROM user_verification WHERE \"name\" = $1",
+    )
+    .bind("alice")
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(hex::encode(stored_event), event.id);
+
+    drop(pool);
+    drop_schema(options, &schema).await?;
+    Ok(())
+}

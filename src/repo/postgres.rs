@@ -567,17 +567,24 @@ ON CONFLICT (id) DO NOTHING"#,
 
     async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
         let mut tx = self.conn_write.begin().await?;
+        let row_id: i64 = sqlx::query_scalar(
+            "INSERT INTO user_verification (event_id, \"name\", verified_at) \
+            VALUES ($1, $2, now()) RETURNING id",
+        )
+        .bind(hex::decode(event_id).ok())
+        .bind(name)
+        .fetch_one(&mut tx)
+        .await?;
 
-        sqlx::query("DELETE FROM user_verification WHERE \"name\" = $1")
+        let del_count = sqlx::query("DELETE FROM user_verification WHERE \"name\" = $1 AND id != $2")
             .bind(name)
+            .bind(row_id)
             .execute(&mut tx)
-            .await?;
-
-        sqlx::query("INSERT INTO user_verification (event_id, \"name\", verified_at) VALUES ($1, $2, now())")
-            .bind(hex::decode(event_id).ok())
-            .bind(name)
-            .execute(&mut tx)
-            .await?;
+            .await?
+            .rows_affected();
+        if del_count > 0 {
+            info!("removed {} old verification records for ({:?})", del_count, name);
+        }
 
         tx.commit().await?;
         info!("saved new verification record for ({:?})", name);
@@ -600,10 +607,14 @@ ON CONFLICT (id) DO NOTHING"#,
     }
 
     async fn fail_verification(&self, id: u64) -> Result<()> {
-        sqlx::query("UPDATE user_verification SET failed_at = now(), fail_count = fail_count + 1 WHERE id = $1")
-            .bind(id as i64)
-            .execute(&self.conn_write)
-            .await?;
+        let fail_time = now_jitter(600);
+        sqlx::query(
+            "UPDATE user_verification SET failed_at = $1, fail_count = fail_count + 1 WHERE id = $2",
+        )
+        .bind(Utc.timestamp_opt(fail_time as i64, 0).unwrap())
+        .bind(id as i64)
+        .execute(&self.conn_write)
+        .await?;
         Ok(())
     }
 
