@@ -37,6 +37,7 @@ pub async fn run_migrations(db: &PostgresPool) -> crate::error::Result<usize> {
     run_migration(m003::migration(), db).await;
     run_migration(m004::migration(), db).await;
     run_migration(m005::migration(), db).await;
+    run_migration(m006::migration(), db).await;
     Ok(current_version(db).await as usize)
 }
 
@@ -313,6 +314,28 @@ CREATE TABLE "invoice" (
     CONSTRAINT invoice_payment_hash PRIMARY KEY (payment_hash),
     CONSTRAINT invoice_pubkey_fkey FOREIGN KEY (pubkey) REFERENCES account (pubkey) ON DELETE CASCADE
 );
+        "#,
+            ],
+        }
+    }
+}
+
+mod m006 {
+    use crate::repo::postgres_migration::{Migration, SimpleSqlMigration};
+
+    pub const VERSION: i64 = 6;
+
+    pub fn migration() -> impl Migration {
+        SimpleSqlMigration {
+            serial_number: VERSION,
+            sql: vec![
+                r#"
+-- Add event indexes to match query patterns
+CREATE INDEX IF NOT EXISTS event_kind_idx ON "event" (kind);
+CREATE INDEX IF NOT EXISTS event_created_at_only_idx ON "event" (created_at);
+CREATE INDEX IF NOT EXISTS event_kind_created_at_idx ON "event" (kind, created_at);
+CREATE INDEX IF NOT EXISTS event_pub_key_kind_idx ON "event" (pub_key, kind);
+CREATE INDEX IF NOT EXISTS event_pub_key_created_at_idx ON "event" (pub_key, created_at);
         "#,
             ],
         }
