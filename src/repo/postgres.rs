@@ -180,19 +180,23 @@ ON CONFLICT (id) DO NOTHING"#,
                 if tag_char_opt.is_some() {
                     // if tag value is lowercase hex;
                     if is_lower_hex(tag_val) && (tag_val.len() % 2 == 0) {
-                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, NULL, $3) \
+                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex, kind, created_at) VALUES($1, $2, NULL, $3, $4, $5) \
                                      ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                             .bind(tag_name)
                             .bind(hex::decode(tag_val).ok())
+                            .bind(e.kind as i64)
+                            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                             .execute(&mut tx)
                             .await?;
                     } else {
-                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
+                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex, kind, created_at) VALUES($1, $2, $3, NULL, $4, $5) \
                                      ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                             .bind(tag_name)
                             .bind(tag_val.as_bytes())
+                            .bind(e.kind as i64)
+                            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                             .execute(&mut tx)
                             .await?;
                     }
