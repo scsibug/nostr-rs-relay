@@ -28,6 +28,8 @@ pub struct Database {
     pub connection: String,
     pub connection_write: Option<String>,
     pub filter_exact_match: Option<bool>,
+    pub statement_timeout_ms: Option<u64>,
+    pub query_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,6 +309,8 @@ impl Default for Settings {
                 connection: "".to_owned(),
                 connection_write: None,
                 filter_exact_match: None,
+                statement_timeout_ms: None,
+                query_timeout_ms: None,
             },
             grpc: Grpc {
                 event_admission_server: None,

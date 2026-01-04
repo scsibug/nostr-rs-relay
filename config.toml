@@ -62,6 +62,10 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Defaults to true for postgres, false for sqlite.
 #filter_exact_match = true
 
+# Set statement timeouts (milliseconds) for database connections.
+# statement_timeout_ms = 0
+# query_timeout_ms = 0
+
 # Optional database connection string for writing.  Use this for
 # postgres clusters where you want to separate reads and writes to
 # different nodes.  Ignore for single-database instances.
