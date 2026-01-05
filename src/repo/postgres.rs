@@ -929,6 +929,16 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 if val.is_empty() {
                     return None;
                 }
+                let tag_values: Vec<&String> = if *key == 'e' || *key == 'p' {
+                    val.iter()
+                        .filter(|v| v.len() == 64 && is_lower_hex(v))
+                        .collect()
+                } else {
+                    val.iter().collect()
+                };
+                if tag_values.is_empty() {
+                    return None;
+                }
                 if tag_idx > 0 {
                     query.push(" AND ");
                 }
@@ -936,13 +946,20 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                 query.push_bind(key.to_string());
                 query.push(" AND (");
 
-                let has_plain_values = val.iter().any(|v| (v.len() % 2 != 0 || !is_lower_hex(v)));
-                let has_hex_values = val.iter().any(|v| v.len() % 2 == 0 && is_lower_hex(v));
+                let has_plain_values = tag_values
+                    .iter()
+                    .any(|v| (v.len() % 2 != 0 || !is_lower_hex(v)));
+                let has_hex_values = tag_values
+                    .iter()
+                    .any(|v| v.len() % 2 == 0 && is_lower_hex(v));
                 if has_plain_values {
                     query.push("value in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter().filter(|v| v.len() % 2 != 0 || !is_lower_hex(v)) {
+                    for v in tag_values
+                        .iter()
+                        .filter(|v| v.len() % 2 != 0 || !is_lower_hex(v))
+                    {
                         tag_query.push_bind(v.as_bytes());
                     }
                 }
@@ -953,7 +970,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     query.push("value_hex in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter().filter(|v| v.len() % 2 == 0 && is_lower_hex(v)) {
+                    for v in tag_values
+                        .iter()
+                        .filter(|v| v.len() % 2 == 0 && is_lower_hex(v))
+                    {
                         tag_query.push_bind(hex::decode(v).ok());
                     }
                 }
@@ -1130,6 +1150,24 @@ mod tests {
 
         let q = query_from_filter(&filter).unwrap();
         assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_rejects_invalid_e_tags() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: None,
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([(
+                'e',
+                HashSet::from(["not-hex".to_owned(), "abcd".to_owned()]),
+            )])),
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
     }
 
     #[test]
