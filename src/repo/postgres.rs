@@ -675,18 +675,16 @@ ON CONFLICT (id) DO NOTHING"#,
         let pub_key = pub_key.public_key().to_string();
         let mut tx = self.conn_write.begin().await?;
 
-        let result = sqlx::query("INSERT INTO account (pubkey, balance) VALUES ($1, 0);")
-            .bind(pub_key)
-            .execute(&mut tx)
-            .await;
+        let result = sqlx::query(
+            "INSERT INTO account (pubkey, balance) VALUES ($1, 0) \
+            ON CONFLICT (pubkey) DO NOTHING;",
+        )
+        .bind(pub_key)
+        .execute(&mut tx)
+        .await?;
 
-        let success = match result {
-            Ok(res) => {
-                tx.commit().await?;
-                res.rows_affected() == 1
-            }
-            Err(_err) => false,
-        };
+        let success = result.rows_affected() == 1;
+        tx.commit().await?;
 
         Ok(success)
     }

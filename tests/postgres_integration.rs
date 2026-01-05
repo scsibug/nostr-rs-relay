@@ -265,6 +265,29 @@ async fn postgres_admit_account_sets_tos_timestamp() -> Result<()> {
 }
 
 #[tokio::test]
+async fn postgres_create_account_is_idempotent() -> Result<()> {
+    let Some(url) = postgres_url() else {
+        return Ok(());
+    };
+    let (pool, options, schema) = setup_pool(&url).await?;
+    let metrics = build_metrics();
+    let repo = PostgresRepo::new(pool.clone(), pool.clone(), metrics);
+    repo.migrate_up().await?;
+
+    let keys = Keys::generate();
+    assert!(repo.create_account(&keys).await?);
+    assert!(!repo.create_account(&keys).await?);
+
+    let (is_admitted, balance) = repo.get_account_balance(&keys).await?;
+    assert!(!is_admitted);
+    assert_eq!(balance, 0);
+
+    drop(pool);
+    drop_schema(options, &schema).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn postgres_gets_latest_unpaid_invoice() -> Result<()> {
     let Some(url) = postgres_url() else {
         return Ok(());
