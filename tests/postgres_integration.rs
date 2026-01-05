@@ -288,6 +288,33 @@ async fn postgres_create_account_is_idempotent() -> Result<()> {
 }
 
 #[tokio::test]
+async fn postgres_rejects_invoice_without_account() -> Result<()> {
+    let Some(url) = postgres_url() else {
+        return Ok(());
+    };
+    let (pool, options, schema) = setup_pool(&url).await?;
+    let metrics = build_metrics();
+    let repo = PostgresRepo::new(pool.clone(), pool.clone(), metrics);
+    repo.migrate_up().await?;
+
+    let keys = Keys::generate();
+    let invoice = InvoiceInfo {
+        pubkey: keys.public_key().to_string(),
+        payment_hash: "bb".repeat(32),
+        bolt11: "lnbc1invalid".to_string(),
+        amount: 7,
+        status: InvoiceStatus::Unpaid,
+        memo: "test".to_string(),
+        confirmed_at: None,
+    };
+    assert!(repo.create_invoice_record(&keys, invoice).await.is_err());
+
+    drop(pool);
+    drop_schema(options, &schema).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn postgres_gets_latest_unpaid_invoice() -> Result<()> {
     let Some(url) = postgres_url() else {
         return Ok(());

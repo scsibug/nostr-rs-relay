@@ -763,7 +763,7 @@ ON CONFLICT (id) DO NOTHING"#,
             .bind(invoice_info.memo)
             .bind(invoice_info.bolt11)
             .execute(&mut tx)
-            .await.unwrap();
+            .await?;
 
         debug!("Invoice added");
 
