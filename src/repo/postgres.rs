@@ -104,41 +104,52 @@ impl NostrRepo for PostgresRepo {
         // determine if this event would be shadowed by an existing
         // replaceable event or parameterized replaceable event.
         if e.is_replaceable() {
-            let repl_count = sqlx::query(
-                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND e.created_at >= $3 LIMIT 1;")
-                .bind(&pubkey_blob)
-                .bind(e.kind as i64)
-                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                .fetch_optional(&mut tx)
-                .await?;
-            if repl_count.is_some() {
+            let repl_event = sqlx::query(
+                "SELECT e.id FROM event e WHERE e.pub_key=$1 AND e.kind=$2 AND \
+                (e.created_at > $3 OR (e.created_at = $3 AND e.id < $4)) LIMIT 1;",
+            )
+            .bind(&pubkey_blob)
+            .bind(e.kind as i64)
+            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+            .bind(&id_blob)
+            .fetch_optional(&mut tx)
+            .await?;
+            if repl_event.is_some() {
                 return Ok(0);
             }
         }
         if let Some(d_tag) = e.distinct_param() {
-            let repl_count: i64 = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at >= $4 LIMIT 1;")
-                    .bind(hex::decode(&e.pubkey).ok())
-                    .bind(e.kind as i64)
-                    .bind(hex::decode(d_tag).ok())
-                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                    .fetch_one(&mut tx)
-                    .await?
+            let repl_event = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                sqlx::query(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id \
+                    WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value_hex=$3 \
+                    AND (e.created_at > $4 OR (e.created_at = $4 AND e.id < $5)) LIMIT 1;",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(hex::decode(d_tag).ok())
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?
             } else {
-                sqlx::query_scalar(
-                    "SELECT count(*) AS count FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 AND e.created_at >= $4 LIMIT 1;")
-                    .bind(hex::decode(&e.pubkey).ok())
-                    .bind(e.kind as i64)
-                    .bind(d_tag.as_bytes())
-                    .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
-                    .fetch_one(&mut tx)
-                    .await?
+                sqlx::query(
+                    "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id \
+                    WHERE e.pub_key=$1 AND e.kind=$2 AND t.name='d' AND t.value=$3 \
+                    AND (e.created_at > $4 OR (e.created_at = $4 AND e.id < $5)) LIMIT 1;",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(d_tag.as_bytes())
+                .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                .bind(&id_blob)
+                .fetch_optional(&mut tx)
+                .await?
             };
             // if any rows were returned, then some newer event with
             // the same author/kind/tag value exist, and we can ignore
             // this event.
-            if repl_count > 0 {
+            if repl_event.is_some() {
                 return Ok(0);
             }
         }
@@ -180,19 +191,23 @@ ON CONFLICT (id) DO NOTHING"#,
                 if tag_char_opt.is_some() {
                     // if tag value is lowercase hex;
                     if is_lower_hex(tag_val) && (tag_val.len() % 2 == 0) {
-                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, NULL, $3) \
+                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex, kind, created_at) VALUES($1, $2, NULL, $3, $4, $5) \
                                      ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                             .bind(tag_name)
                             .bind(hex::decode(tag_val).ok())
+                            .bind(e.kind as i64)
+                            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                             .execute(&mut tx)
                             .await?;
                     } else {
-                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES($1, $2, $3, NULL) \
+                        sqlx::query("INSERT INTO tag (event_id, \"name\", value, value_hex, kind, created_at) VALUES($1, $2, $3, NULL, $4, $5) \
                                      ON CONFLICT (event_id, \"name\", value, value_hex) DO NOTHING")
                                 .bind(&id_blob)
                             .bind(tag_name)
                             .bind(tag_val.as_bytes())
+                            .bind(e.kind as i64)
+                            .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
                             .execute(&mut tx)
                             .await?;
                     }
@@ -200,7 +215,7 @@ ON CONFLICT (id) DO NOTHING"#,
             }
         }
         if e.is_replaceable() {
-            let update_count = sqlx::query("DELETE FROM \"event\" WHERE kind=$1 and pub_key = $2 and id not in (select id from \"event\" where kind=$1 and pub_key=$2 order by created_at desc limit 1);")
+            let update_count = sqlx::query("DELETE FROM \"event\" WHERE kind=$1 and pub_key = $2 and id not in (select id from \"event\" where kind=$1 and pub_key=$2 order by created_at desc, id asc limit 1);")
                 .bind(e.kind as i64)
                 .bind(hex::decode(&e.pubkey).ok())
                 .execute(&mut tx)
@@ -218,14 +233,14 @@ ON CONFLICT (id) DO NOTHING"#,
         // check for parameterized replaceable events that would be hidden; don't insert these either.
         if let Some(d_tag) = e.distinct_param() {
             let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
-                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC OFFSET 1);")
+                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 ORDER BY created_at DESC, id ASC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(hex::decode(d_tag).ok())
                     .execute(&mut tx)
                     .await?.rows_affected()
             } else {
-                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC OFFSET 1);")
+                sqlx::query("DELETE FROM event WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 ORDER BY created_at DESC, id ASC OFFSET 1);")
                     .bind(e.kind as i64)
                     .bind(hex::decode(&e.pubkey).ok())
                     .bind(d_tag.as_bytes())
@@ -235,6 +250,64 @@ ON CONFLICT (id) DO NOTHING"#,
             if update_count > 0 {
                 info!(
                     "removed {} older parameterized replaceable kind {} events for author: {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
+        // if this event is replaceable update, remove other replaceable
+        // event with the same kind from the same author that was issued
+        // earlier than this.
+        if e.is_replaceable() {
+            let update_count = sqlx::query(
+                "DELETE FROM \"event\" WHERE kind=$1 AND pub_key=$2 AND id NOT IN \
+                (SELECT id FROM \"event\" WHERE kind=$1 AND pub_key=$2 ORDER BY created_at DESC, id ASC LIMIT 1)",
+            )
+            .bind(e.kind as i64)
+            .bind(&pubkey_blob)
+            .execute(&mut tx)
+            .await?
+            .rows_affected();
+            if update_count > 0 {
+                info!(
+                    "removed {} older replaceable kind {} events for author {:?}",
+                    update_count,
+                    e.kind,
+                    e.get_author_prefix()
+                );
+            }
+        }
+        // if this event is parameterized replaceable, remove other events.
+        if let Some(d_tag) = e.distinct_param() {
+            let update_count = if is_lower_hex(&d_tag) && (d_tag.len() % 2 == 0) {
+                sqlx::query(
+                    "DELETE FROM \"event\" WHERE id IN (SELECT e.id FROM \"event\" e \
+                    LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 \
+                    AND t.name='d' AND t.value_hex=$3 ORDER BY e.created_at DESC, e.id ASC OFFSET 1)",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(hex::decode(d_tag).ok())
+                .execute(&mut tx)
+                .await?
+                .rows_affected()
+            } else {
+                sqlx::query(
+                    "DELETE FROM \"event\" WHERE id IN (SELECT e.id FROM \"event\" e \
+                    LEFT JOIN tag t ON e.id=t.event_id WHERE e.pub_key=$1 AND e.kind=$2 \
+                    AND t.name='d' AND t.value=$3 ORDER BY e.created_at DESC, e.id ASC OFFSET 1)",
+                )
+                .bind(&pubkey_blob)
+                .bind(e.kind as i64)
+                .bind(d_tag.as_bytes())
+                .execute(&mut tx)
+                .await?
+                .rows_affected()
+            };
+            if update_count > 0 {
+                info!(
+                    "removed {} older parameterized replaceable kind {} events for author {:?}",
                     update_count,
                     e.kind,
                     e.get_author_prefix()
@@ -268,15 +341,54 @@ ON CONFLICT (id) DO NOTHING"#,
                 update_count,
                 e.get_author_prefix()
             );
+
+            let address_candidates = e.tag_values_by_name("a");
+            for address in address_candidates {
+                let mut parts = address.splitn(3, ':');
+                let kind = parts.next().and_then(|p| p.parse::<i64>().ok());
+                let pubkey = parts.next().and_then(|p| hex::decode(p).ok());
+                let d_tag = parts.next().unwrap_or("");
+                if kind.is_none() || pubkey.is_none() {
+                    continue;
+                }
+                if d_tag.is_empty() {
+                    continue;
+                }
+                let update_count = if is_lower_hex(d_tag) && (d_tag.len() % 2 == 0) {
+                    sqlx::query("UPDATE event SET hidden = 1::bit(1) WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value_hex=$3 AND e.created_at <= $4);")
+                        .bind(kind.unwrap())
+                        .bind(pubkey.clone().unwrap())
+                        .bind(hex::decode(d_tag).ok())
+                        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                        .execute(&mut tx)
+                        .await?.rows_affected()
+                } else {
+                    sqlx::query("UPDATE event SET hidden = 1::bit(1) WHERE kind=$1 AND pub_key=$2 AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=$1 AND e.pub_key=$2 AND t.name='d' AND t.value=$3 AND e.created_at <= $4);")
+                        .bind(kind.unwrap())
+                        .bind(pubkey.clone().unwrap())
+                        .bind(d_tag.as_bytes())
+                        .bind(Utc.timestamp_opt(e.created_at as i64, 0).unwrap())
+                        .execute(&mut tx)
+                        .await?.rows_affected()
+                };
+                if update_count > 0 {
+                    info!(
+                        "hid {} deleted addressable events for author {:?}",
+                        update_count,
+                        e.get_author_prefix()
+                    );
+                }
+            }
         } else {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
             let del_count = sqlx::query(
                 "SELECT e.id FROM \"event\" e \
             LEFT JOIN tag t ON e.id = t.event_id \
-            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND t.value = $2 LIMIT 1",
+            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND (t.value = $2 OR t.value_hex = $3) LIMIT 1",
             )
             .bind(&pubkey_blob)
+            .bind(&id_blob)
             .bind(&id_blob)
             .fetch_optional(&mut tx)
             .await?;
@@ -445,23 +557,34 @@ ON CONFLICT (id) DO NOTHING"#,
     }
 
     async fn optimize_db(&self) -> Result<()> {
-        // Not implemented
+        let start = Instant::now();
+        sqlx::query("VACUUM ANALYZE")
+            .execute(&self.conn_write)
+            .await?;
+        info!("optimize ran in {:?}", start.elapsed());
         Ok(())
     }
 
     async fn create_verification_record(&self, event_id: &str, name: &str) -> Result<()> {
         let mut tx = self.conn_write.begin().await?;
+        let row_id: i64 = sqlx::query_scalar(
+            "INSERT INTO user_verification (event_id, \"name\", verified_at) \
+            VALUES ($1, $2, now()) RETURNING id",
+        )
+        .bind(hex::decode(event_id).ok())
+        .bind(name)
+        .fetch_one(&mut tx)
+        .await?;
 
-        sqlx::query("DELETE FROM user_verification WHERE \"name\" = $1")
+        let del_count = sqlx::query("DELETE FROM user_verification WHERE \"name\" = $1 AND id != $2")
             .bind(name)
+            .bind(row_id)
             .execute(&mut tx)
-            .await?;
-
-        sqlx::query("INSERT INTO user_verification (event_id, \"name\", verified_at) VALUES ($1, $2, now())")
-            .bind(hex::decode(event_id).ok())
-            .bind(name)
-            .execute(&mut tx)
-            .await?;
+            .await?
+            .rows_affected();
+        if del_count > 0 {
+            info!("removed {} old verification records for ({:?})", del_count, name);
+        }
 
         tx.commit().await?;
         info!("saved new verification record for ({:?})", name);
@@ -484,10 +607,14 @@ ON CONFLICT (id) DO NOTHING"#,
     }
 
     async fn fail_verification(&self, id: u64) -> Result<()> {
-        sqlx::query("UPDATE user_verification SET failed_at = now(), fail_count = fail_count + 1 WHERE id = $1")
-            .bind(id as i64)
-            .execute(&self.conn_write)
-            .await?;
+        let fail_time = now_jitter(600);
+        sqlx::query(
+            "UPDATE user_verification SET failed_at = $1, fail_count = fail_count + 1 WHERE id = $2",
+        )
+        .bind(Utc.timestamp_opt(fail_time as i64, 0).unwrap())
+        .bind(id as i64)
+        .execute(&self.conn_write)
+        .await?;
         Ok(())
     }
 
@@ -548,18 +675,16 @@ ON CONFLICT (id) DO NOTHING"#,
         let pub_key = pub_key.public_key().to_string();
         let mut tx = self.conn_write.begin().await?;
 
-        let result = sqlx::query("INSERT INTO account (pubkey, balance) VALUES ($1, 0);")
-            .bind(pub_key)
-            .execute(&mut tx)
-            .await;
+        let result = sqlx::query(
+            "INSERT INTO account (pubkey, balance) VALUES ($1, 0) \
+            ON CONFLICT (pubkey) DO NOTHING;",
+        )
+        .bind(pub_key)
+        .execute(&mut tx)
+        .await?;
 
-        let success = match result {
-            Ok(res) => {
-                tx.commit().await?;
-                res.rows_affected() == 1
-            }
-            Err(_err) => false,
-        };
+        let success = result.rows_affected() == 1;
+        tx.commit().await?;
 
         Ok(success)
     }
@@ -568,7 +693,7 @@ ON CONFLICT (id) DO NOTHING"#,
     async fn admit_account(&self, pub_key: &Keys, admission_cost: u64) -> Result<()> {
         let pub_key = pub_key.public_key().to_string();
         sqlx::query(
-            "UPDATE account SET is_admitted = TRUE, balance = balance - $1 WHERE pubkey = $2",
+            "UPDATE account SET is_admitted = TRUE, tos_accepted_at = now(), balance = balance - $1 WHERE pubkey = $2",
         )
         .bind(admission_cost as i64)
         .bind(pub_key)
@@ -638,7 +763,7 @@ ON CONFLICT (id) DO NOTHING"#,
             .bind(invoice_info.memo)
             .bind(invoice_info.bolt11)
             .execute(&mut tx)
-            .await.unwrap();
+            .await?;
 
         debug!("Invoice added");
 
@@ -687,15 +812,15 @@ ON CONFLICT (id) DO NOTHING"#,
         let query = r#"
 SELECT amount, payment_hash, description, invoice
 FROM invoice
-WHERE pubkey = $1
+WHERE pubkey = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT 1;
         "#;
         match sqlx::query_as::<_, (i64, String, String, String)>(query)
             .bind(pubkey.public_key().to_string())
+            .bind(InvoiceStatus::Unpaid)
             .fetch_optional(&self.conn_write)
-            .await
-            .unwrap()
+            .await?
         {
             Some((amount, payment_hash, description, invoice)) => Ok(Some(InvoiceInfo {
                 pubkey: pubkey.public_key().to_string(),
@@ -725,7 +850,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for "authors", allowing prefix matches
     if let Some(auth_vec) = &f.authors {
         // filter out non-hex values
-        let auth_vec: Vec<&String> = auth_vec.iter().filter(|a| is_hex(a)).collect();
+        let auth_vec: Vec<&String> = auth_vec
+            .iter()
+            .filter(|a| is_hex(a) && a.len() == 64 && is_lower_hex(a))
+            .collect();
 
         if auth_vec.is_empty() {
             return None;
@@ -766,7 +894,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Query for event,
     if let Some(id_vec) = &f.ids {
         // filter out non-hex values
-        let id_vec: Vec<&String> = id_vec.iter().filter(|a| is_hex(a)).collect();
+        let id_vec: Vec<&String> = id_vec
+            .iter()
+            .filter(|a| is_hex(a) && a.len() == 64 && is_lower_hex(a))
+            .collect();
         if id_vec.is_empty() {
             return None;
         }
@@ -793,27 +924,42 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
             }
             push_and = true;
 
-            let mut push_or = false;
-            query.push("e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and ");
+            let mut tag_idx = 0;
             for (key, val) in map.iter() {
                 if val.is_empty() {
                     return None;
                 }
-                if push_or {
-                    query.push(" OR ");
+                let tag_values: Vec<&String> = if *key == 'e' || *key == 'p' {
+                    val.iter()
+                        .filter(|v| v.len() == 64 && is_lower_hex(v))
+                        .collect()
+                } else {
+                    val.iter().collect()
+                };
+                if tag_values.is_empty() {
+                    return None;
                 }
-                query
-                    .push("(t.\"name\" = ")
-                    .push_bind(key.to_string())
-                    .push(" AND (");
+                if tag_idx > 0 {
+                    query.push(" AND ");
+                }
+                query.push("EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = ");
+                query.push_bind(key.to_string());
+                query.push(" AND (");
 
-                let has_plain_values = val.iter().any(|v| (v.len() % 2 != 0 || !is_lower_hex(v)));
-                let has_hex_values = val.iter().any(|v| v.len() % 2 == 0 && is_lower_hex(v));
+                let has_plain_values = tag_values
+                    .iter()
+                    .any(|v| (v.len() % 2 != 0 || !is_lower_hex(v)));
+                let has_hex_values = tag_values
+                    .iter()
+                    .any(|v| v.len() % 2 == 0 && is_lower_hex(v));
                 if has_plain_values {
                     query.push("value in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter().filter(|v| v.len() % 2 != 0 || !is_lower_hex(v)) {
+                    for v in tag_values
+                        .iter()
+                        .filter(|v| v.len() % 2 != 0 || !is_lower_hex(v))
+                    {
                         tag_query.push_bind(v.as_bytes());
                     }
                 }
@@ -824,15 +970,17 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
                     query.push("value_hex in (");
                     // plain value match first
                     let mut tag_query = query.separated(", ");
-                    for v in val.iter().filter(|v| v.len() % 2 == 0 && is_lower_hex(v)) {
+                    for v in tag_values
+                        .iter()
+                        .filter(|v| v.len() % 2 == 0 && is_lower_hex(v))
+                    {
                         tag_query.push_bind(hex::decode(v).ok());
                     }
                 }
-
-                query.push(")))");
-                push_or = true;
+                query.push("))");
+                query.push(")");
+                tag_idx += 1;
             }
-            query.push(")");
         }
     }
 
@@ -870,10 +1018,10 @@ fn query_from_filter(f: &ReqFilter) -> Option<QueryBuilder<Postgres>> {
     // Apply per-filter limit to this query.
     // The use of a LIMIT implies a DESC order, to capture only the most recent events.
     if let Some(lim) = f.limit {
-        query.push(" ORDER BY e.created_at DESC LIMIT ");
+        query.push(" ORDER BY e.created_at DESC, e.id ASC LIMIT ");
         query.push(lim.min(1000));
     } else {
-        query.push(" ORDER BY e.created_at ASC LIMIT ");
+        query.push(" ORDER BY e.created_at ASC, e.id ASC LIMIT ");
         query.push(1000);
     }
     Some(query)
@@ -907,6 +1055,36 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
+    fn test_query_rejects_non_lower_hex_ids() {
+        let filter = ReqFilter {
+            ids: Some(vec!["ABCDEF".to_owned()]),
+            kinds: None,
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: None,
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
+    fn test_query_rejects_non_lower_hex_authors() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: None,
+            since: None,
+            until: None,
+            authors: Some(vec!["ABCDEF".to_owned()]),
+            limit: None,
+            tags: None,
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
     fn test_query_gen_tag_value_hex() {
         let filter = ReqFilter {
             ids: None,
@@ -927,7 +1105,7 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value_hex in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value_hex in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -946,7 +1124,7 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -971,7 +1149,25 @@ mod tests {
         };
 
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE (e.pub_key in ($1) OR e.delegated_by in ($2)) AND e.kind in ($3) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5) OR value_hex in ($6))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
+    }
+
+    #[test]
+    fn test_query_rejects_invalid_e_tags() {
+        let filter = ReqFilter {
+            ids: None,
+            kinds: None,
+            since: None,
+            until: None,
+            authors: None,
+            limit: None,
+            tags: Some(HashMap::from([(
+                'e',
+                HashSet::from(["not-hex".to_owned(), "abcd".to_owned()]),
+            )])),
+            force_no_match: false,
+        };
+        assert!(query_from_filter(&filter).is_none());
     }
 
     #[test]
@@ -990,7 +1186,7 @@ mod tests {
             force_no_match: false,
         };
         let q = query_from_filter(&filter).unwrap();
-        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND e.id IN (SELECT ee.id FROM \"event\" ee LEFT JOIN tag t on ee.id = t.event_id WHERE ee.hidden != 1::bit(1) and (t.\"name\" = $2 AND (value in ($3))) OR (t.\"name\" = $4 AND (value in ($5)))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC LIMIT 1000")
+        assert_eq!(q.sql(), "SELECT e.\"content\", e.created_at FROM \"event\" e WHERE e.kind in ($1) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $2 AND (value in ($3))) AND EXISTS (SELECT 1 FROM tag t WHERE t.event_id = e.id AND t.\"name\" = $4 AND (value in ($5))) AND e.hidden != 1::bit(1) AND (e.expires_at IS NULL OR e.expires_at > now()) ORDER BY e.created_at ASC, e.id ASC LIMIT 1000")
     }
 
     #[test]
@@ -1006,5 +1202,13 @@ mod tests {
             force_no_match: false,
         };
         assert!(query_from_filter(&filter).is_none());
+    }
+
+    #[test]
+    fn test_delete_e_tag_query_uses_value_hex() {
+        let query = "SELECT e.id FROM \"event\" e \
+            LEFT JOIN tag t ON e.id = t.event_id \
+            WHERE e.pub_key = $1 AND t.\"name\" = 'e' AND e.kind = 5 AND (t.value = $2 OR t.value_hex = $3) LIMIT 1";
+        assert!(query.contains("t.value_hex"));
     }
 }

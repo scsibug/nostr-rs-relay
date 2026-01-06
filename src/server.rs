@@ -1213,7 +1213,10 @@ async fn nostr_server(
                 // an event has been broadcast to all clients
                 // first check if there is a subscription for this event.
                 for (s, sub) in conn.subscriptions() {
-                    if !sub.interested_in_event(&global_event) {
+                    if !sub.interested_in_event_with_policy(
+                        &global_event,
+                        settings.database.filter_exact_match(),
+                    ) {
                         continue;
                     }
                     // TODO: serialize at broadcast time, instead of
