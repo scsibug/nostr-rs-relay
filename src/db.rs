@@ -59,20 +59,40 @@ async fn build_sqlite_pool(settings: &Settings, metrics: NostrMetrics) -> Sqlite
 }
 
 async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> PostgresRepo {
+    let effective_timeout = settings
+        .database
+        .query_timeout_ms
+        .or(settings.database.statement_timeout_ms);
     let mut options: PgConnectOptions = settings.database.connection.as_str().parse().unwrap();
     options.log_statements(LevelFilter::Debug);
     options.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
 
+    let pool_timeout = effective_timeout;
     let pool: PostgresPool = PoolOptions::new()
         .max_connections(settings.database.max_conn)
         .min_connections(settings.database.min_conn)
         .idle_timeout(Duration::from_secs(60))
+        .after_connect(move |conn, _meta| {
+            let timeout = pool_timeout;
+            Box::pin(async move {
+                if let Some(timeout_ms) = timeout {
+                    if timeout_ms > 0 {
+                        sqlx::query("SET statement_timeout = $1")
+                            .bind(timeout_ms as i64)
+                            .execute(conn)
+                            .await?;
+                    }
+                }
+                Ok(())
+            })
+        })
         .connect_with(options)
         .await
         .unwrap();
 
     let write_pool: PostgresPool = match &settings.database.connection_write {
         Some(cfg_write) => {
+            let write_pool_timeout = effective_timeout;
             let mut options_write: PgConnectOptions = cfg_write.as_str().parse().unwrap();
             options_write.log_statements(LevelFilter::Debug);
             options_write.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
@@ -81,6 +101,20 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
                 .max_connections(settings.database.max_conn)
                 .min_connections(settings.database.min_conn)
                 .idle_timeout(Duration::from_secs(60))
+                .after_connect(move |conn, _meta| {
+                    let timeout = write_pool_timeout;
+                    Box::pin(async move {
+                        if let Some(timeout_ms) = timeout {
+                            if timeout_ms > 0 {
+                                sqlx::query("SET statement_timeout = $1")
+                                    .bind(timeout_ms as i64)
+                                    .execute(conn)
+                                    .await?;
+                            }
+                        }
+                        Ok(())
+                    })
+                })
                 .connect_with(options_write)
                 .await
                 .unwrap()
