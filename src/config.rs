@@ -49,6 +49,15 @@ pub struct Network {
 #[allow(unused)]
 pub struct Options {
     pub reject_future_seconds: Option<usize>, // if defined, reject any events with a timestamp more than X seconds in the future
+    pub enable_ohttp: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ohttp {
+    pub max_request_bytes: usize,
+    pub max_response_bytes: usize,
+    /// hex encoded key config
+    pub key_config: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +201,7 @@ pub struct Settings {
     pub retention: Retention,
     pub options: Options,
     pub logging: Logging,
+    pub ohttp: Ohttp,
 }
 
 impl Settings {
@@ -358,10 +368,16 @@ impl Default for Settings {
             },
             options: Options {
                 reject_future_seconds: None, // Reject events in the future if defined
+                enable_ohttp: false,
             },
             logging: Logging {
                 folder_path: None,
                 file_prefix: None,
+            },
+            ohttp: Ohttp {
+                max_request_bytes: 65536,
+                max_response_bytes: 65536,
+                key_config: None,
             },
         }
     }

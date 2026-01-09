@@ -98,11 +98,17 @@ port = 8080
 # Websocket ping interval in seconds, defaults to 5 minutes
 #ping_interval = 300
 
+[ohttp]
+max_request_bytes = 65536
+max_response_bytes = 65536
+
 [options]
 # Reject events that have timestamps greater than this many seconds in
 # the future.  Recommended to reject anything greater than 30 minutes
 # from the current time, but the default is to allow any date.
 reject_future_seconds = 1800
+
+enable_ohttp = true
 
 [limits]
 # Limit events created per second, averaged over one minute.  Must be

@@ -9,9 +9,12 @@ use crate::error::{Error, Result};
 use crate::event::Event;
 use crate::event::EventCmd;
 use crate::event::EventWrapper;
+use crate::http::handle_request;
 use crate::info::RelayInfo;
 use crate::nip05;
 use crate::notice::Notice;
+use crate::ohttp::gen_ohttp_server_config;
+use crate::ohttp::ServerKeyConfig;
 use crate::payment;
 use crate::payment::InvoiceInfo;
 use crate::payment::PaymentMessage;
@@ -23,6 +26,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 use http::header::HeaderMap;
+use http::Uri;
 use hyper::body::to_bytes;
 use hyper::header::ACCEPT;
 use hyper::service::{make_service_fn, service_fn};
@@ -30,6 +34,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{
     header, server::conn::AddrStream, upgrade, Body, Request, Response, Server, StatusCode,
 };
+use nostr::hashes::hex::ToHex;
 use nostr::key::FromPkStr;
 use nostr::key::Keys;
 use prometheus::IntCounterVec;
@@ -77,6 +82,7 @@ async fn handle_web_request(
     favicon: Option<Vec<u8>>,
     registry: Registry,
     metrics: NostrMetrics,
+    ohttp_server_config: Option<ServerKeyConfig>,
 ) -> Result<Response<Body>, Infallible> {
     match (
         request.uri().path(),
@@ -173,7 +179,17 @@ async fn handle_web_request(
                     if mt_str.contains("application/nostr+json") {
                         // build a relay info response
                         debug!("Responding to server info request");
-                        let rinfo = RelayInfo::from(settings);
+                        let mut rinfo = RelayInfo::from(settings);
+                        if let Some(ohttp_key_config) = ohttp_server_config {
+                            rinfo.ohttp_key_config = Some(
+                                ohttp_key_config
+                                    .server
+                                    .config()
+                                    .encode()
+                                    .expect("Keys generated on startup and should be valid")
+                                    .to_hex(),
+                            );
+                        }
                         let b = Body::from(serde_json::to_string_pretty(&rinfo).unwrap());
                         return Ok(Response::builder()
                             .status(200)
@@ -213,6 +229,96 @@ async fn handle_web_request(
                 .status(200)
                 .header("Content-Type", "text/plain")
                 .body(Body::from("Please use a Nostr client to connect."))
+                .unwrap())
+        }
+        ("/.well-known/ohttp-gateway", false) => {
+            if let Some(ohttp_server_config) = ohttp_server_config {
+                if request.method() == http::Method::GET {
+                    let ohttp_keys = ohttp_server_config.server.config().encode().unwrap();
+
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .body(Body::from(ohttp_keys))
+                        .unwrap());
+                }
+                if request.method() != http::Method::POST {
+                    return Ok(Response::builder()
+                        .status(StatusCode::METHOD_NOT_ALLOWED)
+                        .body(Body::from("Method not allowed"))
+                        .unwrap());
+                }
+                // Read the body as raw bytes to preserve exact client data
+                let mut req_body = Vec::new();
+                let mut body_stream = request.into_body();
+                while let Some(chunk) = body_stream.next().await {
+                    let chunk = chunk.unwrap();
+                    req_body.extend_from_slice(&chunk);
+                }
+
+                let (bhttp_req, server_response) =
+                    match ohttp_server_config.server.decapsulate(&req_body) {
+                        Ok(result) => result,
+                        Err(e) => {
+                            error!("OHTTP decapsulation failed: {:?}", e);
+                            return Ok(Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(Body::from(format!("OHTTP decapsulation failed: {:?}", e)))
+                                .unwrap());
+                        }
+                    };
+
+                let mut cursor = std::io::Cursor::new(bhttp_req);
+                let req = bhttp::Message::read_bhttp(&mut cursor).unwrap();
+                let uri = Uri::builder()
+                    .scheme(req.control().scheme().unwrap_or_default())
+                    .authority(req.control().authority().unwrap_or_default())
+                    .path_and_query(req.control().path().unwrap_or_default())
+                    .build()
+                    .unwrap();
+                let mut http_req_builder = Request::builder()
+                    .uri(uri)
+                    .method(req.control().method().unwrap_or_default());
+
+                for header in req.header().fields() {
+                    http_req_builder = http_req_builder.header(header.name(), header.value())
+                }
+                // Add the body to the request
+                let http_req = http_req_builder
+                    .body(Body::from(req.content().to_vec()))
+                    .unwrap();
+                match handle_request(http_req, repo, event_tx, &settings).await {
+                    Ok(response) => {
+                        let res = server_response.encapsulate(response.as_bytes()).unwrap();
+                        if res.len() > settings.ohttp.max_response_bytes {
+                            return Ok(Response::builder()
+                                .status(StatusCode::UNPROCESSABLE_ENTITY)
+                                .body(Body::from(format!(
+                                    "Response too large, max: {}, got: {}",
+                                    settings.ohttp.max_response_bytes,
+                                    res.len()
+                                )))
+                                .unwrap());
+                        }
+                        return Ok(Response::builder()
+                            .status(StatusCode::OK)
+                            .body(Body::from(res))
+                            .unwrap());
+                    }
+                    Err(e) => {
+                        let res = server_response
+                            .encapsulate(e.to_string().as_bytes())
+                            .unwrap();
+                        return Ok(Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Body::from(res))
+                            .unwrap());
+                    }
+                }
+            }
+
+            Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from(""))
                 .unwrap())
         }
         ("/metrics", false) => {
@@ -819,6 +925,14 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             info!("NIP-05 domain blacklist: {:?}", bl);
         }
     }
+
+    let ohttp_server_config = if settings.options.enable_ohttp {
+        Some(gen_ohttp_server_config().expect("generate new ohttp server config"))
+    } else {
+        None
+    };
+    info!("OHTTP server config: {:?}", ohttp_server_config);
+
     // configure tokio runtime
     let rt = Builder::new_multi_thread()
         .enable_all()
@@ -975,6 +1089,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
             let favicon = favicon.clone();
             let registry = registry.clone();
             let metrics = metrics.clone();
+            let ohttp_server_config = ohttp_server_config.clone();
             async move {
                 // service_fn converts our function into a `Service`
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
@@ -990,6 +1105,7 @@ pub fn start_server(settings: &Settings, shutdown_rx: MpscReceiver<()>) -> Resul
                         favicon.clone(),
                         registry.clone(),
                         metrics.clone(),
+                        ohttp_server_config.clone(),
                     )
                 }))
             }
@@ -1018,7 +1134,7 @@ pub enum NostrMessage {
 }
 
 /// Convert Message to `NostrMessage`
-fn convert_to_msg(msg: &str, max_bytes: Option<usize>) -> Result<NostrMessage> {
+pub(crate) fn convert_to_msg(msg: &str, max_bytes: Option<usize>) -> Result<NostrMessage> {
     let parsed_res: Result<NostrMessage> =
         serde_json::from_str(msg).map_err(std::convert::Into::into);
     match parsed_res {

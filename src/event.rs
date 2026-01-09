@@ -39,6 +39,12 @@ impl EventCmd {
     }
 }
 
+impl From<EventCmd> for Event {
+    fn from(ec: EventCmd) -> Self {
+        ec.event
+    }
+}
+
 /// Parsed nostr event.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Event {
