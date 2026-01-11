@@ -7,6 +7,31 @@ use nostr_rs_relay::repo::sqlite::{build_pool, SqliteRepo};
 use nostr_rs_relay::repo::sqlite_migration::upgrade_db;
 use rusqlite::params;
 use rusqlite::OpenFlags;
+use std::path::PathBuf;
+use uuid::Uuid;
+
+struct TestDbDir {
+    path: PathBuf,
+}
+
+impl TestDbDir {
+    fn new(prefix: &str) -> Result<Self> {
+        let mut path = std::env::temp_dir();
+        path.push(format!("nostr-rs-relay-{}-{}", prefix, Uuid::new_v4()));
+        std::fs::create_dir_all(&path)?;
+        Ok(Self { path })
+    }
+
+    fn path_string(&self) -> String {
+        self.path.to_string_lossy().to_string()
+    }
+}
+
+impl Drop for TestDbDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
 
 fn hex_64(byte: u8) -> String {
     format!("{:02x}", byte).repeat(32)
@@ -34,8 +59,10 @@ fn build_event(
 
 #[test]
 fn sqlite_addressable_delete_hides_listing() -> Result<()> {
+    let temp_dir = TestDbDir::new("sqlite-addressable-delete")?;
     let mut settings = config::Settings::default();
-    settings.database.in_memory = true;
+    settings.database.in_memory = false;
+    settings.database.data_directory = temp_dir.path_string();
     settings.database.min_conn = 1;
     settings.database.max_conn = 1;
 
@@ -70,6 +97,58 @@ fn sqlite_addressable_delete_hides_listing() -> Result<()> {
         vec![vec!["a".to_string(), address]],
     );
     assert_eq!(SqliteRepo::persist_event(&mut conn, &delete_event)?, 1);
+
+    let pubkey_blob = hex::decode(&pubkey)?;
+    let hidden: i64 = conn.query_row(
+        "SELECT hidden FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? LIMIT 1;",
+        params![listing.kind, pubkey_blob, d_tag],
+        |row| row.get(0),
+    )?;
+    assert!(hidden != 0);
+
+    Ok(())
+}
+
+#[test]
+fn sqlite_addressable_delete_prevents_future_listing() -> Result<()> {
+    let temp_dir = TestDbDir::new("sqlite-addressable-delete-pre")?;
+    let mut settings = config::Settings::default();
+    settings.database.in_memory = false;
+    settings.database.data_directory = temp_dir.path_string();
+    settings.database.min_conn = 1;
+    settings.database.max_conn = 1;
+
+    let pool = build_pool(
+        "sqlite-addressable-delete-pre",
+        &settings,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        1,
+        1,
+        false,
+    );
+    let mut conn = pool.get()?;
+    upgrade_db(&mut conn)?;
+
+    let pubkey = hex_64(0x12);
+    let d_tag = "listing-pre".to_string();
+    let address = format!("30402:{}:{}", pubkey, d_tag);
+    let delete_event = build_event(
+        hex_64(0x03),
+        pubkey.clone(),
+        5,
+        200,
+        vec![vec!["a".to_string(), address]],
+    );
+    assert_eq!(SqliteRepo::persist_event(&mut conn, &delete_event)?, 1);
+
+    let listing = build_event(
+        hex_64(0x04),
+        pubkey.clone(),
+        30402,
+        100,
+        vec![vec!["d".to_string(), d_tag.clone()]],
+    );
+    assert_eq!(SqliteRepo::persist_event(&mut conn, &listing)?, 0);
 
     let pubkey_blob = hex::decode(&pubkey)?;
     let hidden: i64 = conn.query_row(
