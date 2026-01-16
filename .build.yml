@@ -8,6 +8,7 @@ packages:
   - cargo
   - sqlite-devel
   - protobuf-compiler
+  - gawk
 sources:
   - https://git.sr.ht/~gheartsfield/nostr-rs-relay/
 shell: false
