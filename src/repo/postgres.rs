@@ -1,24 +1,24 @@
-use std::ops::Deref;
 use crate::db::QueryResult;
+use crate::error;
 use crate::error::Result;
 use crate::event::{single_char_tagname, Event};
 use crate::nip05::{Nip05Name, VerificationRecord};
 use crate::payment::{InvoiceInfo, InvoiceStatus};
+use crate::repo::postgres_migration::run_migrations;
 use crate::repo::{now_jitter, NostrRepo};
+use crate::server::NostrMetrics;
 use crate::subscription::{ReqFilter, Subscription, TagOperand};
+use crate::utils::{self, is_hex, is_lower_hex};
 use async_std::stream::StreamExt;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
+use itertools::Itertools;
+use nostr::key::Keys;
 use sqlx::postgres::PgRow;
 use sqlx::Error::RowNotFound;
 use sqlx::{Error, Execute, FromRow, Postgres, QueryBuilder, Row};
+use std::ops::Deref;
 use std::time::{Duration, Instant};
-use itertools::Itertools;
-use crate::error;
-use crate::repo::postgres_migration::run_migrations;
-use crate::server::NostrMetrics;
-use crate::utils::{self, is_hex, is_lower_hex};
-use nostr::key::Keys;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Receiver;
 use tracing::{debug, error, info, trace, warn};
@@ -765,7 +765,9 @@ fn query_from_filter(f: &'_ ReqFilter) -> Option<QueryBuilder<'_, Postgres>> {
                     tag_ctr += 1;
                     query.push("))");
                 } else if let TagOperand::And(v_and) = val {
-                    for vx in v_and.iter() {
+                    let mut sorted_values: Vec<_> = v_and.iter().collect();
+                    sorted_values.sort();
+                    for vx in sorted_values {
                         query
                             .push(format!(
                                 " JOIN \"tag\" t{0} on e.id = t{0}.event_id AND t{0}.\"name\" = ",
