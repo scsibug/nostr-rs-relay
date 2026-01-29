@@ -1226,6 +1226,7 @@ async fn nostr_server(
             },
             // TODO: consider logging the LaggedRecv error
             Ok(global_event) = bcast_rx.recv() => {
+                let mut should_disconnect = false;
                 // an event has been broadcast to all clients
                 // first check if there is a subscription for this event.
                 for (s, sub) in conn.subscriptions() {
@@ -1245,12 +1246,16 @@ async fn nostr_server(
                             if ws_stream.send(Message::Text(format!("[\"EVENT\",\"{subesc}\",{event_str}]"))).await.is_err() {
                                 debug!("failed to send message, closing connection (cid: {})", cid);
                                 metrics.disconnects.with_label_values(&["send_error"]).inc();
+                                should_disconnect = true;
                                 break;
                             }
                         }
                     } else {
                         warn!("could not serialize event: {:?}", global_event.get_event_id_prefix());
                     }
+                }
+                if should_disconnect {
+                    break;
                 }
             },
             ws_next = ws_stream.next() => {
