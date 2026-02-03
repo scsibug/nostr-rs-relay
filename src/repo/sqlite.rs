@@ -219,6 +219,31 @@ impl SqliteRepo {
                 update_count,
                 e.get_author_prefix()
             );
+            let address_candidates = e.tag_values_by_name("a");
+            for address in address_candidates {
+                let mut parts = address.splitn(3, ':');
+                let kind = parts.next().and_then(|p| p.parse::<u64>().ok());
+                let pubkey_blob = parts.next().and_then(|p| hex::decode(p).ok());
+                let d_tag = parts.next().unwrap_or("");
+                let (kind, pubkey_blob) = match (kind, pubkey_blob) {
+                    (Some(kind), Some(pubkey_blob)) => (kind, pubkey_blob),
+                    _ => continue,
+                };
+                if d_tag.is_empty() {
+                    continue;
+                }
+                let update_count = tx.execute(
+                    "UPDATE event SET hidden=TRUE WHERE kind=? AND author=? AND id IN (SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? AND e.created_at <= ?);",
+                    params![kind, pubkey_blob.clone(), kind, pubkey_blob, d_tag, e.created_at],
+                )?;
+                if update_count > 0 {
+                    info!(
+                        "hid {} deleted addressable events for author {:?}",
+                        update_count,
+                        e.get_author_prefix()
+                    );
+                }
+            }
         } else {
             // check if a deletion has already been recorded for this event.
             // Only relevant for non-deletion events
@@ -240,6 +265,24 @@ impl SqliteRepo {
                 // arrived, preventing this from being sent to active
                 // subscriptions
                 ins_count = 0;
+            }
+            if let Some(d_tag) = e.distinct_param() {
+                if !d_tag.is_empty() {
+                    let address = format!("{}:{}:{}", e.kind, e.pubkey, d_tag);
+                    let del_count = tx.query_row(
+                        "SELECT e.id FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.author=? AND e.kind=5 AND t.name='a' AND t.value=? AND e.created_at >= ? LIMIT 1;",
+                        params![pubkey_blob, address, e.created_at], |row| row.get::<usize, usize>(0));
+                    if del_count.ok().is_some() {
+                        info!(
+                            "hid event: {:?} due to existing addressable deletion by author: {:?}",
+                            e.get_event_id_prefix(),
+                            e.get_author_prefix()
+                        );
+                        let _update_count =
+                            tx.execute("UPDATE event SET hidden=TRUE WHERE id=?", params![ev_id])?;
+                        ins_count = 0;
+                    }
+                }
             }
         }
         tx.commit()?;
