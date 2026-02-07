@@ -173,6 +173,8 @@ limit_scrapers = false
 #]
 # Enable NIP-42 authentication
 #nip42_auth = false
+# Allow whitelisted NIP-42 authenticated client to post from any pubkey
+#nip42_whitelist = false
 # Send DMs (kind 4 and 44) and gift wraps (kind 1059) only to their authenticated recipients
 #nip42_dms = false
 
