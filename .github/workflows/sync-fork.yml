@@ -1,0 +1,19 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # once a day at 2 am
+  workflow_dispatch: # on button click
+
+jobs:
+  sync:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: tgymnich/fork-sync@v1.8
+        with:
+          owner: scsibug
+          base: master
+          head: master
+          ignore_fail: true
