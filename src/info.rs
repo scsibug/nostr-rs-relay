@@ -70,8 +70,11 @@ impl From<Settings> for RelayInfo {
 
         if c.authorization.nip42_auth {
             supported_nips.push(42);
-            supported_nips.sort();
         }
+        if c.negentropy.enabled {
+            supported_nips.push(77);
+        }
+        supported_nips.sort();
 
         let i = c.info;
         let p = c.pay_to_relay;
