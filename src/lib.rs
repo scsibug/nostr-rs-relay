@@ -8,6 +8,7 @@ pub mod error;
 pub mod event;
 pub mod info;
 pub mod nauthz;
+pub mod negentropy;
 pub mod nip05;
 pub mod notice;
 pub mod repo;
