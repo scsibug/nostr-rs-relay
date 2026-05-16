@@ -110,6 +110,59 @@ fn sqlite_addressable_delete_hides_listing() -> Result<()> {
 }
 
 #[test]
+fn sqlite_addressable_delete_ignores_cross_author_a_tag() -> Result<()> {
+    let temp_dir = TestDbDir::new("sqlite-addressable-delete-cross-author")?;
+    let mut settings = config::Settings::default();
+    settings.database.in_memory = false;
+    settings.database.data_directory = temp_dir.path_string();
+    settings.database.min_conn = 1;
+    settings.database.max_conn = 1;
+
+    let pool = build_pool(
+        "sqlite-addressable-delete-cross-author",
+        &settings,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        1,
+        1,
+        false,
+    );
+    let mut conn = pool.get()?;
+    upgrade_db(&mut conn)?;
+
+    let bob_pubkey = hex_64(0x13);
+    let alice_pubkey = hex_64(0x14);
+    let d_tag = "listing-cross-author".to_string();
+    let listing = build_event(
+        hex_64(0x05),
+        bob_pubkey.clone(),
+        30402,
+        100,
+        vec![vec!["d".to_string(), d_tag.clone()]],
+    );
+    assert_eq!(SqliteRepo::persist_event(&mut conn, &listing)?, 1);
+
+    let address = format!("30402:{}:{}", bob_pubkey, d_tag);
+    let delete_event = build_event(
+        hex_64(0x06),
+        alice_pubkey,
+        5,
+        200,
+        vec![vec!["a".to_string(), address]],
+    );
+    assert_eq!(SqliteRepo::persist_event(&mut conn, &delete_event)?, 1);
+
+    let bob_pubkey_blob = hex::decode(&bob_pubkey)?;
+    let hidden: i64 = conn.query_row(
+        "SELECT hidden FROM event e LEFT JOIN tag t ON e.id=t.event_id WHERE e.kind=? AND e.author=? AND t.name='d' AND t.value=? LIMIT 1;",
+        params![listing.kind, bob_pubkey_blob, d_tag],
+        |row| row.get(0),
+    )?;
+    assert_eq!(hidden, 0);
+
+    Ok(())
+}
+
+#[test]
 fn sqlite_addressable_delete_prevents_future_listing() -> Result<()> {
     let temp_dir = TestDbDir::new("sqlite-addressable-delete-pre")?;
     let mut settings = config::Settings::default();

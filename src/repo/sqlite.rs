@@ -223,8 +223,12 @@ impl SqliteRepo {
             for address in address_candidates {
                 let mut parts = address.splitn(3, ':');
                 let kind = parts.next().and_then(|p| p.parse::<u64>().ok());
-                let pubkey_blob = parts.next().and_then(|p| hex::decode(p).ok());
+                let pubkey = parts.next().unwrap_or("");
                 let d_tag = parts.next().unwrap_or("");
+                if pubkey != e.pubkey.as_str() {
+                    continue;
+                }
+                let pubkey_blob = hex::decode(pubkey).ok();
                 let (kind, pubkey_blob) = match (kind, pubkey_blob) {
                     (Some(kind), Some(pubkey_blob)) => (kind, pubkey_blob),
                     _ => continue,
