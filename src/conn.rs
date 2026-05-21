@@ -1,11 +1,11 @@
 //! Client connection state
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use tracing::{debug, trace};
 use uuid::Uuid;
 
 use crate::close::Close;
-use crate::conn::Nip42AuthState::{AuthPubkey, Challenge, NoAuth};
+use crate::conn::Nip42AuthState::{Challenge, NoAuth};
 use crate::error::Error;
 use crate::error::Result;
 use crate::event::Event;
@@ -19,10 +19,11 @@ const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
 pub enum Nip42AuthState {
     /// The client is not authenticated yet
     NoAuth,
-    /// The AUTH challenge sent
-    Challenge(String),
-    /// The client is authenticated
-    AuthPubkey(String),
+    /// The AUTH challenge sent, and any pubkeys that have authenticated.
+    Challenge {
+        challenge: String,
+        pubkeys: BTreeSet<String>,
+    },
 }
 
 /// State for a client connection
@@ -85,15 +86,41 @@ impl ClientConn {
     #[must_use]
     pub fn auth_pubkey(&self) -> Option<&String> {
         match &self.auth {
-            AuthPubkey(pubkey) => Some(pubkey),
+            Challenge { pubkeys, .. } => pubkeys.iter().next(),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn auth_pubkeys(&self) -> Vec<&String> {
+        match &self.auth {
+            Challenge { pubkeys, .. } => pubkeys.iter().collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn auth_pubkey_for_event(&self, event_pubkey: &str) -> Option<&String> {
+        match &self.auth {
+            Challenge { pubkeys, .. } => {
+                pubkeys.get(event_pubkey).or_else(|| pubkeys.iter().next())
+            }
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_authenticated_as(&self, pubkey: &str) -> bool {
+        match &self.auth {
+            Challenge { pubkeys, .. } => pubkeys.contains(pubkey),
+            _ => false,
         }
     }
 
     #[must_use]
     pub fn auth_challenge(&self) -> Option<&String> {
         match &self.auth {
-            Challenge(pubkey) => Some(pubkey),
+            Challenge { challenge, .. } => Some(challenge),
             _ => None,
         }
     }
@@ -153,21 +180,24 @@ impl ClientConn {
     }
 
     pub fn generate_auth_challenge(&mut self) {
-        self.auth = Challenge(Uuid::new_v4().to_string());
+        let pubkeys = match &self.auth {
+            Challenge { pubkeys, .. } => pubkeys.clone(),
+            NoAuth => BTreeSet::new(),
+        };
+        self.auth = Challenge {
+            challenge: Uuid::new_v4().to_string(),
+            pubkeys,
+        };
     }
 
     pub fn authenticate(&mut self, event: &Event, relay_url: &str) -> Result<()> {
-        match &self.auth {
-            Challenge(_) => (),
-            AuthPubkey(_) => {
-                // already authenticated
-                return Ok(());
-            }
+        let sent_challenge = match &self.auth {
+            Challenge { challenge, .. } => challenge,
             NoAuth => {
                 // unexpected AUTH request
                 return Err(Error::AuthFailure);
             }
-        }
+        };
         match event.validate() {
             Ok(_) => {
                 if event.kind != 22242 {
@@ -193,13 +223,13 @@ impl ClientConn {
                     }
                 }
 
-                match (challenge, &self.auth) {
-                    (Some(received_challenge), Challenge(sent_challenge)) => {
+                match challenge {
+                    Some(received_challenge) => {
                         if received_challenge != sent_challenge {
                             return Err(Error::AuthFailure);
                         }
                     }
-                    (_, _) => {
+                    None => {
                         return Err(Error::AuthFailure);
                     }
                 }
@@ -215,7 +245,9 @@ impl ClientConn {
                     }
                 }
 
-                self.auth = AuthPubkey(event.pubkey.clone());
+                if let Challenge { pubkeys, .. } = &mut self.auth {
+                    pubkeys.insert(event.pubkey.clone());
+                }
                 trace!(
                     "authenticated pubkey {} (cid: {})",
                     event.pubkey.chars().take(8).collect::<String>(),
