@@ -56,7 +56,11 @@ impl Notice {
     }
 
     fn prefixed(id: String, msg: &str, status: EventResultStatus) -> Notice {
-        let msg = format!("{}: {}", status.prefix(), msg);
+        let msg = if has_machine_readable_prefix(msg) {
+            msg.to_owned()
+        } else {
+            format!("{}: {}", status.prefix(), msg)
+        };
         Notice::EventResult(EventResult { id, msg, status })
     }
 
@@ -97,5 +101,53 @@ impl Notice {
             msg: "".into(),
             status: EventResultStatus::Saved,
         })
+    }
+}
+
+fn has_machine_readable_prefix(msg: &str) -> bool {
+    [
+        "auth-required:",
+        "blocked:",
+        "duplicate:",
+        "error:",
+        "invalid:",
+        "pow:",
+        "rate-limited:",
+        "restricted:",
+    ]
+    .iter()
+    .any(|prefix| msg.starts_with(prefix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EventResultStatus, Notice};
+
+    #[test]
+    fn blocked_preserves_auth_required_prefix() {
+        let notice = Notice::blocked("event-id".to_owned(), "auth-required: sign in first");
+
+        match notice {
+            Notice::EventResult(result) => {
+                assert_eq!(result.id, "event-id");
+                assert_eq!(result.msg, "auth-required: sign in first");
+                assert!(matches!(result.status, EventResultStatus::Blocked));
+            }
+            _ => panic!("expected event result"),
+        }
+    }
+
+    #[test]
+    fn blocked_prefixes_plain_messages() {
+        let notice = Notice::blocked("event-id".to_owned(), "policy denied");
+
+        match notice {
+            Notice::EventResult(result) => {
+                assert_eq!(result.id, "event-id");
+                assert_eq!(result.msg, "blocked: policy denied");
+                assert!(matches!(result.status, EventResultStatus::Blocked));
+            }
+            _ => panic!("expected event result"),
+        }
     }
 }
