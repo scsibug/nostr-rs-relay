@@ -1,8 +1,9 @@
 name: Test and build
 
 on:
+  workflow_call:
   push:
-    branches:
+    branches-ignore:
       - master
 
 jobs:
