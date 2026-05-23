@@ -204,9 +204,19 @@ pub async fn db_writer(
         if !pay_to_relay_enabled {
             // check if this event is authorized.
             if let Some(allowed_addrs) = whitelist {
+                let mut whitelisted = false;
+                if settings.authorization.nip42_auth && settings.authorization.nip42_whitelist {
+                    if let Some(auth_pubkey) = subm_event.auth_pubkey.clone() {
+                        if allowed_addrs.contains(&hex::encode(auth_pubkey)) {
+                            // A nip42 authenticated whitelisted client can post whatever they want
+                            debug!("nip42 authenticated client may publish");
+                            whitelisted = true;
+                        }
+                    }
+                }
                 // TODO: incorporate delegated pubkeys
                 // if the event address is not in allowed_addrs.
-                if !allowed_addrs.contains(&event.pubkey) {
+                if !whitelisted && !allowed_addrs.contains(&event.pubkey) {
                     debug!(
                         "rejecting event: {}, unauthorized author",
                         event.get_event_id_prefix()
