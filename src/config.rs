@@ -172,6 +172,13 @@ impl VerifiedUsers {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(unused)]
+pub struct Negentropy {
+    pub enabled: bool,
+    pub max_sync_events: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(unused)]
 pub struct Logging {
     pub folder_path: Option<String>,
     pub file_prefix: Option<String>,
@@ -192,6 +199,7 @@ pub struct Settings {
     pub retention: Retention,
     pub options: Options,
     pub logging: Logging,
+    pub negentropy: Negentropy,
 }
 
 impl Settings {
@@ -362,6 +370,10 @@ impl Default for Settings {
             logging: Logging {
                 folder_path: None,
                 file_prefix: None,
+            },
+            negentropy: Negentropy {
+                enabled: true,
+                max_sync_events: 500_000,
             },
         }
     }
