@@ -68,6 +68,10 @@ impl From<Settings> for RelayInfo {
     fn from(c: Settings) -> Self {
         let mut supported_nips = vec![1, 2, 9, 11, 12, 15, 16, 20, 22, 33, 40];
 
+        if c.database.engine == "postgres" {
+            supported_nips.push(50);
+        }
+
         if c.authorization.nip42_auth {
             supported_nips.push(42);
             supported_nips.sort();
