@@ -204,9 +204,9 @@ pub async fn db_writer(
         if !pay_to_relay_enabled {
             // check if this event is authorized.
             if let Some(allowed_addrs) = whitelist {
-                // TODO: incorporate delegated pubkeys
-                // if the event address is not in allowed_addrs.
-                if !allowed_addrs.contains(&event.pubkey) {
+                let is_authorized = allowed_addrs.contains(&event.pubkey)
+                    || event.delegated_by.as_ref().map_or(false, |d| allowed_addrs.contains(d));
+                if !is_authorized {
                     debug!(
                         "rejecting event: {}, unauthorized author",
                         event.get_event_id_prefix()
@@ -222,9 +222,11 @@ pub async fn db_writer(
             }
         } else {
             // If the user is on whitelist there is no need to check if the user is admitted or has balance to post
-            if whitelist.is_none()
-                || (whitelist.is_some() && !whitelist.as_ref().unwrap().contains(&event.pubkey))
-            {
+            let is_whitelisted = whitelist.as_ref().map_or(false, |allowed_addrs| {
+                allowed_addrs.contains(&event.pubkey)
+                    || event.delegated_by.as_ref().map_or(false, |d| allowed_addrs.contains(d))
+            });
+            if whitelist.is_none() || !is_whitelisted {
                 let key = Keys::from_pk_str(&event.pubkey).unwrap();
                 match repo.get_account_balance(&key).await {
                     Ok((user_admitted, balance)) => {
