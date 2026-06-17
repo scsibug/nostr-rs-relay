@@ -671,8 +671,23 @@ fn get_header_string(header: &str, headers: &HeaderMap) -> Option<String> {
 
 // return on a control-c or internally requested shutdown signal
 async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
-    let mut term_signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .expect("could not define signal");
+    // Listen for SIGTERM on unix platforms. On other platforms (e.g. Windows)
+    // this future never resolves, leaving ctrl-c and the requested-shutdown
+    // channel as the shutdown triggers.
+    let term_signal = async {
+        #[cfg(unix)]
+        {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("could not define signal")
+                .recv()
+                .await;
+        }
+        #[cfg(not(unix))]
+        {
+            futures::future::pending::<()>().await;
+        }
+    };
+    tokio::pin!(term_signal);
     #[allow(clippy::never_loop)]
     loop {
         tokio::select! {
@@ -685,7 +700,7 @@ async fn ctrl_c_or_signal(mut shutdown_signal: Receiver<()>) {
                 info!("Shutting down webserver due to SIGINT");
                 break;
             },
-            _ = term_signal.recv() => {
+            _ = &mut term_signal => {
                 info!("Shutting down webserver due to SIGTERM");
                 break;
             },
