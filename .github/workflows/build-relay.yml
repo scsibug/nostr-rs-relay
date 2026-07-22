@@ -1,0 +1,45 @@
+name: Cross Compile Nostr-Rs-Relay for Debian 13
+
+on:
+  workflow_dispatch: # 允许在 GitHub 网页上手动点击按钮触发
+
+jobs:
+  build:
+    # ⚠️ 核心调优：使用 ubuntu-24.04 作为编译机，因为它的 glibc 版本更接近你的 Debian 13
+    # 这样编译出的二进制文件绝对能完美向后兼容你的系统，不会报任何 GLIBC 版本未找到的错误
+    runs-on: ubuntu-24.04 
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 1. 克隆官方最新稳定的 nostr-rs-relay 源码
+    - name: Clone Upstream Repository
+      run: |
+        git clone https://github.com upstream
+
+    # 2. 精准配置目标平台架构：x86_64-unknown-linux-gnu
+    - name: Set up Rust & Target
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-unknown-linux-gnu
+
+    # 3. 安装依赖（Debian 13 对应的标准 x86_64 GCC 编译环境）
+    - name: Install Compilers
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc g++
+
+    # 4. 执行极度精简编译（移除不必要的监控模块与实验功能，最大化压榨 512MB 内存服务器的性能）
+    - name: Run Cargo Build
+      run: |
+        cd upstream
+        # --no-default-features 会默认采用轻量级的 SQLite 作为引擎，并将内存占用压到最低
+        cargo build --release --target x86_64-unknown-linux-gnu --no-default-features
+
+    # 5. 上传最终产物
+    - name: Upload Binary Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nostr-rs-relay-debian13-x86_64
+        path: upstream/target/x86_64-unknown-linux-gnu/release/nostr-rs-relay
