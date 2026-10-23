@@ -48,6 +48,33 @@ async fn relay_home_page() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn relay_info_document() -> Result<()> {
+    let relay = common::start_relay()?;
+    common::wait_for_healthy_relay(&relay).await?;
+    let req = hyper::Request::builder()
+        .uri(format!("http://127.0.0.1:{}/", relay.port))
+        .header("Accept", "application/nostr+json")
+        .body(hyper::Body::empty())?;
+    let res = hyper::Client::new().request(req).await?;
+    assert_eq!(res.status(), hyper::StatusCode::OK);
+    // NIP-11: relays MUST accept CORS requests
+    let headers = res.headers();
+    assert_eq!(headers["content-type"], "application/nostr+json");
+    assert_eq!(headers["access-control-allow-origin"], "*");
+    assert!(headers.contains_key("access-control-allow-headers"));
+    assert!(headers.contains_key("access-control-allow-methods"));
+    let body = hyper::body::to_bytes(res.into_body()).await?;
+    let info: serde_json::Value = serde_json::from_slice(&body)?;
+    assert!(info["supported_nips"].as_array().is_some());
+    assert_eq!(info["limitation"]["max_subscriptions"], 32);
+    // pay-to-relay is disabled by default
+    assert!(info.get("payments_url").is_none());
+    assert!(info.get("fees").is_none());
+    let _res = relay.shutdown_tx.send(());
+    Ok(())
+}
+
 //#[tokio::test]
 // Still inwork
 #[allow(dead_code)]

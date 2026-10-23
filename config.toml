@@ -26,6 +26,14 @@ description = "A newly created nostr-rs-relay.\n\nCustomize this with your own i
 # Path to custom relay html page
 #relay_page = "index.html"
 
+# URL of a banner image for the relay (NIP-11 `banner`).
+#banner = "https://example.test/banner.png"
+
+# URL of the relay's terms of service (NIP-11 `terms_of_service`).
+# When pay_to_relay is enabled with a terms_message, this defaults to
+# the relay's own /terms page.
+#terms_of_service = "https://example.test/terms.txt"
+
 [diagnostics]
 # Enable tokio tracing (for use with tokio-console)
 #tracing = false

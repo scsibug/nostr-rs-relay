@@ -29,6 +29,19 @@ secret_key = "<nostr secret key to send dms>"
 
 The LNBits instance must have a signed HTTPS a self signed certificate will not work.
 
+### Relay information (NIP-11)
+
+When pay to relay is enabled, the relay information document advertises it
+to clients:
+
+* `limitation.payment_required` and `limitation.restricted_writes` are `true`
+* `fees.admission` and `fees.publication` are `admission_cost` and
+  `cost_per_event`, in msats
+* `payments_url` is the relay's `/join` page, built from `relay_url`
+* `terms_of_service` is the relay's `/terms` page (unless `[info]
+  terms_of_service` is set)
+* `self` is the public key of `secret_key`, if set
+
 ## Design Overview
 
 ### Concepts
