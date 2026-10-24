@@ -13,7 +13,10 @@ use crate::subscription::Subscription;
 use crate::utils::{host_str, unix_time};
 
 /// A subscription identifier has a maximum length
-const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
+pub const MAX_SUBSCRIPTION_ID_LEN: usize = 256;
+
+/// Maximum number of concurrent subscriptions per connection
+pub const MAX_SUBSCRIPTIONS: usize = 32;
 
 /// NIP-42 authentication state
 pub enum Nip42AuthState {
@@ -54,7 +57,7 @@ impl ClientConn {
             client_ip_addr,
             client_id,
             subscriptions: HashMap::new(),
-            max_subs: 32,
+            max_subs: MAX_SUBSCRIPTIONS,
             auth: NoAuth,
         }
     }

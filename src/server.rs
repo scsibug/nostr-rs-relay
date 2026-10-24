@@ -179,6 +179,8 @@ async fn handle_web_request(
                             .status(200)
                             .header("Content-Type", "application/nostr+json")
                             .header("Access-Control-Allow-Origin", "*")
+                            .header("Access-Control-Allow-Headers", "*")
+                            .header("Access-Control-Allow-Methods", "GET")
                             .body(b)
                             .unwrap());
                     }

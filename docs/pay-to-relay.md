@@ -29,6 +29,54 @@ secret_key = "<nostr secret key to send dms>"
 
 The LNBits instance must have a signed HTTPS a self signed certificate will not work.
 
+### Bark (Ark and Lightning)
+
+`processor = "Bark"` takes payments through a [Bark](https://gitlab.com/ark-bitcoin/bark)
+wallet daemon (`barkd`, REST API of versions 0.7.1 and 0.8.0). Bark is a wallet for
+[Ark](https://ark-protocol.org), a Bitcoin layer 2 with instant off-chain
+payments; it receives Lightning payments through the Ark server's gateway.
+
+```
+[pay_to_relay]
+enabled = true
+processor = "Bark"
+# barkd REST API (plain http is fine on localhost)
+node_url = "http://127.0.0.1:3000"
+# barkd token: `barkd secret show`
+api_secret = "<barkd token>"
+# "lightning", "ark" or "both" (default)
+bark_rails = "both"
+```
+
+* `lightning`: a BOLT11 invoice. Paid once barkd reports the receive as
+  `settled`.
+* `ark`: a fresh Ark address per invoice, shown as
+  `bitcoin:?ark=<address>&amount=<btc>`. Paid once barkd's history shows
+  successful Ark receives on that address adding up to the amount.
+* `both`: a BIP-321 URI with the Ark address and the Lightning invoice
+  (`bitcoin:?ark=...&lightning=...&amount=...`). Either payment settles it.
+  Any BIP-321 wallet can pay it, and a client can hand it unchanged to its
+  wallet with the [NWC-321](https://github.com/nostr-wallet-connect/nwc/blob/main/321.md)
+  `pay` method: an Ark wallet on the relay's Ark server pays the address
+  (the address encodes its Ark server, so the wallet decides), any other
+  wallet pays the invoice.
+
+Payment is checked when the author visits `/account` (like ClnRest; there is
+no webhook). The barkd daemon must be running to claim incoming payments.
+
+### Relay information (NIP-11)
+
+When pay to relay is enabled, the relay information document advertises it
+to clients:
+
+* `limitation.payment_required` and `limitation.restricted_writes` are `true`
+* `fees.admission` and `fees.publication` are `admission_cost` and
+  `cost_per_event`, in msats
+* `payments_url` is the relay's `/join` page, built from `relay_url`
+* `terms_of_service` is the relay's `/terms` page (unless `[info]
+  terms_of_service` is set)
+* `self` is the public key of `secret_key`, if set
+
 ## Design Overview
 
 ### Concepts
