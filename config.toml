@@ -163,6 +163,47 @@ reject_future_seconds = 1800
 # Its recommended to have this enabled
 limit_scrapers = false
 
+# Maximum number of subscriptions that may be active on a single
+# websocket connection to this relay.
+#max_subscriptions = 50
+
+# Maximum length of subscription id as a string.
+#max_subid_length = 100
+
+# Clamps each filter's limit value to this number.
+#max_limit = 5000
+
+# Maximum number of elements in the tags list of any event.
+#max_event_tags = 2000
+
+# Maximum number of characters in the content field of any event.
+#max_content_length = 65536
+
+# Minimum PoW difficulty required for new events (NIP-13).
+#min_pow_difficulty = 0
+
+# If true, requires NIP-42 authentication before a new connection
+# may perform any other action.
+#auth_required = false
+
+# If true, requires payment before a new connection may perform any action.
+# Defaults to true if pay_to_relay is enabled.
+#payment_required = false
+
+# If true, advertises that conditions must be fulfilled to accept events.
+# Defaults based on payment, whitelist, verified users, or grpc settings.
+#restricted_writes = false
+
+# Maximum number of seconds in the past an event's created_at may be.
+#created_at_lower_limit = 31536000
+
+# Maximum number of seconds in the future an event's created_at may be.
+# Defaults to reject_future_seconds from [options].
+#created_at_upper_limit = 1800
+
+# Maximum events returned if a filter does not specify a limit.
+#default_limit = 500
+
 [authorization]
 # Pubkey addresses in this array are whitelisted for event publishing.
 # Only valid events by these authors will be accepted, if the variable

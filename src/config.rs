@@ -76,6 +76,18 @@ pub struct Limits {
     pub event_kind_blacklist: Option<Vec<u64>>,
     pub event_kind_allowlist: Option<Vec<u64>>,
     pub limit_scrapers: bool,
+    pub max_subscriptions: Option<usize>, // Maximum number of subscriptions that may be active on a single websocket connection to this relay
+    pub max_subid_length: Option<usize>, // Maximum length of subscription id as a string
+    pub max_limit: Option<usize>, // Clamps each filter's limit value to this number
+    pub max_event_tags: Option<usize>, // Maximum number of elements in the tags list of any event
+    pub max_content_length: Option<usize>, // Maximum number of characters in the content field of any event
+    pub min_pow_difficulty: Option<usize>, // Minimum PoW difficulty required for new events (NIP-13)
+    pub auth_required: Option<bool>, // If true, requires NIP-42 authentication before a new connection may perform any other action
+    pub payment_required: Option<bool>, // If true, requires payment before a new connection may perform any action
+    pub restricted_writes: Option<bool>, // If true, advertises that conditions must be fulfilled to accept events
+    pub created_at_lower_limit: Option<usize>, // Maximum number of seconds in the past an event's created_at may be
+    pub created_at_upper_limit: Option<usize>, // Maximum number of seconds in the future an event's created_at may be
+    pub default_limit: Option<usize>, // Maximum events returned if a filter does not specify a limit
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,6 +333,18 @@ impl Default for Settings {
                 event_kind_blacklist: None,
                 event_kind_allowlist: None,
                 limit_scrapers: false,
+                max_subscriptions: None,
+                max_subid_length: None,
+                max_limit: None,
+                max_event_tags: None,
+                max_content_length: None,
+                min_pow_difficulty: None,
+                auth_required: None,
+                payment_required: None,
+                restricted_writes: None,
+                created_at_lower_limit: None,
+                created_at_upper_limit: None,
+                default_limit: None,
             },
             authorization: Authorization {
                 pubkey_whitelist: None, // Allow any address to publish
