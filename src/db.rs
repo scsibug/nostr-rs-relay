@@ -59,9 +59,10 @@ async fn build_sqlite_pool(settings: &Settings, metrics: NostrMetrics) -> Sqlite
 }
 
 async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> PostgresRepo {
-    let mut options: PgConnectOptions = settings.database.connection.as_str().parse().unwrap();
-    options.log_statements(LevelFilter::Debug);
-    options.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
+    let options: PgConnectOptions = settings.database.connection.as_str().parse().unwrap();
+    let options = options
+        .log_statements(LevelFilter::Debug)
+        .log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
 
     let pool: PostgresPool = PoolOptions::new()
         .max_connections(settings.database.max_conn)
@@ -73,9 +74,10 @@ async fn build_postgres_pool(settings: &Settings, metrics: NostrMetrics) -> Post
 
     let write_pool: PostgresPool = match &settings.database.connection_write {
         Some(cfg_write) => {
-            let mut options_write: PgConnectOptions = cfg_write.as_str().parse().unwrap();
-            options_write.log_statements(LevelFilter::Debug);
-            options_write.log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
+            let options_write: PgConnectOptions = cfg_write.as_str().parse().unwrap();
+            let options_write = options_write
+                .log_statements(LevelFilter::Debug)
+                .log_slow_statements(LevelFilter::Warn, Duration::from_secs(60));
 
             PoolOptions::new()
                 .max_connections(settings.database.max_conn)

@@ -78,7 +78,7 @@ async fn run_migration(migration: impl Migration, db: &PostgresPool) -> Migratio
 
     sqlx::query("INSERT INTO migrations VALUES ($1)")
         .bind(migration.serial_number())
-        .execute(&mut transaction)
+        .execute(&mut *transaction)
         .await
         .unwrap();
 
@@ -179,11 +179,11 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
         let mut update_tx = db.begin().await.unwrap();
         // Clear out table
         sqlx::query("DELETE FROM tag;")
-            .execute(&mut update_tx)
+            .execute(&mut *update_tx)
             .await?;
         {
             let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) from event;")
-                .fetch_one(&mut tx)
+                .fetch_one(&mut *tx)
                 .await
                 .unwrap();
             let bar = ProgressBar::new(event_count.try_into().unwrap())
@@ -195,7 +195,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                 .unwrap(),
             );
             let mut events =
-                sqlx::query("SELECT id, content FROM event ORDER BY id;").fetch(&mut tx);
+                sqlx::query("SELECT id, content FROM event ORDER BY id;").fetch(&mut *tx);
             while let Some(row) = events.next().await {
                 bar.inc(1);
                 // get the row id and content
@@ -220,7 +220,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                             .bind(&event_id)
                             .bind(tagname)
                             .bind(hex::decode(tagval).ok())
-                            .execute(&mut update_tx)
+                            .execute(&mut *update_tx)
                             .await?;
                     } else {
                         let q = "INSERT INTO tag (event_id, \"name\", value, value_hex) VALUES ($1, $2, $3, NULL) ON CONFLICT DO NOTHING;";
@@ -228,7 +228,7 @@ CREATE INDEX tag_value_hex_idx ON tag USING btree (value_hex);
                             .bind(&event_id)
                             .bind(tagname)
                             .bind(tagval.as_bytes())
-                            .execute(&mut update_tx)
+                            .execute(&mut *update_tx)
                             .await?;
                     }
                 }
