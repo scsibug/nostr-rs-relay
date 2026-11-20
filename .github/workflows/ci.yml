@@ -9,14 +9,13 @@ jobs:
   test_nostr-rs-relay:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Update local toolchain
         run: |
           sudo apt-get install -y protobuf-compiler
           rustup update
           rustup component add clippy
-          rustup install nightly
 
       - name: Toolchain info
         run: |
@@ -31,8 +30,8 @@ jobs:
 
       - name: Test
         run: |
-          cargo check
-          cargo test --all
+          cargo check --locked
+          cargo test --all --locked
 
       - name: Build
         run: |
