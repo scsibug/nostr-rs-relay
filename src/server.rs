@@ -11,6 +11,7 @@ use crate::event::EventCmd;
 use crate::event::EventWrapper;
 use crate::info::RelayInfo;
 use crate::nip05;
+use crate::negentropy::NegMessage;
 use crate::notice::Notice;
 use crate::payment;
 use crate::payment::InvoiceInfo;
@@ -1015,6 +1016,9 @@ pub enum NostrMessage {
     SubMsg(Subscription),
     /// A `CLOSE` message
     CloseMsg(CloseCmd),
+    /// NIP-77 negentropy messages (parsed manually, not via serde)
+    #[serde(skip)]
+    NegMsg(crate::negentropy::NegMessage),
 }
 
 /// Convert Message to `NostrMessage`
@@ -1038,6 +1042,10 @@ fn convert_to_msg(msg: &str, max_bytes: Option<usize>) -> Result<NostrMessage> {
             Ok(m)
         }
         Err(e) => {
+            // Try NIP-77 negentropy messages before giving up
+            if let Some(neg_msg) = crate::negentropy::parse_neg_message(msg) {
+                return Ok(NostrMessage::NegMsg(neg_msg));
+            }
             trace!("proto parse error: {:?}", e);
             trace!("parse error on message: {:?}", msg.trim());
             Err(Error::ProtoParseError)
@@ -1147,6 +1155,8 @@ async fn nostr_server(
     // and how many it received from queries.
     let mut client_published_event_count: usize = 0;
     let mut client_received_event_count: usize = 0;
+    // NIP-77 negentropy session state (sealed storage per subscription)
+    let mut neg_sessions: HashMap<String, negentropy::NegentropyStorageVector> = HashMap::new();
 
     let unspec = "<unspecified>".to_string();
     info!("new client connection (cid: {}, ip: {:?})", cid, conn.ip());
@@ -1484,6 +1494,166 @@ async fn nostr_server(
                                 debug!("failed to send notice, closing connection (cid: {})", cid);
                                 metrics.disconnects.with_label_values(&["send_error"]).inc();
                                 break;
+                            }
+                        }
+                    },
+                    Ok(NostrMessage::NegMsg(neg)) => {
+                        match neg {
+                            NegMessage::Open { sub_id, filter, msg_hex } => {
+                                // Check if negentropy is enabled
+                                if !settings.negentropy.enabled {
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: negentropy disabled");
+                                    if ws_stream.send(Message::Text(err_msg)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                // Close existing session with same sub_id first (NIP-77 spec)
+                                neg_sessions.remove(&sub_id);
+                                // Check session limit (max 4 concurrent)
+                                if neg_sessions.len() >= 4 {
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: too many negentropy sessions");
+                                    if ws_stream.send(Message::Text(err_msg)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                // Build a subscription from the filter (strip limit for negentropy)
+                                let mut neg_filter = filter;
+                                neg_filter.limit = None;
+                                let neg_sub = Subscription {
+                                    id: sub_id.clone(),
+                                    filters: vec![neg_filter],
+                                };
+                                // Query DB for matching events
+                                let (neg_query_tx, mut neg_query_rx) = mpsc::channel::<db::QueryResult>(20_000);
+                                let (_neg_abandon_tx, neg_abandon_rx) = oneshot::channel::<()>();
+                                if let Err(e) = repo.query_subscription(neg_sub, cid.clone(), neg_query_tx, neg_abandon_rx).await {
+                                    warn!("negentropy query error: {:?} (cid: {})", e, cid);
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: query error");
+                                    if ws_stream.send(Message::Text(err_msg)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                // Collect results: extract (created_at, id) from each event
+                                let mut events: Vec<(u64, [u8; 32])> = Vec::new();
+                                let max_sync = settings.negentropy.max_sync_events;
+                                let mut too_many = false;
+                                while let Some(qr) = neg_query_rx.recv().await {
+                                    if qr.event == "EOSE" { break; }
+                                    if events.len() >= max_sync {
+                                        too_many = true;
+                                        break;
+                                    }
+                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&qr.event) {
+                                        if let (Some(created_at), Some(id_hex)) = (v["created_at"].as_u64(), v["id"].as_str()) {
+                                            if let Ok(id_bytes) = hex::decode(id_hex) {
+                                                if let Ok(arr) = <[u8; 32]>::try_from(id_bytes.as_slice()) {
+                                                    events.push((created_at, arr));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if too_many {
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "blocked: too many query results");
+                                    if ws_stream.send(Message::Text(err_msg)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                // Build negentropy storage
+                                let mut storage = negentropy::NegentropyStorageVector::with_capacity(events.len());
+                                for (created_at, id_bytes) in &events {
+                                    let id = negentropy::Id::from_byte_array(*id_bytes);
+                                    if storage.insert(*created_at, id).is_err() {
+                                        warn!("negentropy storage insert failed (cid: {})", cid);
+                                    }
+                                }
+                                if storage.seal().is_err() {
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: internal error");
+                                    if ws_stream.send(Message::Text(err_msg)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                // Decode client message and reconcile
+                                let query_bytes = match hex::decode(&msg_hex) {
+                                    Ok(b) => b,
+                                    Err(_) => {
+                                        let err_msg = crate::negentropy::make_neg_err(&sub_id, "PROTOCOL-ERROR: invalid hex");
+                                        ws_stream.send(Message::Text(err_msg)).await.ok();
+                                        continue;
+                                    }
+                                };
+                                match negentropy::Negentropy::borrowed(&storage, 500_000) {
+                                    Ok(mut neg) => {
+                                        match neg.reconcile(&query_bytes) {
+                                            Ok(response) => {
+                                                let msg = crate::negentropy::make_neg_msg(&sub_id, &hex::encode(&response));
+                                                if ws_stream.send(Message::Text(msg)).await.is_err() {
+                                                    break;
+                                                }
+                                                // Store sealed storage for subsequent NEG-MSG rounds
+                                                neg_sessions.insert(sub_id, storage);
+                                            }
+                                            Err(e) => {
+                                                debug!("negentropy reconcile error: {:?} (cid: {})", e, cid);
+                                                let err_msg = crate::negentropy::make_neg_err(&sub_id, "PROTOCOL-ERROR: reconciliation error");
+                                                ws_stream.send(Message::Text(err_msg)).await.ok();
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        debug!("negentropy init error: {:?} (cid: {})", e, cid);
+                                        let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: internal error");
+                                        ws_stream.send(Message::Text(err_msg)).await.ok();
+                                    }
+                                }
+                            }
+                            NegMessage::Message { sub_id, msg_hex } => {
+                                if let Some(storage) = neg_sessions.get(&sub_id) {
+                                    let query_bytes = match hex::decode(&msg_hex) {
+                                        Ok(b) => b,
+                                        Err(_) => {
+                                            let err_msg = crate::negentropy::make_neg_err(&sub_id, "PROTOCOL-ERROR: invalid hex");
+                                            ws_stream.send(Message::Text(err_msg)).await.ok();
+                                            neg_sessions.remove(&sub_id);
+                                            continue;
+                                        }
+                                    };
+                                    match negentropy::Negentropy::borrowed(storage, 500_000) {
+                                        Ok(mut neg) => {
+                                            match neg.reconcile(&query_bytes) {
+                                                Ok(response) => {
+                                                    let msg = crate::negentropy::make_neg_msg(&sub_id, &hex::encode(&response));
+                                                    if ws_stream.send(Message::Text(msg)).await.is_err() {
+                                                        break;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    debug!("negentropy reconcile error: {:?} (cid: {})", e, cid);
+                                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "PROTOCOL-ERROR: reconciliation error");
+                                                    ws_stream.send(Message::Text(err_msg)).await.ok();
+                                                    neg_sessions.remove(&sub_id);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            debug!("negentropy init error: {:?} (cid: {})", e, cid);
+                                            let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: internal error");
+                                            ws_stream.send(Message::Text(err_msg)).await.ok();
+                                            neg_sessions.remove(&sub_id);
+                                        }
+                                    }
+                                } else {
+                                    let err_msg = crate::negentropy::make_neg_err(&sub_id, "CLOSED: session not found");
+                                    ws_stream.send(Message::Text(err_msg)).await.ok();
+                                }
+                            }
+                            NegMessage::Close { sub_id } => {
+                                neg_sessions.remove(&sub_id);
                             }
                         }
                     },
