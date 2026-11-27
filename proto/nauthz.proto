@@ -39,6 +39,8 @@ message EventRequest {
   optional Nip05Name nip05 =
       6; // NIP-05 address associated with the event pubkey, if it is
          // known and has been validated by the relay
+  repeated bytes auth_pubkeys =
+      7; // all public keys associated with this NIP-42 AUTH'd session
   // A NIP_05 verification record
   message Nip05Name {
     string local = 1;

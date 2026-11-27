@@ -54,8 +54,10 @@ support authorization decisions:
 - The client IP that submitted the event
 - The client's HTTP origin header, if one exists
 - The client's HTTP user agent header, if one exists
-- The public key of the client, if `NIP-42` authentication was
-  performed (not supported in the relay yet!)
+- The public key selected for compatibility with older authorization
+  services, if `NIP-42` authentication was performed
+- All public keys that have authenticated on the connection using
+  `NIP-42`
 - The `NIP-05` associated with the event's public key, if it is known
   to the relay
 

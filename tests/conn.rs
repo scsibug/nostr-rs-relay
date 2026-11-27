@@ -49,14 +49,16 @@ mod tests {
         assert_ne!(client_conn.auth_challenge(), None);
         assert_eq!(client_conn.auth_pubkey(), None);
 
-        let challenge = client_conn.auth_challenge().unwrap();
-        let event = auth_event(challenge);
+        let challenge = client_conn.auth_challenge().unwrap().clone();
+        let event = auth_event(&challenge);
 
         let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Ok(())));
-        assert_eq!(client_conn.auth_challenge(), None);
+        assert_eq!(client_conn.auth_challenge(), Some(&challenge));
         assert_eq!(client_conn.auth_pubkey(), Some(&event.pubkey));
+        assert_eq!(client_conn.auth_pubkeys().len(), 1);
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
     }
 
     #[test]
@@ -90,16 +92,50 @@ mod tests {
         let result = client_conn.authenticate(&event, RELAY);
 
         assert!(matches!(result, Ok(())));
-        assert_eq!(client_conn.auth_challenge(), None);
+        assert_eq!(client_conn.auth_challenge(), Some(&challenge));
         assert_eq!(client_conn.auth_pubkey(), Some(&event.pubkey));
+        assert_eq!(client_conn.auth_pubkeys().len(), 1);
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
 
         let event1 = auth_event(&challenge);
         let result1 = client_conn.authenticate(&event1, RELAY);
 
         assert!(matches!(result1, Ok(())));
-        assert_eq!(client_conn.auth_challenge(), None);
-        assert_eq!(client_conn.auth_pubkey(), Some(&event.pubkey));
-        assert_ne!(client_conn.auth_pubkey(), Some(&event1.pubkey));
+        assert_eq!(client_conn.auth_challenge(), Some(&challenge));
+        assert_eq!(client_conn.auth_pubkeys().len(), 2);
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
+        assert!(client_conn.is_authenticated_as(&event1.pubkey));
+        assert_eq!(
+            client_conn.auth_pubkey_for_event(&event1.pubkey),
+            Some(&event1.pubkey)
+        );
+    }
+
+    #[test]
+    fn test_generate_auth_challenge_preserves_authenticated_pubkeys() {
+        let mut client_conn = ClientConn::new("127.0.0.1".into());
+
+        client_conn.generate_auth_challenge();
+        let first_challenge = client_conn.auth_challenge().unwrap().clone();
+        let event = auth_event(&first_challenge);
+
+        let result = client_conn.authenticate(&event, RELAY);
+
+        assert!(matches!(result, Ok(())));
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
+
+        client_conn.generate_auth_challenge();
+        let second_challenge = client_conn.auth_challenge().unwrap().clone();
+        assert_ne!(first_challenge, second_challenge);
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
+
+        let event1 = auth_event(&second_challenge);
+        let result1 = client_conn.authenticate(&event1, RELAY);
+
+        assert!(matches!(result1, Ok(())));
+        assert_eq!(client_conn.auth_pubkeys().len(), 2);
+        assert!(client_conn.is_authenticated_as(&event.pubkey));
+        assert!(client_conn.is_authenticated_as(&event1.pubkey));
     }
 
     #[test]

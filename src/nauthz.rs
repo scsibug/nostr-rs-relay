@@ -77,6 +77,7 @@ impl EventAuthzService {
         user_agent: Option<String>,
         nip05: Option<Nip05Name>,
         auth_pubkey: Option<Vec<u8>>,
+        auth_pubkeys: Vec<Vec<u8>>,
     ) -> Result<Box<dyn AuthzDecision>> {
         self.ready_connection().await;
         let id_blob = hex::decode(&event.id)?;
@@ -100,6 +101,7 @@ impl EventAuthzService {
                     user_agent,
                     auth_pubkey,
                     nip05: nip05.map(nauthz_grpc::event_request::Nip05Name::from),
+                    auth_pubkeys,
                 })
                 .await?;
             let reply = svr_res.into_inner();
