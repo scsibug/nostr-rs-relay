@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::event::Event;
+#[cfg(not(windows))]
 use crate::payment::cln_rest::ClnRestPaymentProcessor;
 use crate::payment::lnbits::LNBitsPaymentProcessor;
 use crate::repo::NostrRepo;
@@ -11,6 +12,7 @@ use async_trait::async_trait;
 use nostr::key::{FromPkStr, FromSkStr};
 use nostr::{key::Keys, Event as NostrEvent, EventBuilder};
 
+#[cfg(not(windows))]
 pub mod cln_rest;
 pub mod lnbits;
 
@@ -114,7 +116,14 @@ impl Payment {
         // Create processor kind defined in settings
         let processor: Arc<dyn PaymentProcessor> = match &settings.pay_to_relay.processor {
             Processor::LNBits => Arc::new(LNBitsPaymentProcessor::new(&settings)),
+            #[cfg(not(windows))]
             Processor::ClnRest => Arc::new(ClnRestPaymentProcessor::new(&settings)?),
+            #[cfg(windows)]
+            Processor::ClnRest => {
+                return Err(Error::CustomError(
+                    "ClnRest payment processor is not supported on Windows builds".to_string(),
+                ))
+            }
         };
 
         Ok(Payment {

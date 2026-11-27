@@ -57,11 +57,16 @@ url = "2.3.1"
 qrcode = { version = "0.12.0", default-features = false, features = ["svg"] }
 nostr = { version = "0.18.0", default-features = false, features = ["base", "nip04", "nip19"] }
 log = "0.4"
-cln-rpc = "0.1.9"
 itertools = "0.14.0"
 
 [target.'cfg(all(not(target_env = "msvc"), not(target_os = "openbsd")))'.dependencies]
 tikv-jemallocator = "0.5"
+
+# cln-rpc unconditionally uses Unix domain sockets and does not build on Windows.
+# The CLN-REST payment processor (which only needs cln-rpc's model types) is
+# therefore excluded from Windows builds.
+[target.'cfg(not(windows))'.dependencies]
+cln-rpc = "0.1.9"
 
 [dev-dependencies]
 anyhow = "1"
